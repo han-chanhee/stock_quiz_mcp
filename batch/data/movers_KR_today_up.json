@@ -1,0 +1,72 @@
+[
+  {
+    "rank": 1,
+    "snapshot": {
+      "ticker": "365660",
+      "name": "레몬헬스케어",
+      "market": "KR",
+      "sector": null,
+      "price": 12220.0,
+      "change_pct": 30.0,
+      "market_cap_rank": 1,
+      "as_of": "2026-07-08T03:52:05.753180+09:00"
+    },
+    "period": "today"
+  },
+  {
+    "rank": 2,
+    "snapshot": {
+      "ticker": "079650",
+      "name": "서산",
+      "market": "KR",
+      "sector": null,
+      "price": 4775.0,
+      "change_pct": 29.93,
+      "market_cap_rank": 2,
+      "as_of": "2026-07-08T03:52:05.753180+09:00"
+    },
+    "period": "today"
+  },
+  {
+    "rank": 3,
+    "snapshot": {
+      "ticker": "008290",
+      "name": "원풍물산",
+      "market": "KR",
+      "sector": null,
+      "price": 384.0,
+      "change_pct": 29.73,
+      "market_cap_rank": 3,
+      "as_of": "2026-07-08T03:52:05.753180+09:00"
+    },
+    "period": "today"
+  },
+  {
+    "rank": 4,
+    "snapshot": {
+      "ticker": "298000",
+      "name": "효성화학",
+      "market": "KR",
+      "sector": null,
+      "price": 67000.0,
+      "change_pct": 29.84,
+      "market_cap_rank": 4,
+      "as_of": "2026-07-08T03:52:05.753180+09:00"
+    },
+    "period": "today"
+  },
+  {
+    "rank": 5,
+    "snapshot": {
+      "ticker": "109610",
+      "name": "에스와이",
+      "market": "KR",
+      "sector": null,
+      "price": 2560.0,
+      "change_pct": 29.95,
+      "market_cap_rank": 5,
+      "as_of": "2026-07-08T03:52:05.753180+09:00"
+    },
+    "period": "today"
+  }
+]

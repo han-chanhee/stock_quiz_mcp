@@ -1,0 +1,1082 @@
+[
+  {
+    "ticker": "005930",
+    "name": "삼성전자",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 809130,
+    "market_cap_rank": 1,
+    "changes": {
+      "today": 3.5,
+      "yesterday": -0.9,
+      "1w": -11.7,
+      "1m": -28.9,
+      "1y": -52.5
+    }
+  },
+  {
+    "ticker": "000660",
+    "name": "SK하이닉스",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 718260,
+    "market_cap_rank": 2,
+    "changes": {
+      "today": -8.5,
+      "yesterday": -22.5,
+      "1w": 36.4,
+      "1m": 34.0,
+      "1y": 25.2
+    }
+  },
+  {
+    "ticker": "009150",
+    "name": "삼성전기",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 627390,
+    "market_cap_rank": 3,
+    "changes": {
+      "today": 10.0,
+      "yesterday": 10.8,
+      "1w": 5.2,
+      "1m": -6.8,
+      "1y": -25.2
+    }
+  },
+  {
+    "ticker": "000990",
+    "name": "DB하이텍",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 536520,
+    "market_cap_rank": 4,
+    "changes": {
+      "today": -2.0,
+      "yesterday": -10.8,
+      "1w": -26.0,
+      "1m": -47.6,
+      "1y": 52.5
+    }
+  },
+  {
+    "ticker": "042700",
+    "name": "한미반도체",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 445660,
+    "market_cap_rank": 5,
+    "changes": {
+      "today": -14.0,
+      "yesterday": 22.5,
+      "1w": 22.1,
+      "1m": 15.3,
+      "1y": 2.1
+    }
+  },
+  {
+    "ticker": "058470",
+    "name": "리노공업",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 354790,
+    "market_cap_rank": 6,
+    "changes": {
+      "today": 4.5,
+      "yesterday": 0.9,
+      "1w": -9.1,
+      "1m": -25.5,
+      "1y": -48.3
+    }
+  },
+  {
+    "ticker": "108320",
+    "name": "LX세미콘",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 263020,
+    "market_cap_rank": 7,
+    "changes": {
+      "today": -7.5,
+      "yesterday": -20.7,
+      "1w": 39.0,
+      "1m": 37.4,
+      "1y": 29.4
+    }
+  },
+  {
+    "ticker": "373220",
+    "name": "LG에너지솔루션",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 172150,
+    "market_cap_rank": 8,
+    "changes": {
+      "today": 11.0,
+      "yesterday": 12.6,
+      "1w": 7.8,
+      "1m": -3.4,
+      "1y": -21.0
+    }
+  },
+  {
+    "ticker": "006400",
+    "name": "삼성SDI",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 81280,
+    "market_cap_rank": 9,
+    "changes": {
+      "today": -1.0,
+      "yesterday": -9.0,
+      "1w": -23.4,
+      "1m": -44.2,
+      "1y": 56.7
+    }
+  },
+  {
+    "ticker": "003670",
+    "name": "포스코퓨처엠",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 880410,
+    "market_cap_rank": 10,
+    "changes": {
+      "today": -13.0,
+      "yesterday": 24.3,
+      "1w": 24.7,
+      "1m": 18.7,
+      "1y": 6.3
+    }
+  },
+  {
+    "ticker": "247540",
+    "name": "에코프로비엠",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 789540,
+    "market_cap_rank": 11,
+    "changes": {
+      "today": 5.5,
+      "yesterday": 2.7,
+      "1w": -6.5,
+      "1m": -22.1,
+      "1y": -44.1
+    }
+  },
+  {
+    "ticker": "086520",
+    "name": "에코프로",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 698670,
+    "market_cap_rank": 12,
+    "changes": {
+      "today": -6.5,
+      "yesterday": -18.9,
+      "1w": -37.7,
+      "1m": 40.8,
+      "1y": 33.6
+    }
+  },
+  {
+    "ticker": "066970",
+    "name": "엘앤에프",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 607800,
+    "market_cap_rank": 13,
+    "changes": {
+      "today": 12.0,
+      "yesterday": 14.4,
+      "1w": 10.4,
+      "1m": 0.0,
+      "1y": -16.8
+    }
+  },
+  {
+    "ticker": "096770",
+    "name": "SK이노베이션",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 516030,
+    "market_cap_rank": 14,
+    "changes": {
+      "today": 0.0,
+      "yesterday": -7.2,
+      "1w": -20.8,
+      "1m": -40.8,
+      "1y": 60.9
+    }
+  },
+  {
+    "ticker": "207940",
+    "name": "삼성바이오로직스",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 425160,
+    "market_cap_rank": 15,
+    "changes": {
+      "today": -12.0,
+      "yesterday": 26.1,
+      "1w": 27.3,
+      "1m": 22.1,
+      "1y": 10.5
+    }
+  },
+  {
+    "ticker": "068270",
+    "name": "셀트리온",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 334300,
+    "market_cap_rank": 16,
+    "changes": {
+      "today": 6.5,
+      "yesterday": 4.5,
+      "1w": -3.9,
+      "1m": -18.7,
+      "1y": -39.9
+    }
+  },
+  {
+    "ticker": "326030",
+    "name": "SK바이오팜",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 243430,
+    "market_cap_rank": 17,
+    "changes": {
+      "today": -5.5,
+      "yesterday": -17.1,
+      "1w": -35.1,
+      "1m": 44.2,
+      "1y": 37.8
+    }
+  },
+  {
+    "ticker": "000100",
+    "name": "유한양행",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 152560,
+    "market_cap_rank": 18,
+    "changes": {
+      "today": 13.0,
+      "yesterday": 16.2,
+      "1w": 13.0,
+      "1m": 3.4,
+      "1y": -12.6
+    }
+  },
+  {
+    "ticker": "128940",
+    "name": "한미약품",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 61690,
+    "market_cap_rank": 19,
+    "changes": {
+      "today": 1.0,
+      "yesterday": -5.4,
+      "1w": -18.2,
+      "1m": -37.4,
+      "1y": -63.0
+    }
+  },
+  {
+    "ticker": "185750",
+    "name": "종근당",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 860820,
+    "market_cap_rank": 20,
+    "changes": {
+      "today": -11.0,
+      "yesterday": -27.0,
+      "1w": 29.9,
+      "1m": 25.5,
+      "1y": 14.7
+    }
+  },
+  {
+    "ticker": "006280",
+    "name": "녹십자",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 769050,
+    "market_cap_rank": 21,
+    "changes": {
+      "today": 7.5,
+      "yesterday": 6.3,
+      "1w": -1.3,
+      "1m": -15.3,
+      "1y": -35.7
+    }
+  },
+  {
+    "ticker": "005380",
+    "name": "현대차",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 678180,
+    "market_cap_rank": 22,
+    "changes": {
+      "today": -4.5,
+      "yesterday": -15.3,
+      "1w": -32.5,
+      "1m": 47.6,
+      "1y": 42.0
+    }
+  },
+  {
+    "ticker": "000270",
+    "name": "기아",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 587310,
+    "market_cap_rank": 23,
+    "changes": {
+      "today": 14.0,
+      "yesterday": 18.0,
+      "1w": 15.6,
+      "1m": 6.8,
+      "1y": -8.4
+    }
+  },
+  {
+    "ticker": "012330",
+    "name": "현대모비스",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 496440,
+    "market_cap_rank": 24,
+    "changes": {
+      "today": 2.0,
+      "yesterday": -3.6,
+      "1w": -15.6,
+      "1m": -34.0,
+      "1y": -58.8
+    }
+  },
+  {
+    "ticker": "204320",
+    "name": "HL만도",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 405580,
+    "market_cap_rank": 25,
+    "changes": {
+      "today": -10.0,
+      "yesterday": -25.2,
+      "1w": 32.5,
+      "1m": 28.9,
+      "1y": 18.9
+    }
+  },
+  {
+    "ticker": "018880",
+    "name": "한온시스템",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 314710,
+    "market_cap_rank": 26,
+    "changes": {
+      "today": 8.5,
+      "yesterday": 8.1,
+      "1w": 1.3,
+      "1m": -11.9,
+      "1y": -31.5
+    }
+  },
+  {
+    "ticker": "011210",
+    "name": "현대위아",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 223840,
+    "market_cap_rank": 27,
+    "changes": {
+      "today": -3.5,
+      "yesterday": -13.5,
+      "1w": -29.9,
+      "1m": 51.0,
+      "1y": 46.2
+    }
+  },
+  {
+    "ticker": "105560",
+    "name": "KB금융",
+    "market": "KR",
+    "sector": "금융",
+    "price": 132070,
+    "market_cap_rank": 28,
+    "changes": {
+      "today": 15.0,
+      "yesterday": 19.8,
+      "1w": 18.2,
+      "1m": 10.2,
+      "1y": -4.2
+    }
+  },
+  {
+    "ticker": "055550",
+    "name": "신한지주",
+    "market": "KR",
+    "sector": "금융",
+    "price": 41200,
+    "market_cap_rank": 29,
+    "changes": {
+      "today": 3.0,
+      "yesterday": -1.8,
+      "1w": -13.0,
+      "1m": -30.6,
+      "1y": -54.6
+    }
+  },
+  {
+    "ticker": "086790",
+    "name": "하나금융지주",
+    "market": "KR",
+    "sector": "금융",
+    "price": 840330,
+    "market_cap_rank": 30,
+    "changes": {
+      "today": -9.0,
+      "yesterday": -23.4,
+      "1w": 35.1,
+      "1m": 32.3,
+      "1y": 23.1
+    }
+  },
+  {
+    "ticker": "316140",
+    "name": "우리금융지주",
+    "market": "KR",
+    "sector": "금융",
+    "price": 749460,
+    "market_cap_rank": 31,
+    "changes": {
+      "today": 9.5,
+      "yesterday": 9.9,
+      "1w": 3.9,
+      "1m": -8.5,
+      "1y": -27.3
+    }
+  },
+  {
+    "ticker": "032830",
+    "name": "삼성생명",
+    "market": "KR",
+    "sector": "금융",
+    "price": 658590,
+    "market_cap_rank": 32,
+    "changes": {
+      "today": -2.5,
+      "yesterday": -11.7,
+      "1w": -27.3,
+      "1m": -49.3,
+      "1y": 50.4
+    }
+  },
+  {
+    "ticker": "000810",
+    "name": "삼성화재",
+    "market": "KR",
+    "sector": "금융",
+    "price": 567720,
+    "market_cap_rank": 33,
+    "changes": {
+      "today": -14.5,
+      "yesterday": 21.6,
+      "1w": 20.8,
+      "1m": 13.6,
+      "1y": 0.0
+    }
+  },
+  {
+    "ticker": "138040",
+    "name": "메리츠금융지주",
+    "market": "KR",
+    "sector": "금융",
+    "price": 476850,
+    "market_cap_rank": 34,
+    "changes": {
+      "today": 4.0,
+      "yesterday": 0.0,
+      "1w": -10.4,
+      "1m": -27.2,
+      "1y": -50.4
+    }
+  },
+  {
+    "ticker": "006800",
+    "name": "미래에셋증권",
+    "market": "KR",
+    "sector": "금융",
+    "price": 385080,
+    "market_cap_rank": 35,
+    "changes": {
+      "today": -8.0,
+      "yesterday": -21.6,
+      "1w": 37.7,
+      "1m": 35.7,
+      "1y": 27.3
+    }
+  },
+  {
+    "ticker": "035420",
+    "name": "NAVER",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 294220,
+    "market_cap_rank": 36,
+    "changes": {
+      "today": 10.5,
+      "yesterday": 11.7,
+      "1w": 6.5,
+      "1m": -5.1,
+      "1y": -23.1
+    }
+  },
+  {
+    "ticker": "035720",
+    "name": "카카오",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 203350,
+    "market_cap_rank": 37,
+    "changes": {
+      "today": -1.5,
+      "yesterday": -9.9,
+      "1w": -24.7,
+      "1m": -45.9,
+      "1y": 54.6
+    }
+  },
+  {
+    "ticker": "259960",
+    "name": "크래프톤",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 112480,
+    "market_cap_rank": 38,
+    "changes": {
+      "today": -13.5,
+      "yesterday": 23.4,
+      "1w": 23.4,
+      "1m": 17.0,
+      "1y": 4.2
+    }
+  },
+  {
+    "ticker": "036570",
+    "name": "엔씨소프트",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 21610,
+    "market_cap_rank": 39,
+    "changes": {
+      "today": 5.0,
+      "yesterday": 1.8,
+      "1w": -7.8,
+      "1m": -23.8,
+      "1y": -46.2
+    }
+  },
+  {
+    "ticker": "251270",
+    "name": "넷마블",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 820740,
+    "market_cap_rank": 40,
+    "changes": {
+      "today": -7.0,
+      "yesterday": -19.8,
+      "1w": -39.0,
+      "1m": 39.1,
+      "1y": 31.5
+    }
+  },
+  {
+    "ticker": "263750",
+    "name": "펄어비스",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 729870,
+    "market_cap_rank": 41,
+    "changes": {
+      "today": 11.5,
+      "yesterday": 13.5,
+      "1w": 9.1,
+      "1m": -1.7,
+      "1y": -18.9
+    }
+  },
+  {
+    "ticker": "293490",
+    "name": "카카오게임즈",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 638100,
+    "market_cap_rank": 42,
+    "changes": {
+      "today": -0.5,
+      "yesterday": -8.1,
+      "1w": -22.1,
+      "1m": -42.5,
+      "1y": 58.8
+    }
+  },
+  {
+    "ticker": "112040",
+    "name": "위메이드",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 547230,
+    "market_cap_rank": 43,
+    "changes": {
+      "today": -12.5,
+      "yesterday": 25.2,
+      "1w": 26.0,
+      "1m": 20.4,
+      "1y": 8.4
+    }
+  },
+  {
+    "ticker": "352820",
+    "name": "하이브",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 456360,
+    "market_cap_rank": 44,
+    "changes": {
+      "today": 6.0,
+      "yesterday": 3.6,
+      "1w": -5.2,
+      "1m": -20.4,
+      "1y": -42.0
+    }
+  },
+  {
+    "ticker": "035900",
+    "name": "JYP Ent.",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 365500,
+    "market_cap_rank": 45,
+    "changes": {
+      "today": -6.0,
+      "yesterday": -18.0,
+      "1w": -36.4,
+      "1m": 42.5,
+      "1y": 35.7
+    }
+  },
+  {
+    "ticker": "041510",
+    "name": "에스엠",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 274630,
+    "market_cap_rank": 46,
+    "changes": {
+      "today": 12.5,
+      "yesterday": 15.3,
+      "1w": 11.7,
+      "1m": 1.7,
+      "1y": -14.7
+    }
+  },
+  {
+    "ticker": "122870",
+    "name": "와이지엔터테인먼트",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 183760,
+    "market_cap_rank": 47,
+    "changes": {
+      "today": 0.5,
+      "yesterday": -6.3,
+      "1w": -19.5,
+      "1m": -39.1,
+      "1y": 63.0
+    }
+  },
+  {
+    "ticker": "035760",
+    "name": "CJ ENM",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 92890,
+    "market_cap_rank": 48,
+    "changes": {
+      "today": -11.5,
+      "yesterday": 27.0,
+      "1w": 28.6,
+      "1m": 23.8,
+      "1y": 12.6
+    }
+  },
+  {
+    "ticker": "253450",
+    "name": "스튜디오드래곤",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 891120,
+    "market_cap_rank": 49,
+    "changes": {
+      "today": 7.0,
+      "yesterday": 5.4,
+      "1w": -2.6,
+      "1m": -17.0,
+      "1y": -37.8
+    }
+  },
+  {
+    "ticker": "329180",
+    "name": "HD현대중공업",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 800250,
+    "market_cap_rank": 50,
+    "changes": {
+      "today": -5.0,
+      "yesterday": -16.2,
+      "1w": -33.8,
+      "1m": 45.9,
+      "1y": 39.9
+    }
+  },
+  {
+    "ticker": "012450",
+    "name": "한화에어로스페이스",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 709380,
+    "market_cap_rank": 51,
+    "changes": {
+      "today": 13.5,
+      "yesterday": 17.1,
+      "1w": 14.3,
+      "1m": 5.1,
+      "1y": -10.5
+    }
+  },
+  {
+    "ticker": "042660",
+    "name": "한화오션",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 618510,
+    "market_cap_rank": 52,
+    "changes": {
+      "today": 1.5,
+      "yesterday": -4.5,
+      "1w": -16.9,
+      "1m": -35.7,
+      "1y": -60.9
+    }
+  },
+  {
+    "ticker": "009540",
+    "name": "HD한국조선해양",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 527640,
+    "market_cap_rank": 53,
+    "changes": {
+      "today": -10.5,
+      "yesterday": -26.1,
+      "1w": 31.2,
+      "1m": 27.2,
+      "1y": 16.8
+    }
+  },
+  {
+    "ticker": "010140",
+    "name": "삼성중공업",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 436770,
+    "market_cap_rank": 54,
+    "changes": {
+      "today": 8.0,
+      "yesterday": 7.2,
+      "1w": 0.0,
+      "1m": -13.6,
+      "1y": -33.6
+    }
+  },
+  {
+    "ticker": "064350",
+    "name": "현대로템",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 345000,
+    "market_cap_rank": 55,
+    "changes": {
+      "today": -4.0,
+      "yesterday": -14.4,
+      "1w": -31.2,
+      "1m": 49.3,
+      "1y": 44.1
+    }
+  },
+  {
+    "ticker": "079550",
+    "name": "LIG넥스원",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 254140,
+    "market_cap_rank": 56,
+    "changes": {
+      "today": 14.5,
+      "yesterday": 18.9,
+      "1w": 16.9,
+      "1m": 8.5,
+      "1y": -6.3
+    }
+  },
+  {
+    "ticker": "047810",
+    "name": "한국항공우주",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 163270,
+    "market_cap_rank": 57,
+    "changes": {
+      "today": 2.5,
+      "yesterday": -2.7,
+      "1w": -14.3,
+      "1m": -32.3,
+      "1y": -56.7
+    }
+  },
+  {
+    "ticker": "005490",
+    "name": "POSCO홀딩스",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 72400,
+    "market_cap_rank": 58,
+    "changes": {
+      "today": -9.5,
+      "yesterday": -24.3,
+      "1w": 33.8,
+      "1m": 30.6,
+      "1y": 21.0
+    }
+  },
+  {
+    "ticker": "051910",
+    "name": "LG화학",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 871530,
+    "market_cap_rank": 59,
+    "changes": {
+      "today": 9.0,
+      "yesterday": 9.0,
+      "1w": 2.6,
+      "1m": -10.2,
+      "1y": -29.4
+    }
+  },
+  {
+    "ticker": "011170",
+    "name": "롯데케미칼",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 780660,
+    "market_cap_rank": 60,
+    "changes": {
+      "today": -3.0,
+      "yesterday": -12.6,
+      "1w": -28.6,
+      "1m": -51.0,
+      "1y": 48.3
+    }
+  },
+  {
+    "ticker": "011780",
+    "name": "금호석유",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 689790,
+    "market_cap_rank": 61,
+    "changes": {
+      "today": -15.0,
+      "yesterday": 20.7,
+      "1w": 19.5,
+      "1m": 11.9,
+      "1y": -2.1
+    }
+  },
+  {
+    "ticker": "009830",
+    "name": "한화솔루션",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 598020,
+    "market_cap_rank": 62,
+    "changes": {
+      "today": 3.5,
+      "yesterday": -0.9,
+      "1w": -11.7,
+      "1m": -28.9,
+      "1y": -52.5
+    }
+  },
+  {
+    "ticker": "004020",
+    "name": "현대제철",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 507150,
+    "market_cap_rank": 63,
+    "changes": {
+      "today": -8.5,
+      "yesterday": -22.5,
+      "1w": 36.4,
+      "1m": 34.0,
+      "1y": 25.2
+    }
+  },
+  {
+    "ticker": "010130",
+    "name": "고려아연",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 416280,
+    "market_cap_rank": 64,
+    "changes": {
+      "today": 10.0,
+      "yesterday": 10.8,
+      "1w": 5.2,
+      "1m": -6.8,
+      "1y": -25.2
+    }
+  },
+  {
+    "ticker": "097950",
+    "name": "CJ제일제당",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 325420,
+    "market_cap_rank": 65,
+    "changes": {
+      "today": -2.0,
+      "yesterday": -10.8,
+      "1w": -26.0,
+      "1m": -47.6,
+      "1y": 52.5
+    }
+  },
+  {
+    "ticker": "139480",
+    "name": "이마트",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 234550,
+    "market_cap_rank": 66,
+    "changes": {
+      "today": -14.0,
+      "yesterday": 22.5,
+      "1w": 22.1,
+      "1m": 15.3,
+      "1y": 2.1
+    }
+  },
+  {
+    "ticker": "271560",
+    "name": "오리온",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 143680,
+    "market_cap_rank": 67,
+    "changes": {
+      "today": 4.5,
+      "yesterday": 0.9,
+      "1w": -9.1,
+      "1m": -25.5,
+      "1y": -48.3
+    }
+  },
+  {
+    "ticker": "023530",
+    "name": "롯데쇼핑",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 52810,
+    "market_cap_rank": 68,
+    "changes": {
+      "today": -7.5,
+      "yesterday": -20.7,
+      "1w": 39.0,
+      "1m": 37.4,
+      "1y": 29.4
+    }
+  },
+  {
+    "ticker": "004370",
+    "name": "농심",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 851040,
+    "market_cap_rank": 69,
+    "changes": {
+      "today": 11.0,
+      "yesterday": 12.6,
+      "1w": 7.8,
+      "1m": -3.4,
+      "1y": -21.0
+    }
+  },
+  {
+    "ticker": "033780",
+    "name": "KT&G",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 760170,
+    "market_cap_rank": 70,
+    "changes": {
+      "today": -1.0,
+      "yesterday": -9.0,
+      "1w": -23.4,
+      "1m": -44.2,
+      "1y": 56.7
+    }
+  },
+  {
+    "ticker": "000080",
+    "name": "하이트진로",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 669300,
+    "market_cap_rank": 71,
+    "changes": {
+      "today": -13.0,
+      "yesterday": 24.3,
+      "1w": 24.7,
+      "1m": 18.7,
+      "1y": 6.3
+    }
+  },
+  {
+    "ticker": "007310",
+    "name": "오뚜기",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 578430,
+    "market_cap_rank": 72,
+    "changes": {
+      "today": 5.5,
+      "yesterday": 2.7,
+      "1w": -6.5,
+      "1m": -22.1,
+      "1y": -44.1
+    }
+  }
+]

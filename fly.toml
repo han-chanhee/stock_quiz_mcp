@@ -1,0 +1,39 @@
+# Fly.io 배포 설정 — Stock Quiz Dictionary(주식사전 퀴즈) MCP
+# 핵심: 머신 정확히 1개(인메모리 store 전제) + 상시가동 + 최소 비용.
+#
+# app 이름은 전역 고유해야 함 — 이미 쓰이면 아래 값을 바꾸거나
+# `fly launch` 실행 시 프롬프트에서 새 이름을 지정하세요.
+app = "stock-quiz-mcp"
+primary_region = "nrt"          # 도쿄 (한국에서 지연 낮음)
+
+[build]
+  # 루트의 Dockerfile을 사용 (자동 감지)
+
+[env]
+  PORT = "8000"
+  HOST = "0.0.0.0"
+  # 공개 도메인(*.fly.dev) 요청이 Host 보호에 막히지 않도록 해제.
+  # (공개·읽기전용·무인증 서버라 허용 가능)
+  DISABLE_HOST_PROTECTION = "1"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # 상시가동: 유휴에도 끄지 않음(인메모리 퀴즈 상태 유지 + 콜드스타트 방지)
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # 헬스체크: /health 200 확인
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+# 최소 사양 (이 앱엔 충분). 비용 최소화의 핵심 = 머신 1개 유지.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1

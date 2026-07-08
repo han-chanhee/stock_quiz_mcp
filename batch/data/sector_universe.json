@@ -1,0 +1,362 @@
+[
+  {
+    "ticker": "005930",
+    "name": "삼성전자",
+    "sector": "반도체"
+  },
+  {
+    "ticker": "000660",
+    "name": "SK하이닉스",
+    "sector": "반도체"
+  },
+  {
+    "ticker": "009150",
+    "name": "삼성전기",
+    "sector": "반도체"
+  },
+  {
+    "ticker": "000990",
+    "name": "DB하이텍",
+    "sector": "반도체"
+  },
+  {
+    "ticker": "042700",
+    "name": "한미반도체",
+    "sector": "반도체"
+  },
+  {
+    "ticker": "058470",
+    "name": "리노공업",
+    "sector": "반도체"
+  },
+  {
+    "ticker": "108320",
+    "name": "LX세미콘",
+    "sector": "반도체"
+  },
+  {
+    "ticker": "373220",
+    "name": "LG에너지솔루션",
+    "sector": "2차전지"
+  },
+  {
+    "ticker": "006400",
+    "name": "삼성SDI",
+    "sector": "2차전지"
+  },
+  {
+    "ticker": "003670",
+    "name": "포스코퓨처엠",
+    "sector": "2차전지"
+  },
+  {
+    "ticker": "247540",
+    "name": "에코프로비엠",
+    "sector": "2차전지"
+  },
+  {
+    "ticker": "086520",
+    "name": "에코프로",
+    "sector": "2차전지"
+  },
+  {
+    "ticker": "066970",
+    "name": "엘앤에프",
+    "sector": "2차전지"
+  },
+  {
+    "ticker": "096770",
+    "name": "SK이노베이션",
+    "sector": "2차전지"
+  },
+  {
+    "ticker": "207940",
+    "name": "삼성바이오로직스",
+    "sector": "바이오"
+  },
+  {
+    "ticker": "068270",
+    "name": "셀트리온",
+    "sector": "바이오"
+  },
+  {
+    "ticker": "326030",
+    "name": "SK바이오팜",
+    "sector": "바이오"
+  },
+  {
+    "ticker": "000100",
+    "name": "유한양행",
+    "sector": "바이오"
+  },
+  {
+    "ticker": "128940",
+    "name": "한미약품",
+    "sector": "바이오"
+  },
+  {
+    "ticker": "185750",
+    "name": "종근당",
+    "sector": "바이오"
+  },
+  {
+    "ticker": "006280",
+    "name": "녹십자",
+    "sector": "바이오"
+  },
+  {
+    "ticker": "005380",
+    "name": "현대차",
+    "sector": "자동차"
+  },
+  {
+    "ticker": "000270",
+    "name": "기아",
+    "sector": "자동차"
+  },
+  {
+    "ticker": "012330",
+    "name": "현대모비스",
+    "sector": "자동차"
+  },
+  {
+    "ticker": "204320",
+    "name": "HL만도",
+    "sector": "자동차"
+  },
+  {
+    "ticker": "018880",
+    "name": "한온시스템",
+    "sector": "자동차"
+  },
+  {
+    "ticker": "011210",
+    "name": "현대위아",
+    "sector": "자동차"
+  },
+  {
+    "ticker": "105560",
+    "name": "KB금융",
+    "sector": "금융"
+  },
+  {
+    "ticker": "055550",
+    "name": "신한지주",
+    "sector": "금융"
+  },
+  {
+    "ticker": "086790",
+    "name": "하나금융지주",
+    "sector": "금융"
+  },
+  {
+    "ticker": "316140",
+    "name": "우리금융지주",
+    "sector": "금융"
+  },
+  {
+    "ticker": "032830",
+    "name": "삼성생명",
+    "sector": "금융"
+  },
+  {
+    "ticker": "000810",
+    "name": "삼성화재",
+    "sector": "금융"
+  },
+  {
+    "ticker": "138040",
+    "name": "메리츠금융지주",
+    "sector": "금융"
+  },
+  {
+    "ticker": "006800",
+    "name": "미래에셋증권",
+    "sector": "금융"
+  },
+  {
+    "ticker": "035420",
+    "name": "NAVER",
+    "sector": "인터넷게임"
+  },
+  {
+    "ticker": "035720",
+    "name": "카카오",
+    "sector": "인터넷게임"
+  },
+  {
+    "ticker": "259960",
+    "name": "크래프톤",
+    "sector": "인터넷게임"
+  },
+  {
+    "ticker": "036570",
+    "name": "엔씨소프트",
+    "sector": "인터넷게임"
+  },
+  {
+    "ticker": "251270",
+    "name": "넷마블",
+    "sector": "인터넷게임"
+  },
+  {
+    "ticker": "263750",
+    "name": "펄어비스",
+    "sector": "인터넷게임"
+  },
+  {
+    "ticker": "293490",
+    "name": "카카오게임즈",
+    "sector": "인터넷게임"
+  },
+  {
+    "ticker": "112040",
+    "name": "위메이드",
+    "sector": "인터넷게임"
+  },
+  {
+    "ticker": "352820",
+    "name": "하이브",
+    "sector": "엔터"
+  },
+  {
+    "ticker": "035900",
+    "name": "JYP Ent.",
+    "sector": "엔터"
+  },
+  {
+    "ticker": "041510",
+    "name": "에스엠",
+    "sector": "엔터"
+  },
+  {
+    "ticker": "122870",
+    "name": "와이지엔터테인먼트",
+    "sector": "엔터"
+  },
+  {
+    "ticker": "035760",
+    "name": "CJ ENM",
+    "sector": "엔터"
+  },
+  {
+    "ticker": "253450",
+    "name": "스튜디오드래곤",
+    "sector": "엔터"
+  },
+  {
+    "ticker": "329180",
+    "name": "HD현대중공업",
+    "sector": "조선방산"
+  },
+  {
+    "ticker": "012450",
+    "name": "한화에어로스페이스",
+    "sector": "조선방산"
+  },
+  {
+    "ticker": "042660",
+    "name": "한화오션",
+    "sector": "조선방산"
+  },
+  {
+    "ticker": "009540",
+    "name": "HD한국조선해양",
+    "sector": "조선방산"
+  },
+  {
+    "ticker": "010140",
+    "name": "삼성중공업",
+    "sector": "조선방산"
+  },
+  {
+    "ticker": "064350",
+    "name": "현대로템",
+    "sector": "조선방산"
+  },
+  {
+    "ticker": "079550",
+    "name": "LIG넥스원",
+    "sector": "조선방산"
+  },
+  {
+    "ticker": "047810",
+    "name": "한국항공우주",
+    "sector": "조선방산"
+  },
+  {
+    "ticker": "005490",
+    "name": "POSCO홀딩스",
+    "sector": "화학철강"
+  },
+  {
+    "ticker": "051910",
+    "name": "LG화학",
+    "sector": "화학철강"
+  },
+  {
+    "ticker": "011170",
+    "name": "롯데케미칼",
+    "sector": "화학철강"
+  },
+  {
+    "ticker": "011780",
+    "name": "금호석유",
+    "sector": "화학철강"
+  },
+  {
+    "ticker": "009830",
+    "name": "한화솔루션",
+    "sector": "화학철강"
+  },
+  {
+    "ticker": "004020",
+    "name": "현대제철",
+    "sector": "화학철강"
+  },
+  {
+    "ticker": "010130",
+    "name": "고려아연",
+    "sector": "화학철강"
+  },
+  {
+    "ticker": "097950",
+    "name": "CJ제일제당",
+    "sector": "유통식품"
+  },
+  {
+    "ticker": "139480",
+    "name": "이마트",
+    "sector": "유통식품"
+  },
+  {
+    "ticker": "271560",
+    "name": "오리온",
+    "sector": "유통식품"
+  },
+  {
+    "ticker": "023530",
+    "name": "롯데쇼핑",
+    "sector": "유통식품"
+  },
+  {
+    "ticker": "004370",
+    "name": "농심",
+    "sector": "유통식품"
+  },
+  {
+    "ticker": "033780",
+    "name": "KT&G",
+    "sector": "유통식품"
+  },
+  {
+    "ticker": "000080",
+    "name": "하이트진로",
+    "sector": "유통식품"
+  },
+  {
+    "ticker": "007310",
+    "name": "오뚜기",
+    "sector": "유통식품"
+  }
+]

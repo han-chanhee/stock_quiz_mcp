@@ -1,0 +1,4 @@
+# file: C:\Users\82109\Downloads\stock-quiz-mcp\stock-quiz-mcp\clients\__init__.py
+# hypothesis_version: 6.141.1
+
+['MOCK_AS_OF', 'MarketClient', 'MockMarketClient', 'TokenBucket']

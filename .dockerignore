@@ -1,0 +1,28 @@
+# 시크릿/로컬 환경은 절대 이미지에 굽지 않는다 (런타임 env로 주입)
+.env
+.env.*
+*.pem
+*.key
+
+# 가상환경/캐시 (Windows 바이너리 — 이미지 오염 + 용량 폭증)
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 개발 산출물/메타
+.git/
+.gitignore
+.vscode/
+.idea/
+*.md
+!batch/data/*.json
+scratchpad/
+tests/
+
+# OS 잡파일
+.DS_Store
+Thumbs.db

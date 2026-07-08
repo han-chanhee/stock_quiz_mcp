@@ -1,0 +1,722 @@
+[
+  {
+    "ticker": "005930",
+    "name": "삼성전자",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 296000.0,
+    "change_pct": -6.92,
+    "market_cap_rank": 1,
+    "as_of": "2026-07-08T03:52:09.812320+09:00"
+  },
+  {
+    "ticker": "000660",
+    "name": "SK하이닉스",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 2201000.0,
+    "change_pct": -6.06,
+    "market_cap_rank": 2,
+    "as_of": "2026-07-08T03:52:10.165717+09:00"
+  },
+  {
+    "ticker": "009150",
+    "name": "삼성전기",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 1648000.0,
+    "change_pct": -9.85,
+    "market_cap_rank": 5,
+    "as_of": "2026-07-08T03:52:11.095365+09:00"
+  },
+  {
+    "ticker": "000990",
+    "name": "DB하이텍",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 111800.0,
+    "change_pct": -0.97,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:11.967396+09:00"
+  },
+  {
+    "ticker": "042700",
+    "name": "한미반도체",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 210500.0,
+    "change_pct": -7.06,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:12.001851+09:00"
+  },
+  {
+    "ticker": "058470",
+    "name": "리노공업",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 71900.0,
+    "change_pct": -4.01,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:12.900790+09:00"
+  },
+  {
+    "ticker": "108320",
+    "name": "LX세미콘",
+    "market": "KR",
+    "sector": "반도체",
+    "price": 39300.0,
+    "change_pct": 0.9,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:13.837971+09:00"
+  },
+  {
+    "ticker": "373220",
+    "name": "LG에너지솔루션",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 332000.0,
+    "change_pct": -6.35,
+    "market_cap_rank": 7,
+    "as_of": "2026-07-08T03:52:14.172653+09:00"
+  },
+  {
+    "ticker": "006400",
+    "name": "삼성SDI",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 445000.0,
+    "change_pct": -1.44,
+    "market_cap_rank": 20,
+    "as_of": "2026-07-08T03:52:15.105591+09:00"
+  },
+  {
+    "ticker": "003670",
+    "name": "포스코퓨처엠",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 158200.0,
+    "change_pct": -0.82,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:15.432524+09:00"
+  },
+  {
+    "ticker": "247540",
+    "name": "에코프로비엠",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 120200.0,
+    "change_pct": -1.23,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:15.465873+09:00"
+  },
+  {
+    "ticker": "086520",
+    "name": "에코프로",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 84400.0,
+    "change_pct": -1.29,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:15.816552+09:00"
+  },
+  {
+    "ticker": "066970",
+    "name": "엘앤에프",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 99500.0,
+    "change_pct": -3.77,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:15.832193+09:00"
+  },
+  {
+    "ticker": "096770",
+    "name": "SK이노베이션",
+    "market": "KR",
+    "sector": "2차전지",
+    "price": 103800.0,
+    "change_pct": 7.56,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:16.187894+09:00"
+  },
+  {
+    "ticker": "207940",
+    "name": "삼성바이오로직스",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 1422000.0,
+    "change_pct": 1.21,
+    "market_cap_rank": 10,
+    "as_of": "2026-07-08T03:52:16.527770+09:00"
+  },
+  {
+    "ticker": "068270",
+    "name": "셀트리온",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 178200.0,
+    "change_pct": 1.31,
+    "market_cap_rank": 19,
+    "as_of": "2026-07-08T03:52:16.865345+09:00"
+  },
+  {
+    "ticker": "326030",
+    "name": "SK바이오팜",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 84900.0,
+    "change_pct": 1.07,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:17.764766+09:00"
+  },
+  {
+    "ticker": "000100",
+    "name": "유한양행",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 70300.0,
+    "change_pct": 1.01,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:18.115415+09:00"
+  },
+  {
+    "ticker": "128940",
+    "name": "한미약품",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 430000.0,
+    "change_pct": 1.65,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:19.019580+09:00"
+  },
+  {
+    "ticker": "185750",
+    "name": "종근당",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 70200.0,
+    "change_pct": 1.59,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:19.367436+09:00"
+  },
+  {
+    "ticker": "006280",
+    "name": "녹십자",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 125000.0,
+    "change_pct": 2.04,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:19.382122+09:00"
+  },
+  {
+    "ticker": "005380",
+    "name": "현대차",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 479500.0,
+    "change_pct": -4.48,
+    "market_cap_rank": 6,
+    "as_of": "2026-07-08T03:52:19.732020+09:00"
+  },
+  {
+    "ticker": "000270",
+    "name": "기아",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 153700.0,
+    "change_pct": -4.36,
+    "market_cap_rank": 12,
+    "as_of": "2026-07-08T03:52:19.747451+09:00"
+  },
+  {
+    "ticker": "012330",
+    "name": "현대모비스",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 495000.0,
+    "change_pct": -3.88,
+    "market_cap_rank": 18,
+    "as_of": "2026-07-08T03:52:19.780831+09:00"
+  },
+  {
+    "ticker": "204320",
+    "name": "HL만도",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 48400.0,
+    "change_pct": -2.62,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:20.720598+09:00"
+  },
+  {
+    "ticker": "018880",
+    "name": "한온시스템",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 3695.0,
+    "change_pct": -1.99,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:20.730313+09:00"
+  },
+  {
+    "ticker": "011210",
+    "name": "현대위아",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 63000.0,
+    "change_pct": -2.33,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:21.666462+09:00"
+  },
+  {
+    "ticker": "032830",
+    "name": "삼성생명",
+    "market": "KR",
+    "sector": "금융",
+    "price": 375000.0,
+    "change_pct": -4.7,
+    "market_cap_rank": 8,
+    "as_of": "2026-07-08T03:52:23.059685+09:00"
+  },
+  {
+    "ticker": "105560",
+    "name": "KB금융",
+    "market": "KR",
+    "sector": "금융",
+    "price": 173200.0,
+    "change_pct": 1.35,
+    "market_cap_rank": 11,
+    "as_of": "2026-07-08T03:52:22.018420+09:00"
+  },
+  {
+    "ticker": "055550",
+    "name": "신한지주",
+    "market": "KR",
+    "sector": "금융",
+    "price": 108600.0,
+    "change_pct": 0.84,
+    "market_cap_rank": 16,
+    "as_of": "2026-07-08T03:52:22.367339+09:00"
+  },
+  {
+    "ticker": "086790",
+    "name": "하나금융지주",
+    "market": "KR",
+    "sector": "금융",
+    "price": 126900.0,
+    "change_pct": 1.68,
+    "market_cap_rank": 21,
+    "as_of": "2026-07-08T03:52:22.713512+09:00"
+  },
+  {
+    "ticker": "000810",
+    "name": "삼성화재",
+    "market": "KR",
+    "sector": "금융",
+    "price": 682000.0,
+    "change_pct": 1.19,
+    "market_cap_rank": 26,
+    "as_of": "2026-07-08T03:52:23.080387+09:00"
+  },
+  {
+    "ticker": "316140",
+    "name": "우리금융지주",
+    "market": "KR",
+    "sector": "금융",
+    "price": 31550.0,
+    "change_pct": 1.28,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:22.733361+09:00"
+  },
+  {
+    "ticker": "138040",
+    "name": "메리츠금융지주",
+    "market": "KR",
+    "sector": "금융",
+    "price": 114400.0,
+    "change_pct": 1.78,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:23.997794+09:00"
+  },
+  {
+    "ticker": "006800",
+    "name": "미래에셋증권",
+    "market": "KR",
+    "sector": "금융",
+    "price": 42600.0,
+    "change_pct": -4.8,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:24.351047+09:00"
+  },
+  {
+    "ticker": "035420",
+    "name": "NAVER",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 197200.0,
+    "change_pct": 0.31,
+    "market_cap_rank": 23,
+    "as_of": "2026-07-08T03:52:24.371053+09:00"
+  },
+  {
+    "ticker": "035720",
+    "name": "카카오",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 35400.0,
+    "change_pct": -0.56,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:24.702919+09:00"
+  },
+  {
+    "ticker": "259960",
+    "name": "크래프톤",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 245000.0,
+    "change_pct": 4.48,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:25.050104+09:00"
+  },
+  {
+    "ticker": "036570",
+    "name": "엔씨소프트",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 255000.0,
+    "change_pct": 0.99,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:25.061017+09:00"
+  },
+  {
+    "ticker": "251270",
+    "name": "넷마블",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 39250.0,
+    "change_pct": 2.48,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:25.412257+09:00"
+  },
+  {
+    "ticker": "263750",
+    "name": "펄어비스",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 37350.0,
+    "change_pct": 2.61,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:25.769907+09:00"
+  },
+  {
+    "ticker": "293490",
+    "name": "카카오게임즈",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 7780.0,
+    "change_pct": 0.78,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:26.094525+09:00"
+  },
+  {
+    "ticker": "112040",
+    "name": "위메이드",
+    "market": "KR",
+    "sector": "인터넷게임",
+    "price": 18670.0,
+    "change_pct": -5.71,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:26.447569+09:00"
+  },
+  {
+    "ticker": "352820",
+    "name": "하이브",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 232000.0,
+    "change_pct": 7.91,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:26.794750+09:00"
+  },
+  {
+    "ticker": "035900",
+    "name": "JYP Ent.",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 54400.0,
+    "change_pct": 0.93,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:26.815506+09:00"
+  },
+  {
+    "ticker": "041510",
+    "name": "에스엠",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 81900.0,
+    "change_pct": 6.09,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:27.173567+09:00"
+  },
+  {
+    "ticker": "122870",
+    "name": "와이지엔터테인먼트",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 44200.0,
+    "change_pct": 1.49,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:28.110730+09:00"
+  },
+  {
+    "ticker": "035760",
+    "name": "CJ ENM",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 32900.0,
+    "change_pct": 2.97,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:28.135987+09:00"
+  },
+  {
+    "ticker": "253450",
+    "name": "스튜디오드래곤",
+    "market": "KR",
+    "sector": "엔터",
+    "price": 23100.0,
+    "change_pct": 5.72,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:28.481954+09:00"
+  },
+  {
+    "ticker": "329180",
+    "name": "HD현대중공업",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 552000.0,
+    "change_pct": -5.32,
+    "market_cap_rank": 13,
+    "as_of": "2026-07-08T03:52:28.831276+09:00"
+  },
+  {
+    "ticker": "012450",
+    "name": "한화에어로스페이스",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 1122000.0,
+    "change_pct": -3.19,
+    "market_cap_rank": 14,
+    "as_of": "2026-07-08T03:52:28.857900+09:00"
+  },
+  {
+    "ticker": "042660",
+    "name": "한화오션",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 89800.0,
+    "change_pct": -22.65,
+    "market_cap_rank": 27,
+    "as_of": "2026-07-08T03:52:29.781569+09:00"
+  },
+  {
+    "ticker": "009540",
+    "name": "HD한국조선해양",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 360500.0,
+    "change_pct": -1.23,
+    "market_cap_rank": 30,
+    "as_of": "2026-07-08T03:52:30.111960+09:00"
+  },
+  {
+    "ticker": "010140",
+    "name": "삼성중공업",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 22450.0,
+    "change_pct": -5.27,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:30.438650+09:00"
+  },
+  {
+    "ticker": "064350",
+    "name": "현대로템",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 186400.0,
+    "change_pct": -4.75,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:30.778360+09:00"
+  },
+  {
+    "ticker": "079550",
+    "name": "LIG넥스원",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 799000.0,
+    "change_pct": -1.96,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:30.797931+09:00"
+  },
+  {
+    "ticker": "047810",
+    "name": "한국항공우주",
+    "market": "KR",
+    "sector": "조선방산",
+    "price": 160200.0,
+    "change_pct": -0.56,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:31.733842+09:00"
+  },
+  {
+    "ticker": "005490",
+    "name": "POSCO홀딩스",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 315500.0,
+    "change_pct": -1.87,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:32.075473+09:00"
+  },
+  {
+    "ticker": "051910",
+    "name": "LG화학",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 265500.0,
+    "change_pct": -3.98,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:32.990061+09:00"
+  },
+  {
+    "ticker": "011170",
+    "name": "롯데케미칼",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 62900.0,
+    "change_pct": -1.56,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:33.329448+09:00"
+  },
+  {
+    "ticker": "011780",
+    "name": "금호석유",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 117000.0,
+    "change_pct": 0.17,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:33.353565+09:00"
+  },
+  {
+    "ticker": "009830",
+    "name": "한화솔루션",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 31400.0,
+    "change_pct": -0.16,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:34.273199+09:00"
+  },
+  {
+    "ticker": "004020",
+    "name": "현대제철",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 27750.0,
+    "change_pct": -2.29,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:34.296206+09:00"
+  },
+  {
+    "ticker": "010130",
+    "name": "고려아연",
+    "market": "KR",
+    "sector": "화학철강",
+    "price": 1094000.0,
+    "change_pct": -1.71,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:34.639502+09:00"
+  },
+  {
+    "ticker": "097950",
+    "name": "CJ제일제당",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 200500.0,
+    "change_pct": 0.7,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:34.657987+09:00"
+  },
+  {
+    "ticker": "139480",
+    "name": "이마트",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 84700.0,
+    "change_pct": -0.47,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:35.013257+09:00"
+  },
+  {
+    "ticker": "271560",
+    "name": "오리온",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 139500.0,
+    "change_pct": 1.9,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:35.375609+09:00"
+  },
+  {
+    "ticker": "023530",
+    "name": "롯데쇼핑",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 174600.0,
+    "change_pct": 0.98,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:35.406146+09:00"
+  },
+  {
+    "ticker": "004370",
+    "name": "농심",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 364000.0,
+    "change_pct": 3.26,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:35.742258+09:00"
+  },
+  {
+    "ticker": "033780",
+    "name": "KT&G",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 183400.0,
+    "change_pct": 6.26,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:36.101472+09:00"
+  },
+  {
+    "ticker": "000080",
+    "name": "하이트진로",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 15350.0,
+    "change_pct": 1.99,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:36.449868+09:00"
+  },
+  {
+    "ticker": "007310",
+    "name": "오뚜기",
+    "market": "KR",
+    "sector": "유통식품",
+    "price": 323000.0,
+    "change_pct": 1.89,
+    "market_cap_rank": null,
+    "as_of": "2026-07-08T03:52:36.791094+09:00"
+  }
+]

@@ -1,0 +1,13 @@
+# 런타임 의존성 (Python 3.12+)
+# fastmcp 3.x: stateless_http는 run()/http_app()로 전달(3.4.3에서 검증)
+fastmcp>=3.4,<4
+pydantic>=2.7
+httpx>=0.27
+# Linux 배포 성능: uvloop + httptools 활성화(단일 워커 처리량 대폭 향상).
+# Windows 로컬엔 uvloop 미설치라 무시됨 — 성능 게이트는 원격(Docker/Linux)에서 측정.
+uvicorn[standard]>=0.30
+
+# 테스트 의존성
+pytest>=8.0
+pytest-asyncio>=0.23
+hypothesis>=6.100

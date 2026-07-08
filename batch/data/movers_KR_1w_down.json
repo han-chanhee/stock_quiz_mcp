@@ -1,0 +1,72 @@
+[
+  {
+    "rank": 1,
+    "snapshot": {
+      "ticker": "002787",
+      "name": "진흥기업2우B",
+      "market": "KR",
+      "sector": null,
+      "price": 3740.0,
+      "change_pct": -15.96,
+      "market_cap_rank": 1,
+      "as_of": "2026-07-08T03:52:08.049781+09:00"
+    },
+    "period": "1w"
+  },
+  {
+    "rank": 2,
+    "snapshot": {
+      "ticker": "002785",
+      "name": "진흥기업우B",
+      "market": "KR",
+      "sector": null,
+      "price": 1859.0,
+      "change_pct": -13.53,
+      "market_cap_rank": 2,
+      "as_of": "2026-07-08T03:52:08.049781+09:00"
+    },
+    "period": "1w"
+  },
+  {
+    "rank": 3,
+    "snapshot": {
+      "ticker": "365660",
+      "name": "레몬헬스케어",
+      "market": "KR",
+      "sector": null,
+      "price": 12220.0,
+      "change_pct": 30.0,
+      "market_cap_rank": 3,
+      "as_of": "2026-07-08T03:52:08.049781+09:00"
+    },
+    "period": "1w"
+  },
+  {
+    "rank": 4,
+    "snapshot": {
+      "ticker": "001000",
+      "name": "신라섬유",
+      "market": "KR",
+      "sector": null,
+      "price": 935.0,
+      "change_pct": -12.94,
+      "market_cap_rank": 4,
+      "as_of": "2026-07-08T03:52:08.049781+09:00"
+    },
+    "period": "1w"
+  },
+  {
+    "rank": 5,
+    "snapshot": {
+      "ticker": "377220",
+      "name": "프롬바이오",
+      "market": "KR",
+      "sector": null,
+      "price": 580.0,
+      "change_pct": -7.5,
+      "market_cap_rank": 5,
+      "as_of": "2026-07-08T03:52:08.049781+09:00"
+    },
+    "period": "1w"
+  }
+]

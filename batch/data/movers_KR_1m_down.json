@@ -1,0 +1,72 @@
+[
+  {
+    "rank": 1,
+    "snapshot": {
+      "ticker": "228340",
+      "name": "동양파일",
+      "market": "KR",
+      "sector": null,
+      "price": 3425.0,
+      "change_pct": -9.87,
+      "market_cap_rank": 1,
+      "as_of": "2026-07-08T03:52:08.891132+09:00"
+    },
+    "period": "1m"
+  },
+  {
+    "rank": 2,
+    "snapshot": {
+      "ticker": "002787",
+      "name": "진흥기업2우B",
+      "market": "KR",
+      "sector": null,
+      "price": 3740.0,
+      "change_pct": -15.96,
+      "market_cap_rank": 2,
+      "as_of": "2026-07-08T03:52:08.891132+09:00"
+    },
+    "period": "1m"
+  },
+  {
+    "rank": 3,
+    "snapshot": {
+      "ticker": "036420",
+      "name": "콘텐트리중앙",
+      "market": "KR",
+      "sector": null,
+      "price": 1220.0,
+      "change_pct": -23.75,
+      "market_cap_rank": 3,
+      "as_of": "2026-07-08T03:52:08.891132+09:00"
+    },
+    "period": "1m"
+  },
+  {
+    "rank": 4,
+    "snapshot": {
+      "ticker": "312610",
+      "name": "에이에프더블류",
+      "market": "KR",
+      "sector": null,
+      "price": 500.0,
+      "change_pct": -1.77,
+      "market_cap_rank": 4,
+      "as_of": "2026-07-08T03:52:08.891132+09:00"
+    },
+    "period": "1m"
+  },
+  {
+    "rank": 5,
+    "snapshot": {
+      "ticker": "002785",
+      "name": "진흥기업우B",
+      "market": "KR",
+      "sector": null,
+      "price": 1859.0,
+      "change_pct": -13.53,
+      "market_cap_rank": 5,
+      "as_of": "2026-07-08T03:52:08.891132+09:00"
+    },
+    "period": "1m"
+  }
+]

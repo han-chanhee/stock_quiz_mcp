@@ -1,0 +1,302 @@
+[
+  {
+    "ticker": "AAPL",
+    "name": "Apple",
+    "market": "US",
+    "sector": "인터넷게임",
+    "price": 228.5,
+    "market_cap_rank": 1,
+    "changes": {
+      "today": 0.9,
+      "yesterday": -0.3,
+      "1w": 2.4,
+      "1m": 5.1,
+      "1y": 22.6
+    }
+  },
+  {
+    "ticker": "MSFT",
+    "name": "Microsoft",
+    "market": "US",
+    "sector": "인터넷게임",
+    "price": 441.2,
+    "market_cap_rank": 2,
+    "changes": {
+      "today": 1.2,
+      "yesterday": 0.6,
+      "1w": 3.1,
+      "1m": 7.8,
+      "1y": 31.4
+    }
+  },
+  {
+    "ticker": "NVDA",
+    "name": "NVIDIA",
+    "market": "US",
+    "sector": "반도체",
+    "price": 138.7,
+    "market_cap_rank": 3,
+    "changes": {
+      "today": 4.6,
+      "yesterday": 2.8,
+      "1w": 12.3,
+      "1m": 28.9,
+      "1y": 178.5
+    }
+  },
+  {
+    "ticker": "AVGO",
+    "name": "Broadcom",
+    "market": "US",
+    "sector": "반도체",
+    "price": 178.9,
+    "market_cap_rank": 4,
+    "changes": {
+      "today": 3.2,
+      "yesterday": 1.4,
+      "1w": 9.8,
+      "1m": 21.6,
+      "1y": 96.3
+    }
+  },
+  {
+    "ticker": "GOOGL",
+    "name": "Alphabet",
+    "market": "US",
+    "sector": "인터넷게임",
+    "price": 176.3,
+    "market_cap_rank": 5,
+    "changes": {
+      "today": -1.4,
+      "yesterday": -0.8,
+      "1w": -3.2,
+      "1m": 4.6,
+      "1y": 34.7
+    }
+  },
+  {
+    "ticker": "AMZN",
+    "name": "Amazon",
+    "market": "US",
+    "sector": "유통식품",
+    "price": 201.4,
+    "market_cap_rank": 6,
+    "changes": {
+      "today": 1.8,
+      "yesterday": 0.9,
+      "1w": 5.6,
+      "1m": 11.2,
+      "1y": 46.8
+    }
+  },
+  {
+    "ticker": "META",
+    "name": "Meta Platforms",
+    "market": "US",
+    "sector": "인터넷게임",
+    "price": 585.6,
+    "market_cap_rank": 7,
+    "changes": {
+      "today": 2.1,
+      "yesterday": 1.2,
+      "1w": 6.4,
+      "1m": 14.7,
+      "1y": 78.3
+    }
+  },
+  {
+    "ticker": "TSLA",
+    "name": "Tesla",
+    "market": "US",
+    "sector": "자동차",
+    "price": 342.8,
+    "market_cap_rank": 8,
+    "changes": {
+      "today": -3.6,
+      "yesterday": -2.4,
+      "1w": -8.9,
+      "1m": 18.4,
+      "1y": 62.1
+    }
+  },
+  {
+    "ticker": "JPM",
+    "name": "JPMorgan Chase",
+    "market": "US",
+    "sector": "금융",
+    "price": 248.3,
+    "market_cap_rank": 9,
+    "changes": {
+      "today": 1.1,
+      "yesterday": 0.5,
+      "1w": 3.8,
+      "1m": 9.2,
+      "1y": 51.6
+    }
+  },
+  {
+    "ticker": "V",
+    "name": "Visa",
+    "market": "US",
+    "sector": "금융",
+    "price": 312.7,
+    "market_cap_rank": 10,
+    "changes": {
+      "today": 0.7,
+      "yesterday": 0.2,
+      "1w": 2.1,
+      "1m": 4.9,
+      "1y": 24.3
+    }
+  },
+  {
+    "ticker": "WMT",
+    "name": "Walmart",
+    "market": "US",
+    "sector": "유통식품",
+    "price": 92.4,
+    "market_cap_rank": 11,
+    "changes": {
+      "today": 1.4,
+      "yesterday": 0.8,
+      "1w": 4.2,
+      "1m": 8.6,
+      "1y": 74.9
+    }
+  },
+  {
+    "ticker": "XOM",
+    "name": "Exxon Mobil",
+    "market": "US",
+    "sector": "화학철강",
+    "price": 118.6,
+    "market_cap_rank": 12,
+    "changes": {
+      "today": -0.8,
+      "yesterday": -1.3,
+      "1w": -2.9,
+      "1m": -5.1,
+      "1y": 8.4
+    }
+  },
+  {
+    "ticker": "JNJ",
+    "name": "Johnson & Johnson",
+    "market": "US",
+    "sector": "바이오",
+    "price": 154.2,
+    "market_cap_rank": 13,
+    "changes": {
+      "today": 0.4,
+      "yesterday": -0.2,
+      "1w": 1.3,
+      "1m": -2.6,
+      "1y": -4.8
+    }
+  },
+  {
+    "ticker": "LLY",
+    "name": "Eli Lilly",
+    "market": "US",
+    "sector": "바이오",
+    "price": 785.3,
+    "market_cap_rank": 14,
+    "changes": {
+      "today": 2.6,
+      "yesterday": 1.1,
+      "1w": 7.9,
+      "1m": 15.4,
+      "1y": 42.7
+    }
+  },
+  {
+    "ticker": "PG",
+    "name": "Procter & Gamble",
+    "market": "US",
+    "sector": "유통식품",
+    "price": 168.9,
+    "market_cap_rank": 15,
+    "changes": {
+      "today": 0.3,
+      "yesterday": 0.1,
+      "1w": 1.1,
+      "1m": 2.4,
+      "1y": 12.6
+    }
+  },
+  {
+    "ticker": "HD",
+    "name": "Home Depot",
+    "market": "US",
+    "sector": "유통식품",
+    "price": 412.5,
+    "market_cap_rank": 16,
+    "changes": {
+      "today": -0.6,
+      "yesterday": 0.3,
+      "1w": -1.8,
+      "1m": 3.7,
+      "1y": 28.9
+    }
+  },
+  {
+    "ticker": "KO",
+    "name": "Coca-Cola",
+    "market": "US",
+    "sector": "유통식품",
+    "price": 62.8,
+    "market_cap_rank": 17,
+    "changes": {
+      "today": 0.5,
+      "yesterday": -0.1,
+      "1w": 1.6,
+      "1m": -1.9,
+      "1y": 6.3
+    }
+  },
+  {
+    "ticker": "BA",
+    "name": "Boeing",
+    "market": "US",
+    "sector": "조선방산",
+    "price": 178.4,
+    "market_cap_rank": 18,
+    "changes": {
+      "today": 3.8,
+      "yesterday": -2.1,
+      "1w": 9.6,
+      "1m": -12.4,
+      "1y": -18.7
+    }
+  },
+  {
+    "ticker": "PFE",
+    "name": "Pfizer",
+    "market": "US",
+    "sector": "바이오",
+    "price": 26.7,
+    "market_cap_rank": 19,
+    "changes": {
+      "today": -1.2,
+      "yesterday": -0.6,
+      "1w": -3.4,
+      "1m": -7.8,
+      "1y": -22.1
+    }
+  },
+  {
+    "ticker": "GM",
+    "name": "General Motors",
+    "market": "US",
+    "sector": "자동차",
+    "price": 54.3,
+    "market_cap_rank": 20,
+    "changes": {
+      "today": 1.7,
+      "yesterday": 0.9,
+      "1w": 5.2,
+      "1m": 11.8,
+      "1y": 38.4
+    }
+  }
+]

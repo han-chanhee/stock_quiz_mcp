@@ -1,0 +1,4 @@
+# file: C:\Users\82109\Downloads\stock-quiz-mcp\stock-quiz-mcp\contracts\schemas.py
+# hypothesis_version: 6.141.1
+
+[1800, '1m', '1w', '1y', '2차전지', 'KR', 'US', 'company', 'correct', 'expired', 'gainer', 'loser', 'not_found', 'price', 'today', 'wrong', 'yesterday', '금융', '다음 퀴즈', '바이오', '반도체', '엔터', '유통식품', '이 종목 더 분석', '인터넷게임', '자동차', '조선방산', '화학철강']
