@@ -24,6 +24,7 @@ from services import build_analysis, is_correct, pick_hint
 from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
 
+from . import widgets
 from .cache import QuizCache
 
 DISCLAIMER = "본 내용은 퀴즈/정보 제공이며 투자 권유가 아닙니다."
@@ -55,6 +56,7 @@ _MODE_INTRO = {
 class QuizOutcome:
     quiz_id: str
     markdown: str
+    widget: dict | None = None
 
 
 @dataclass
@@ -65,6 +67,7 @@ class SubmitOutcome:
     attempts: int = 0
     next_actions: list[str] = field(default_factory=list)
     leaderboard: LeaderboardSnapshot | None = None
+    widget: dict | None = None
 
 
 def _as_of_footer(cache: QuizCache) -> str:
@@ -122,7 +125,9 @@ class QuizHandlers:
         # 문제 앞에 모드 설명 삽입 (quiz_id가 없는 안내 응답엔 붙이지 않음)
         if outcome.quiz_id:
             outcome = QuizOutcome(
-                outcome.quiz_id, f"{_MODE_INTRO[mode]}\n\n{outcome.markdown}"
+                outcome.quiz_id,
+                f"{_MODE_INTRO[mode]}\n\n{outcome.markdown}",
+                outcome.widget,
             )
         return outcome
 
@@ -141,7 +146,23 @@ class QuizHandlers:
             f"`quiz_id`: **{question.quiz_id}** (제한시간 30분)\n"
             f"→ `submit_answer(quiz_id, answer)`로 정답을 제출하세요."
         )
-        return QuizOutcome(question.quiz_id, md + _as_of_footer(self._cache))
+        mode = {
+            QuizType.PRICE: QuizMode.PRICE,
+            QuizType.GAINER: QuizMode.MARKET,
+            QuizType.LOSER: QuizMode.MARKET,
+            QuizType.COMPANY: QuizMode.STOCK,
+        }[state.quiz_type]
+        widget = widgets.quiz_question_widget(
+            question.quiz_id,
+            _MODE_INTRO[mode],
+            question.question_md,
+            _EXPIRES_SEC,
+        )
+        return QuizOutcome(
+            question.quiz_id,
+            md + _as_of_footer(self._cache),
+            widget,
+        )
 
     def price_quiz(self, market: Market = Market.KR) -> QuizOutcome:
         if (blocked := self._us_guard(market)) is not None:
@@ -236,6 +257,15 @@ class QuizHandlers:
                 attempts=result.attempts,
                 next_actions=result.next_actions,
                 leaderboard=leaderboard,
+                widget=widgets.correct_answer_widget(
+                    state.answer.name,
+                    analysis.price_line,
+                    analysis.rank_line,
+                    analysis.reason_line,
+                    earned_score,
+                    leaderboard,
+                    result.next_actions,
+                ),
             )
 
         # 오답
@@ -247,7 +277,12 @@ class QuizHandlers:
             f"💡 힌트: **{hint.text}**"
             + _as_of_footer(self._cache)
         )
-        return SubmitOutcome(Verdict.WRONG, md, attempts=attempts)
+        return SubmitOutcome(
+            Verdict.WRONG,
+            md,
+            attempts=attempts,
+            widget=widgets.wrong_answer_widget(hint.text, attempts),
+        )
 
     def _render_correct(
         self,

@@ -36,6 +36,7 @@ from store import QuizStore, ScoreStore
 from .cache import QuizCache
 from .auth import build_auth_provider
 from .handlers import QuizHandlers, QuizMode
+from . import widgets
 
 _KST = timezone(_dt.timedelta(hours=9))
 _DATA_DIR = Path(__file__).resolve().parent.parent / "batch" / "data"
@@ -140,7 +141,10 @@ def _build_app(
         period: Period = Period.TODAY,
         sector: Sector | None = None,
     ) -> str:
-        return handlers.quiz(mode, nickname, market, period, sector).markdown
+        outcome = handlers.quiz(mode, nickname, market, period, sector)
+        if outcome.widget is not None:
+            return widgets.to_content_text(outcome.widget)
+        return outcome.markdown
 
     @mcp.tool(
         name="submit_answer",
@@ -156,6 +160,8 @@ def _build_app(
     async def submit_answer(quiz_id: str, answer: str, nickname: str) -> str:
         try:
             outcome = await handlers.submit_answer(quiz_id, answer, nickname)
+            if outcome.widget is not None:
+                return widgets.to_content_text(outcome.widget)
             return outcome.markdown
         except Exception:
             return _SAFE_ERROR

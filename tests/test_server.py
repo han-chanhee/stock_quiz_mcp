@@ -171,11 +171,15 @@ async def test_full_scenario_price_quiz(cache):
     out = handlers.price_quiz(Market.KR)
     state = store.get(out.quiz_id)
     assert state is not None
+    assert out.widget is not None
+    assert out.widget["name"] == "quiz_question"
 
     # 오답 → 힌트(UP/DOWN)
     wrong = await handlers.submit_answer(out.quiz_id, str(state.answer.price * 0.5), "테스터")
     assert wrong.verdict == Verdict.WRONG
     assert "UP" in wrong.markdown or "DOWN" in wrong.markdown
+    assert wrong.widget is not None
+    assert wrong.widget["name"] == "wrong_answer"
 
     # 정답 → 미니분석 + 2택 + 면책 문구
     correct = await handlers.submit_answer(out.quiz_id, str(state.answer.price), "테스터")
@@ -184,6 +188,8 @@ async def test_full_scenario_price_quiz(cache):
     assert DISCLAIMER in correct.markdown
     assert "미니분석" in correct.markdown          # 미니분석 자동 표시
     assert correct.next_actions == ["다음 퀴즈", "다른 퀴즈", "종료"]
+    assert correct.widget is not None
+    assert correct.widget["name"] == "correct_answer"
 
 
 @pytest.mark.asyncio
@@ -254,6 +260,8 @@ async def test_blank_nickname_grades_without_score(cache):
 
     assert correct.verdict == Verdict.CORRECT
     assert correct.leaderboard is None
+    assert correct.widget is not None
+    assert correct.widget["name"] == "correct_answer"
     assert "닉네임이 없어" in correct.markdown
     assert score_store.rank_of("   ") == 1
 
@@ -296,6 +304,7 @@ async def test_not_found_quiz_id(cache):
     handlers, _ = _handlers(cache)
     r = await handlers.submit_answer("does-not-exist", "삼성전자", "테스터")
     assert r.verdict == Verdict.NOT_FOUND
+    assert r.widget is None
 
 
 @pytest.mark.asyncio
@@ -382,6 +391,37 @@ def test_build_app_requires_score_store(cache):
 
     with pytest.raises(TypeError):
         build_app(cache, QuizStore())
+
+
+@pytest.mark.asyncio
+async def test_tool_returns_widget_json_and_markdown_fallback(cache):
+    """툴 경로는 위젯을 JSON으로, 위젯 없는 안내는 마크다운으로 반환한다."""
+    from server.handlers import _US_BLOCKED_MD
+    from server.main import build_app
+
+    store = QuizStore()
+    app = build_app(cache, store, ScoreStore(), QuizBank(rng=random.Random(0)))
+
+    quiz_tool = await app.get_tool("quiz")
+    submit_tool = await app.get_tool("submit_answer")
+    quiz_result = quiz_tool.fn(mode="주가", nickname="테스터")
+    quiz_payload = json.loads(quiz_result)
+    assert quiz_payload["name"] == "quiz_question"
+
+    quiz_id = next(iter(store._data))
+    state = store.get(quiz_id)
+    wrong_result = await submit_tool.fn(
+        quiz_id=quiz_id,
+        answer=str(state.answer.price * 0.5),
+        nickname="테스터",
+    )
+    wrong_payload = json.loads(wrong_result)
+    assert wrong_payload["name"] == "wrong_answer"
+
+    fallback_result = quiz_tool.fn(
+        mode="주가", nickname="테스터", market="US"
+    )
+    assert fallback_result == _US_BLOCKED_MD
 
 
 @pytest.mark.asyncio
