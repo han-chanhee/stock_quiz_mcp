@@ -12,9 +12,15 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
 
 # 로컬 임시/에디터
 scratchpad/
 *.log
 .DS_Store
 Thumbs.db
+
+.harness/logs/
+
+# 랭킹 런타임 스냅샷 (batch/data와 달리 서버가 계속 갱신하는 상태 파일)
+store/data/

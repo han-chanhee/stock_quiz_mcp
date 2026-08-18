@@ -12,6 +12,7 @@ from enum import Enum
 
 from contracts.schemas import (
     GradingResult,
+    LeaderboardSnapshot,
     Market,
     MiniAnalysis,
     Period,
@@ -21,7 +22,7 @@ from contracts.schemas import (
 )
 from services import build_analysis, is_correct, pick_hint
 from services.quiz_bank import QuizBank
-from store import QuizStore
+from store import QuizStore, ScoreStore
 
 from .cache import QuizCache
 
@@ -63,6 +64,7 @@ class SubmitOutcome:
     analysis: MiniAnalysis | None = None
     attempts: int = 0
     next_actions: list[str] = field(default_factory=list)
+    leaderboard: LeaderboardSnapshot | None = None
 
 
 def _as_of_footer(cache: QuizCache) -> str:
@@ -80,11 +82,13 @@ class QuizHandlers:
         self,
         cache: QuizCache,
         store: QuizStore,
+        score_store: ScoreStore,
         bank: QuizBank | None = None,
         rng: random.Random | None = None,
     ) -> None:
         self._cache = cache
         self._store = store
+        self._score_store = score_store
         self._bank = bank or QuizBank()
         self._rng = rng or random.Random()  # 시장 퀴즈 방향(상승/하락) 랜덤 선택용
 
@@ -93,6 +97,7 @@ class QuizHandlers:
     def quiz(
         self,
         mode: QuizMode,
+        nickname: str,
         market: Market = Market.KR,
         period: Period = Period.TODAY,
         sector: Sector | None = None,
@@ -183,7 +188,7 @@ class QuizHandlers:
 
     # ── 채점 ─────────────────────────────────────────────────
 
-    async def submit_answer(self, quiz_id: str, answer: str) -> SubmitOutcome:
+    async def submit_answer(self, quiz_id: str, answer: str, nickname: str) -> SubmitOutcome:
         state, miss = self._store.get_state_or_verdict(quiz_id)
         if state is None:
             if miss == Verdict.EXPIRED:
@@ -206,20 +211,31 @@ class QuizHandlers:
                 )
             reason = self._cache.reason(state.answer.ticker)
             analysis = build_analysis(state.answer, reason)
+            attempts = (solved_state.attempts if solved_state else 0) + 1
             result = GradingResult(
                 verdict=Verdict.CORRECT,
                 analysis=analysis,
-                attempts=solved_state.attempts if solved_state else 0,
+                attempts=attempts,
                 # 정답 후 흐름: 미니분석은 위에서 자동 표시 + 아래 3택 분기
                 next_actions=["다음 퀴즈", "다른 퀴즈", "종료"],
             )
-            md = self._render_correct(state.answer.name, result)
+            leaderboard = None
+            earned_score = None
+            if nickname.strip():
+                earned_score = await self._score_store.add_result(
+                    nickname, nickname, result.attempts
+                )
+                leaderboard = self._score_store.leaderboard(nickname)
+            md = self._render_correct(
+                state.answer.name, result, earned_score, leaderboard
+            )
             return SubmitOutcome(
                 Verdict.CORRECT,
                 md,
                 analysis=analysis,
                 attempts=result.attempts,
                 next_actions=result.next_actions,
+                leaderboard=leaderboard,
             )
 
         # 오답
@@ -233,7 +249,13 @@ class QuizHandlers:
         )
         return SubmitOutcome(Verdict.WRONG, md, attempts=attempts)
 
-    def _render_correct(self, name: str, result: GradingResult) -> str:
+    def _render_correct(
+        self,
+        name: str,
+        result: GradingResult,
+        earned_score: int | None,
+        leaderboard: LeaderboardSnapshot | None,
+    ) -> str:
         a = result.analysis
         lines = [
             f"✅ 정답! **{name}**",
@@ -242,9 +264,21 @@ class QuizHandlers:
             f"- {a.price_line}",
             f"- {a.rank_line}",
             f"- {a.reason_line}",
+        ]
+        if leaderboard is not None and earned_score is not None:
+            lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!", "", "**주간 TOP5**"])
+            lines.extend(
+                f"{rank}. {entry.display_name} — {entry.score}점"
+                for rank, entry in enumerate(leaderboard.top, start=1)
+            )
+            if leaderboard.my_rank > len(leaderboard.top):
+                lines.append(f"당신은 {leaderboard.my_rank}위")
+        else:
+            lines.extend(["", "닉네임이 없어 점수와 랭킹은 반영하지 않았습니다."])
+        lines.extend([
             "",
             "다음 중 선택: " + " / ".join(f"`{x}`" for x in result.next_actions),
             "",
             f"_{DISCLAIMER}_",  # 미니분석 포함 응답에만 면책 삽입
-        ]
+        ])
         return "\n".join(lines) + _as_of_footer(self._cache)

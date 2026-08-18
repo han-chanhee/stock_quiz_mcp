@@ -2,70 +2,70 @@
   {
     "rank": 1,
     "snapshot": {
-      "ticker": "228340",
-      "name": "동양파일",
+      "ticker": "269620",
+      "name": "시스웍",
       "market": "KR",
       "sector": null,
-      "price": 3425.0,
-      "change_pct": -9.87,
+      "price": 17.0,
+      "change_pct": -37.04,
       "market_cap_rank": 1,
-      "as_of": "2026-07-08T03:52:08.891132+09:00"
+      "as_of": "2026-08-17T16:22:48.836408+09:00"
     },
     "period": "1m"
   },
   {
     "rank": 2,
     "snapshot": {
-      "ticker": "002787",
-      "name": "진흥기업2우B",
+      "ticker": "418620",
+      "name": "E8",
       "market": "KR",
       "sector": null,
-      "price": 3740.0,
-      "change_pct": -15.96,
+      "price": 580.0,
+      "change_pct": 5.26,
       "market_cap_rank": 2,
-      "as_of": "2026-07-08T03:52:08.891132+09:00"
+      "as_of": "2026-08-17T16:22:48.836464+09:00"
     },
     "period": "1m"
   },
   {
     "rank": 3,
     "snapshot": {
-      "ticker": "036420",
-      "name": "콘텐트리중앙",
+      "ticker": "058450",
+      "name": "한주에이알티",
       "market": "KR",
       "sector": null,
-      "price": 1220.0,
-      "change_pct": -23.75,
+      "price": 2355.0,
+      "change_pct": 2.84,
       "market_cap_rank": 3,
-      "as_of": "2026-07-08T03:52:08.891132+09:00"
+      "as_of": "2026-08-17T16:22:48.836475+09:00"
     },
     "period": "1m"
   },
   {
     "rank": 4,
     "snapshot": {
-      "ticker": "312610",
-      "name": "에이에프더블류",
+      "ticker": "487400",
+      "name": "케이앤에스아이앤씨",
       "market": "KR",
       "sector": null,
-      "price": 500.0,
-      "change_pct": -1.77,
+      "price": 14860.0,
+      "change_pct": -3.38,
       "market_cap_rank": 4,
-      "as_of": "2026-07-08T03:52:08.891132+09:00"
+      "as_of": "2026-08-17T16:22:48.836481+09:00"
     },
     "period": "1m"
   },
   {
     "rank": 5,
     "snapshot": {
-      "ticker": "002785",
-      "name": "진흥기업우B",
+      "ticker": "Q570092",
+      "name": "한투 인버스2X유로스탁스50 ETN(H) B",
       "market": "KR",
       "sector": null,
-      "price": 1859.0,
-      "change_pct": -13.53,
+      "price": 6200.0,
+      "change_pct": -0.08,
       "market_cap_rank": 5,
-      "as_of": "2026-07-08T03:52:08.891132+09:00"
+      "as_of": "2026-08-17T16:22:48.836487+09:00"
     },
     "period": "1m"
   }

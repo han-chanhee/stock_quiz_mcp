@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Protocol, runtime_checkable
 
 from contracts.schemas import Market, Period, RankingItem, StockSnapshot
@@ -31,5 +31,15 @@ class MarketClient(Protocol):
         ...
 
 
-# mock/배치 재현성을 위한 고정 기준 시각. 실 클라이언트는 datetime.now(tz)를 쓴다.
-MOCK_AS_OF = datetime(2026, 7, 7, 15, 30, 0)
+# mock/배치 재현성을 위한 기준 시각. 실 클라이언트는 datetime.now(tz)를 쓴다.
+# 절대 고정값이 아니라 "테스트 실행 시각 - 1시간"으로 둔다: server/cache.py의
+# STALE_AFTER_HOURS(36) 판정 대상이므로, 값을 고정하면 시간이 지날수록 mock
+# 데이터 자체가 stale 판정에 걸려 무관한 테스트가 깨진다(TASK-003에서 실측).
+_KST = timezone(timedelta(hours=9))
+
+
+def _mock_as_of() -> datetime:
+    return datetime.now(_KST) - timedelta(hours=1)
+
+
+MOCK_AS_OF = _mock_as_of()

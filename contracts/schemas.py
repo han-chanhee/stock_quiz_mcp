@@ -107,6 +107,28 @@ class QuizState(BaseModel):
     solved: bool = False
 
 
+class ScoreEntry(BaseModel):
+    """랭킹 1인분 기록. 주간 리셋 시 전원 초기화된다.
+
+    identity_key는 nickname 또는 (향후 OAuth 도입 시) OAuth user_id.
+    현재는 nickname만 사용하며, 서로 다른 식별 수단은 별도 키로 취급한다.
+    """
+
+    identity_key: str
+    display_name: str
+    score: int = 0
+    updated_at: datetime
+
+
+class LeaderboardSnapshot(BaseModel):
+    """submit_answer 응답에 실리는 랭킹 요약. 정답 확정 시에만 생성된다."""
+
+    top: list[ScoreEntry]
+    my_entry: ScoreEntry
+    my_rank: int
+    week_started_at: datetime
+
+
 class Reason(BaseModel):
     """프리캐싱된 원인 팩트. 배치 전용 산출물.
 

@@ -8,6 +8,7 @@ from collections import Counter
 import pytest
 
 from batch import DailyBatch, MockReasonProvider
+from batch.daily import EmptyOutputError
 from clients import MockMarketClient
 from contracts.schemas import RankingItem, Reason, StockSnapshot
 
@@ -84,3 +85,88 @@ async def test_reason_provider_none_when_unseen(tmp_path):
     provider = MockReasonProvider(seed={})  # 아무 근거도 없음
     from contracts.schemas import Market
     assert await provider.fetch("005930", "삼성전자", Market.KR) is None
+
+
+@pytest.mark.asyncio
+async def test_batch_preserves_existing_outputs_when_all_snapshots_fail(tmp_path):
+    """시세 전건 실패 시 기존 섹터 풀과 근거 파일을 보존하고 실패를 알린다."""
+
+    class FailingSnapshotClient(MockMarketClient):
+        async def top_market_cap(self, market, n):
+            raise RuntimeError("시세 조회 실패")
+
+        async def snapshot(self, ticker, market):
+            raise RuntimeError("시세 조회 실패")
+
+    class EmptyReasonProvider:
+        async def fetch(self, ticker, name, market):
+            return None
+
+    universe = [{"ticker": "005930", "name": "삼성전자", "sector": "반도체"}]
+    existing_pool = [
+        {
+            "ticker": "005930",
+            "name": "삼성전자",
+            "market": "KR",
+            "price": 70000,
+            "currency": "KRW",
+            "change_pct": 0.0,
+            "as_of": "2026-01-01T09:00:00+09:00",
+            "sector": "반도체",
+            "market_cap_rank": 1,
+        }
+    ]
+    existing_reasons = {"005930": {"preserved": True}}
+    (tmp_path / "sector_universe.json").write_text(
+        json.dumps(universe, ensure_ascii=False), encoding="utf-8"
+    )
+    sector_path = tmp_path / "sector_top100.json"
+    reasons_path = tmp_path / "reasons.json"
+    sector_path.write_text(json.dumps(existing_pool), encoding="utf-8")
+    reasons_path.write_text(json.dumps(existing_reasons), encoding="utf-8")
+
+    batch = DailyBatch(
+        FailingSnapshotClient(),
+        data_dir=tmp_path,
+        reason_provider=EmptyReasonProvider(),
+    )
+
+    with pytest.raises(EmptyOutputError):
+        await batch.run()
+
+    assert json.loads(sector_path.read_text(encoding="utf-8")) == existing_pool
+    assert json.loads(reasons_path.read_text(encoding="utf-8")) == existing_reasons
+
+
+@pytest.mark.asyncio
+async def test_batch_not_implemented_market_is_not_a_failure(tmp_path):
+    """NotImplementedError(예: US 미검증 비활성)는 산출 실패가 아니라 정상 skip이다.
+
+    실 KISClient는 US 조회에서 항상 NotImplementedError를 던진다(US_ENABLED=False).
+    이를 산출 실패로 잘못 카운트하면 정상 운영 중인 배치가 매번 실패 종료한다
+    (2026-08-15 KR 데이터 갱신 시 실측 — 데이터 유실은 없었으나 exit code 오염).
+    """
+
+    class USNotImplementedClient(MockMarketClient):
+        async def top_market_cap(self, market, n):
+            from contracts.schemas import Market as _Market
+
+            if market == _Market.US:
+                raise NotImplementedError("US 시총순위 미검증 — 실 클라이언트에서 비활성")
+            return await super().top_market_cap(market, n)
+
+        async def top_movers(self, market, period, direction, n):
+            from contracts.schemas import Market as _Market
+
+            if market == _Market.US:
+                raise NotImplementedError("US 등락률 순위는 배치 프리캐싱 경로에서 조립")
+            return await super().top_movers(market, period, direction, n)
+
+    batch = DailyBatch(
+        USNotImplementedClient(), data_dir=tmp_path, reason_provider=MockReasonProvider()
+    )
+    await batch.run()  # raise하면 안 된다 — US 비활성은 정상 상태
+
+    kr = json.loads((tmp_path / "top20_kr.json").read_text(encoding="utf-8"))
+    assert kr, "KR 데이터는 정상 갱신돼야 한다"
+    assert not (tmp_path / "top20_us.json").exists()

@@ -2,70 +2,70 @@
   {
     "rank": 1,
     "snapshot": {
-      "ticker": "200230",
-      "name": "텔콘RF제약",
+      "ticker": "269620",
+      "name": "시스웍",
       "market": "KR",
       "sector": null,
-      "price": 2400.0,
-      "change_pct": -11.76,
+      "price": 17.0,
+      "change_pct": -37.04,
       "market_cap_rank": 1,
-      "as_of": "2026-07-08T03:52:05.786094+09:00"
+      "as_of": "2026-08-17T16:22:47.998876+09:00"
     },
     "period": "today"
   },
   {
     "rank": 2,
     "snapshot": {
-      "ticker": "002880",
-      "name": "디와이에이",
+      "ticker": "105550",
+      "name": "엣지파운드리",
       "market": "KR",
       "sector": null,
-      "price": 841.0,
-      "change_pct": -8.79,
+      "price": 2735.0,
+      "change_pct": -18.36,
       "market_cap_rank": 2,
-      "as_of": "2026-07-08T03:52:05.786094+09:00"
+      "as_of": "2026-08-17T16:22:47.998941+09:00"
     },
     "period": "today"
   },
   {
     "rank": 3,
     "snapshot": {
-      "ticker": "065170",
-      "name": "비엘팜텍",
+      "ticker": "206560",
+      "name": "덱스터",
       "market": "KR",
       "sector": null,
-      "price": 3965.0,
-      "change_pct": -13.71,
+      "price": 1013.0,
+      "change_pct": -6.64,
       "market_cap_rank": 3,
-      "as_of": "2026-07-08T03:52:05.786094+09:00"
+      "as_of": "2026-08-17T16:22:47.998955+09:00"
     },
     "period": "today"
   },
   {
     "rank": 4,
     "snapshot": {
-      "ticker": "412350",
-      "name": "레이저쎌",
+      "ticker": "405000",
+      "name": "플라즈맵",
       "market": "KR",
       "sector": null,
-      "price": 4240.0,
-      "change_pct": -26.0,
+      "price": 4520.0,
+      "change_pct": -12.4,
       "market_cap_rank": 4,
-      "as_of": "2026-07-08T03:52:05.786094+09:00"
+      "as_of": "2026-08-17T16:22:47.998966+09:00"
     },
     "period": "today"
   },
   {
     "rank": 5,
     "snapshot": {
-      "ticker": "036420",
-      "name": "콘텐트리중앙",
+      "ticker": "131400",
+      "name": "이브이첨단소재",
       "market": "KR",
       "sector": null,
-      "price": 1220.0,
-      "change_pct": -23.75,
+      "price": 912.0,
+      "change_pct": -2.56,
       "market_cap_rank": 5,
-      "as_of": "2026-07-08T03:52:05.786094+09:00"
+      "as_of": "2026-08-17T16:22:47.998977+09:00"
     },
     "period": "today"
   }

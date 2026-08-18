@@ -4,7 +4,7 @@ Streamable HTTP, stateless_http=True.
 ※ MCP 프로토콜 세션은 미사용(stateless). 퀴즈 상태(quiz_id)는 QuizStore가 별도로
    보관한다 — 프로토콜 세션과 앱 상태는 별개다.
 
-의존성 주입은 build_app(cache, store, bank, refresh_client) 한 곳에서 끝난다.
+의존성 주입은 build_app(cache, store, score_store, bank, refresh_client) 한 곳에서 끝난다.
 테스트/조립에서 mock↔실구현 교체가 이 함수 하나로 완결된다.
 
 주의: 이 모듈은 fastmcp 패키지(Python 3.10+)를 import한다. 순수 오케스트레이션 로직은
@@ -31,16 +31,21 @@ from contracts.schemas import Market, Period, Sector
 
 from clients.base import MarketClient
 from services.quiz_bank import QuizBank
-from store import QuizStore
+from store import QuizStore, ScoreStore
 
 from .cache import QuizCache
+from .auth import build_auth_provider
 from .handlers import QuizHandlers, QuizMode
 
 _KST = timezone(_dt.timedelta(hours=9))
 _DATA_DIR = Path(__file__).resolve().parent.parent / "batch" / "data"
 
-# 장중 리프레셔 시각(KST). 5분 폴링 금지 — 정확히 3회만.
-_REFRESH_TIMES = [(10, 0), (13, 0), (15, 40)]
+# 장중에 한해 1분 간격으로 시세 캐시를 갱신한다.
+_REFRESH_INTERVAL_SEC: int = 60
+_WEEKLY_RESET_INTERVAL_SEC: int = 60
+_SNAPSHOT_INTERVAL_SEC: int = 300
+_MARKET_OPEN = (9, 0)  # KST
+_MARKET_CLOSE = (15, 30)  # KST
 
 _COMMON_ANN = dict(
     readOnlyHint=True,
@@ -55,29 +60,50 @@ _SAFE_ERROR = "잠시 후 다시 시도해주세요."
 def build_app(
     cache: QuizCache,
     store: QuizStore,
+    score_store: ScoreStore,
     bank: QuizBank | None = None,
     refresh_client: MarketClient | None = None,
 ) -> FastMCP:
-    """단일 의존성 주입 지점. 여기서 cache/store/bank(/리프레셔 클라이언트)를 꽂는다."""
-    handlers = QuizHandlers(cache, store, bank)
+    """단일 의존성 주입 지점. 퀴즈·점수 저장소와 선택 의존성을 꽂는다."""
+    return _build_app(cache, store, score_store, bank, refresh_client)
+
+
+def _build_app(
+    cache: QuizCache,
+    store: QuizStore,
+    score_store: ScoreStore,
+    bank: QuizBank | None = None,
+    refresh_client: MarketClient | None = None,
+    *,
+    auth=None,
+) -> FastMCP:
+    """실제 FastMCP 조립. 인증은 실 구동 경로에서만 조건부로 주입한다."""
+    handlers = QuizHandlers(cache, store, score_store, bank)
 
     @contextlib.asynccontextmanager
     async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
-        # 리프레셔 클라이언트가 주입된 경우에만 장중 3회 갱신 태스크를 띄운다.
-        task = None
+        # 리프레셔 클라이언트가 주입된 경우에만 장중 1분 갱신 태스크를 띄운다.
+        tasks = [
+            asyncio.create_task(_weekly_reset_loop(score_store)),
+            asyncio.create_task(_snapshot_loop(score_store)),
+        ]
         if refresh_client is not None:
-            task = asyncio.create_task(_refresher_loop(cache, refresh_client))
+            tasks.append(asyncio.create_task(_refresher_loop(cache, refresh_client)))
         try:
             yield
         finally:
-            if task is not None:
+            for task in tasks:
                 task.cancel()
+            for task in tasks:
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
     # stateless_http는 run()/http_app() 시점에 전달한다(FastMCP 3.x API).
     # MCP 프로토콜 세션 미사용 — quiz 상태는 QuizStore가 별도로 보관한다.
-    mcp = FastMCP(name="stock-quiz-dictionary", lifespan=_lifespan)
+    if auth is None:
+        mcp = FastMCP(name="stock-quiz-dictionary", lifespan=_lifespan)
+    else:
+        mcp = FastMCP(name="stock-quiz-dictionary", lifespan=_lifespan, auth=auth)
 
     def _safe(fn):
         """스택트레이스 노출 금지: 예외를 정제 한 줄로 치환.
@@ -101,32 +127,35 @@ def build_app(
             "±3% correct), '시장' (guess the biggest gainer or loser over a period; "
             "direction is random), '종목' (guess the company from sector/price/market-cap "
             "hints). The reply includes a short mode intro plus the quiz and a quiz_id; "
-            "grade answers with submit_answer. Korean market only for now."
+            "grade answers with submit_answer. nickname (닉네임) is required. "
+            "Korean market only for now."
         ),
         annotations=ToolAnnotations(title="Stock Quiz", **_COMMON_ANN),
     )
     @_safe
     def quiz(
         mode: QuizMode,
+        nickname: str,
         market: Market = Market.KR,
         period: Period = Period.TODAY,
         sector: Sector | None = None,
     ) -> str:
-        return handlers.quiz(mode, market, period, sector).markdown
+        return handlers.quiz(mode, nickname, market, period, sector).markdown
 
     @mcp.tool(
         name="submit_answer",
         description=(
             "Grades an answer for a 주식대결 (Stock Quiz Battle / 주식사전 퀴즈) quiz. "
             "Give the quiz_id and your answer (stock name or price number). "
+            "nickname (닉네임) is required for scoring and ranking. "
             "Wrong answers return a staged hint; a correct answer returns a fact-only "
             "mini-analysis. Never gives buy/sell advice."
         ),
         annotations=ToolAnnotations(title="Submit Answer", **_COMMON_ANN),
     )
-    async def submit_answer(quiz_id: str, answer: str) -> str:
+    async def submit_answer(quiz_id: str, answer: str, nickname: str) -> str:
         try:
-            outcome = await handlers.submit_answer(quiz_id, answer)
+            outcome = await handlers.submit_answer(quiz_id, answer, nickname)
             return outcome.markdown
         except Exception:
             return _SAFE_ERROR
@@ -148,7 +177,7 @@ def build_app(
 
 
 async def _refresh_today(cache: QuizCache, client: MarketClient) -> None:
-    """today 랭킹만 장중 갱신(gainers/losers × KR/US)."""
+    """today 랭킹과 시총 상위 종목을 장중 갱신한다."""
     for market in (Market.KR, Market.US):
         for direction in ("up", "down"):
             try:
@@ -157,22 +186,45 @@ async def _refresh_today(cache: QuizCache, client: MarketClient) -> None:
             except Exception:
                 continue  # 리프레셔 실패는 기존 캐시 유지(서비스 지속)
 
+        try:
+            snaps = await client.top_market_cap(market, 20)
+            cache.update_top20(market, snaps)
+        except Exception:
+            continue  # 시장별 부분 실패는 다른 시장의 갱신을 막지 않는다.
+
+
+def _now_kst() -> _dt.datetime:
+    """테스트에서 교체 가능한 KST 시계."""
+    return _dt.datetime.now(_KST)
+
+
+def _is_market_open(now: _dt.datetime) -> bool:
+    current = (now.hour, now.minute)
+    return _MARKET_OPEN <= current <= _MARKET_CLOSE
+
 
 async def _refresher_loop(cache: QuizCache, client: MarketClient) -> None:
-    """장중 3회(10:00/13:00/15:40)만 실행. 5분 폴링 금지 — 다음 시각까지 sleep."""
+    """장중(09:00~15:30 KST)에만 1분 간격으로 캐시를 갱신한다."""
     while True:
-        now = _dt.datetime.now(_KST)
-        today_times = [
-            now.replace(hour=h, minute=m, second=0, microsecond=0)
-            for h, m in _REFRESH_TIMES
-        ]
-        upcoming = [t for t in today_times if t > now]
-        if upcoming:
-            target = min(upcoming)
-        else:
-            target = min(today_times) + _dt.timedelta(days=1)
-        await asyncio.sleep(max(1.0, (target - now).total_seconds()))
-        await _refresh_today(cache, client)
+        if _is_market_open(_now_kst()):
+            # 항목별 실패가 격리되어 top20/movers의 신선도가 다를 수 있다.
+            # data_as_of는 전체의 최신값만 추적하며 필드별 stale 판정은 범위 밖이다.
+            await _refresh_today(cache, client)
+        await asyncio.sleep(_REFRESH_INTERVAL_SEC)
+
+
+async def _weekly_reset_loop(score_store: ScoreStore) -> None:
+    """주간 리셋 시점을 1분 간격으로 확인한다."""
+    while True:
+        await score_store.maybe_weekly_reset(_now_kst())
+        await asyncio.sleep(_WEEKLY_RESET_INTERVAL_SEC)
+
+
+async def _snapshot_loop(score_store: ScoreStore) -> None:
+    """랭킹 스냅샷을 5분 간격으로 저장한다."""
+    while True:
+        await asyncio.sleep(_SNAPSHOT_INTERVAL_SEC)
+        await score_store.snapshot_save()
 
 
 def create_server() -> FastMCP:
@@ -181,8 +233,17 @@ def create_server() -> FastMCP:
 
     cache = QuizCache(_DATA_DIR).load()  # 검증 실패 시 여기서 기동 중단
     store = QuizStore()
+    score_store = ScoreStore()
+    score_store.snapshot_load()
     client = KISClient()
-    mcp = build_app(cache, store, refresh_client=client)
+    auth = build_auth_provider()
+    mcp = _build_app(
+        cache,
+        store,
+        score_store,
+        refresh_client=client,
+        auth=auth,
+    )
 
     @mcp.custom_route("/", methods=["GET"])
     async def root(request: Request) -> PlainTextResponse:

@@ -6,5 +6,20 @@ from .quiz_store import (
     QuizStore,
     new_quiz_id,
 )
+from .score_store import (
+    DEFAULT_RESET_HOUR,
+    DEFAULT_RESET_WEEKDAY,
+    DEFAULT_SNAPSHOT_PATH,
+    ScoreStore,
+)
 
-__all__ = ["QuizStore", "new_quiz_id", "DEFAULT_TTL_SEC", "DEFAULT_MAX_ENTRIES"]
+__all__ = [
+    "QuizStore",
+    "ScoreStore",
+    "new_quiz_id",
+    "DEFAULT_TTL_SEC",
+    "DEFAULT_MAX_ENTRIES",
+    "DEFAULT_SNAPSHOT_PATH",
+    "DEFAULT_RESET_WEEKDAY",
+    "DEFAULT_RESET_HOUR",
+]

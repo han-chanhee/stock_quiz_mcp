@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from contracts.schemas import (
@@ -31,6 +31,10 @@ def _normalize_key(s: str) -> str:
 
 class QuizCache:
     """배치 산출물을 메모리에 적재한 읽기 전용 조회 계층."""
+
+    # 배치는 매 영업일 18시에 실행된다. 정상 최대 경과 24시간에 주말 여유를 두되,
+    # 금요일 배치가 월요일 오전까지 불필요하게 경고되지 않도록 36시간을 기준으로 삼는다.
+    STALE_AFTER_HOURS: int = 36
 
     def __init__(self, data_dir: Path) -> None:
         self._dir = Path(data_dir)
@@ -59,8 +63,11 @@ class QuizCache:
             return json.load(f)
 
     def _track_as_of(self, snap: StockSnapshot) -> None:
-        if self._data_as_of is None or snap.as_of > self._data_as_of:
-            self._data_as_of = snap.as_of
+        as_of = snap.as_of
+        if as_of.tzinfo is None:
+            as_of = as_of.replace(tzinfo=timezone.utc)
+        if self._data_as_of is None or as_of > self._data_as_of:
+            self._data_as_of = as_of
 
     def load(self) -> QuizCache:
         """전 파일 검증 적재. 스키마 오류 시 DataValidationError로 기동 중단."""
@@ -146,9 +153,16 @@ class QuizCache:
         """리프레셔가 today 랭킹을 장중 갱신할 때 호출."""
         self._movers[(market, period, direction)] = items
 
+    def update_top20(self, market: Market, snaps: list[StockSnapshot]) -> None:
+        """리프레셔가 시총 상위 종목을 장중 갱신할 때 호출."""
+        self._top20[market] = snaps
+
     @property
     def stale(self) -> bool:
-        return self._stale
+        if self._stale or self._data_as_of is None:
+            return True
+        age = datetime.now(timezone.utc) - self._data_as_of
+        return age > timedelta(hours=self.STALE_AFTER_HOURS)
 
     @property
     def data_as_of(self) -> datetime | None:

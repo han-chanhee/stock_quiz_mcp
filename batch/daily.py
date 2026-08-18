@@ -41,6 +41,10 @@ _ALL_PERIODS = [
 _MARKETS = [Market.KR, Market.US]
 
 
+class EmptyOutputError(RuntimeError):
+    """빈 배치 산출물이 기존 파일을 덮어쓰려 할 때 발생한다."""
+
+
 def _load_sector_map(data_dir: Path) -> dict[str, str]:
     path = data_dir / "sector_map.json"
     if not path.exists():
@@ -62,7 +66,9 @@ def _apply_sector(snap: StockSnapshot, sector_map: dict[str, str]) -> StockSnaps
         return snap  # 매핑표에 없는 값이면 그대로
 
 
-def _dump(path: Path, models: list) -> None:
+def _dump(path: Path, models: list, allow_empty: bool = False) -> None:
+    if not models and not allow_empty:
+        raise EmptyOutputError(f"{path.name} 산출물이 비어 있음")
     payload = [m.model_dump(mode="json") for m in models]
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -87,6 +93,10 @@ class DailyBatch:
         self._movers_n = movers_n
         self._sector_top = sector_top
         self._sector_map = _load_sector_map(self._dir)
+        self._output_failures: list[str] = []
+
+    def _record_failure(self, output: str) -> None:
+        self._output_failures.append(output)
 
     # ── 1. price_quiz 풀 ─────────────────────────────────────
 
@@ -95,13 +105,23 @@ class DailyBatch:
         for market in _MARKETS:
             try:
                 snaps = await self._client.top_market_cap(market, self._top_n)
+            except NotImplementedError:
+                # 실 클라이언트 미지원 시장(예: US_ENABLED=False)은 정상 skip —
+                # _build_movers와 동일 정책. 산출 실패로 카운트하지 않는다.
+                continue
             except Exception as exc:
                 # 한 시장 실패가 전체 배치를 무너뜨리지 않게 격리(기존 파일 유지)
                 print(f"[batch] top_market_cap {market.value} 건너뜀: {exc!r}")
+                self._record_failure(f"top20_{market.value}")
                 continue
             snaps = [_apply_sector(s, self._sector_map) for s in snaps]
             fname = "top20_kr.json" if market == Market.KR else "top20_us.json"
-            _dump(self._dir / fname, snaps)
+            try:
+                _dump(self._dir / fname, snaps)
+            except EmptyOutputError:
+                print(f"[batch] {fname} 산출 0건 — 기존 파일 유지")
+                self._record_failure(fname)
+                continue
             result[market] = snaps
         return result
 
@@ -124,6 +144,7 @@ class DailyBatch:
                             f"[batch] movers {market.value}/{period.value}/"
                             f"{direction} 건너뜀: {exc!r}"
                         )
+                        self._record_failure(fname := f"movers_{market.value}_{period.value}_{direction}.json")
                         continue
                     items = [
                         RankingItem(
@@ -134,7 +155,11 @@ class DailyBatch:
                         for it in items
                     ]
                     fname = f"movers_{market.value}_{period.value}_{direction}.json"
-                    _dump(self._dir / fname, items)
+                    try:
+                        _dump(self._dir / fname, items)
+                    except EmptyOutputError:
+                        print(f"[batch] {fname} 산출 0건 — 기존 파일 유지")
+                        self._record_failure(fname)
 
     # ── 3. guess_company 풀 ──────────────────────────────────
 
@@ -161,7 +186,16 @@ class DailyBatch:
             group = by_sector.get(sector, [])
             group.sort(key=lambda s: (s.market_cap_rank or 10**9))
             pool.extend(group[: self._sector_top])  # 섹터당 최대 sector_top
-        _dump(self._dir / "sector_top100.json", pool)
+        path = self._dir / "sector_top100.json"
+        try:
+            _dump(path, pool)
+        except EmptyOutputError:
+            print("[batch] sector_top100 산출 0건 — 기존 파일 유지")
+            self._record_failure("sector_top100.json")
+            if not path.exists():
+                return []
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            return [StockSnapshot.model_validate(item) for item in existing]
         return pool
 
     def _load_sector_universe(self) -> list[dict]:
@@ -210,6 +244,10 @@ class DailyBatch:
 
     def _update_aliases(self, all_snaps: list[StockSnapshot]) -> None:
         path = self._dir / "aliases.json"
+        if not all_snaps:
+            print("[batch] aliases 산출 0건 — 기존 파일 유지")
+            self._record_failure("aliases.json")
+            return
         aliases: dict[str, str] = {}
         if path.exists():
             with path.open(encoding="utf-8") as f:
@@ -237,6 +275,11 @@ class DailyBatch:
             if reason is None:
                 continue  # 근거 없으면 저장 안 함 → 런타임 "특별한 재료 확인 안 됨"
             reasons[snap.ticker] = reason.model_dump(mode="json")
+        if not reasons:
+            print("[batch] reasons 산출 0건 — 기존 파일 유지")
+            if all_snaps:
+                self._record_failure("reasons.json")
+            return
         (self._dir / "reasons.json").write_text(
             json.dumps(reasons, ensure_ascii=False, indent=2), encoding="utf-8"
         )
@@ -244,6 +287,7 @@ class DailyBatch:
     # ── 오케스트레이션 ───────────────────────────────────────
 
     async def run(self) -> None:
+        self._output_failures = []
         top20 = await self._build_top20()
         await self._build_movers()
         sector_pool = await self._build_sector_pool()
@@ -256,3 +300,6 @@ class DailyBatch:
 
         self._update_aliases(all_snaps)
         await self._build_reasons(all_snaps)
+        if self._output_failures:
+            failed = ", ".join(self._output_failures)
+            raise EmptyOutputError(f"배치 산출 실패: {failed}")

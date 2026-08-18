@@ -6,7 +6,9 @@ fastmcp 없이 handlers/cache만으로 오케스트레이션을 검증한다(툴
 from __future__ import annotations
 
 import asyncio
+import json
 import random
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -17,7 +19,7 @@ from contracts.schemas import Market, Period, Verdict
 from server.cache import DataValidationError, QuizCache
 from server.handlers import DISCLAIMER, QuizHandlers
 from services.quiz_bank import QuizBank
-from store import QuizStore
+from store import QuizStore, ScoreStore
 
 
 @pytest.fixture
@@ -31,7 +33,8 @@ async def cache(tmp_path) -> QuizCache:
 
 def _handlers(cache: QuizCache, seed: int = 0) -> tuple[QuizHandlers, QuizStore]:
     store = QuizStore()
-    return QuizHandlers(cache, store, QuizBank(rng=random.Random(seed))), store
+    score_store = ScoreStore()
+    return QuizHandlers(cache, store, score_store, QuizBank(rng=random.Random(seed))), store
 
 
 @pytest.mark.asyncio
@@ -41,6 +44,34 @@ async def test_cache_loads_and_not_stale(cache):
     assert cache.top20(Market.KR)
     assert cache.movers(Market.KR, Period.WEEK, "up")
     assert cache.sector_pool()
+
+
+@pytest.mark.asyncio
+async def test_cache_old_data_is_stale(tmp_path):
+    """배치 파일이 존재해도 기준 시각이 오래됐으면 stale로 표시한다."""
+    await DailyBatch(
+        MockMarketClient(), data_dir=tmp_path, reason_provider=MockReasonProvider()
+    ).run()
+    old_as_of = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+
+    def replace_as_of(value):
+        if isinstance(value, dict):
+            return {
+                key: old_as_of if key == "as_of" else replace_as_of(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [replace_as_of(item) for item in value]
+        return value
+
+    for path in tmp_path.glob("*.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        path.write_text(
+            json.dumps(replace_as_of(data), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    assert QuizCache(tmp_path).load().stale is True
 
 
 @pytest.mark.asyncio
@@ -93,28 +124,28 @@ async def test_quiz_modes_route_and_show_intro(cache):
     from server.handlers import QuizMode
 
     store = QuizStore()
-    handlers = QuizHandlers(cache, store, QuizBank(rng=_random.Random(0)),
+    handlers = QuizHandlers(cache, store, ScoreStore(), QuizBank(rng=_random.Random(0)),
                             rng=_random.Random(0))
 
     # 주가 모드
-    p = handlers.quiz(QuizMode.PRICE, Market.KR)
+    p = handlers.quiz(QuizMode.PRICE, "테스터", Market.KR)
     assert "주가 퀴즈" in p.markdown and p.quiz_id
     assert store.get(p.quiz_id).quiz_type.value == "price"
 
     # 종목 모드
-    s = handlers.quiz(QuizMode.STOCK, Market.KR)
+    s = handlers.quiz(QuizMode.STOCK, "테스터", Market.KR)
     assert "종목 퀴즈" in s.markdown and s.quiz_id
     assert store.get(s.quiz_id).quiz_type.value == "company"
     assert store.get(s.quiz_id).answer.name not in s.markdown  # 정답 미노출
 
     # 시장 모드 (방향 랜덤) — gainer/loser 중 하나
-    m = handlers.quiz(QuizMode.MARKET, Market.KR, Period.WEEK)
+    m = handlers.quiz(QuizMode.MARKET, "테스터", Market.KR, Period.WEEK)
     assert "시장 퀴즈" in m.markdown and m.quiz_id
     assert store.get(m.quiz_id).quiz_type.value in ("gainer", "loser")
 
     # US는 모드와 무관하게 차단
     from server.handlers import _US_BLOCKED_MD
-    assert handlers.quiz(QuizMode.PRICE, Market.US).markdown == _US_BLOCKED_MD
+    assert handlers.quiz(QuizMode.PRICE, "테스터", Market.US).markdown == _US_BLOCKED_MD
 
 
 @pytest.mark.asyncio
@@ -127,9 +158,9 @@ async def test_market_mode_random_covers_both_directions(cache):
     kinds = set()
     for seed in range(12):
         store = QuizStore()
-        h = QuizHandlers(cache, store, QuizBank(rng=_random.Random(seed)),
+        h = QuizHandlers(cache, store, ScoreStore(), QuizBank(rng=_random.Random(seed)),
                          rng=_random.Random(seed))
-        out = h.quiz(QuizMode.MARKET, Market.KR, Period.WEEK)
+        out = h.quiz(QuizMode.MARKET, "테스터", Market.KR, Period.WEEK)
         kinds.add(store.get(out.quiz_id).quiz_type.value)
     assert kinds == {"gainer", "loser"}  # 두 방향 모두 등장
 
@@ -142,12 +173,12 @@ async def test_full_scenario_price_quiz(cache):
     assert state is not None
 
     # 오답 → 힌트(UP/DOWN)
-    wrong = await handlers.submit_answer(out.quiz_id, str(state.answer.price * 0.5))
+    wrong = await handlers.submit_answer(out.quiz_id, str(state.answer.price * 0.5), "테스터")
     assert wrong.verdict == Verdict.WRONG
     assert "UP" in wrong.markdown or "DOWN" in wrong.markdown
 
     # 정답 → 미니분석 + 2택 + 면책 문구
-    correct = await handlers.submit_answer(out.quiz_id, str(state.answer.price))
+    correct = await handlers.submit_answer(out.quiz_id, str(state.answer.price), "테스터")
     assert correct.verdict == Verdict.CORRECT
     assert correct.analysis is not None
     assert DISCLAIMER in correct.markdown
@@ -156,16 +187,88 @@ async def test_full_scenario_price_quiz(cache):
 
 
 @pytest.mark.asyncio
+async def test_first_try_correct_adds_three_points_and_ranking(cache):
+    """첫 시도 정답은 3점과 TOP5 및 본인 순위를 함께 반환한다."""
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store)
+    out = handlers.price_quiz(Market.KR)
+    state = store.get(out.quiz_id)
+
+    correct = await handlers.submit_answer(
+        out.quiz_id, str(state.answer.price), "첫정답"
+    )
+
+    assert "3점" in correct.markdown
+    assert "주간 TOP5" in correct.markdown
+    assert correct.leaderboard is not None
+    assert correct.leaderboard.my_rank == 1
+
+
+@pytest.mark.asyncio
+async def test_solved_quiz_does_not_add_score_twice(cache):
+    """이미 해결된 퀴즈 재제출은 점수와 랭킹을 다시 계산하지 않는다."""
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store)
+    out = handlers.price_quiz(Market.KR)
+    state = store.get(out.quiz_id)
+    answer = str(state.answer.price)
+
+    first = await handlers.submit_answer(out.quiz_id, answer, "중복방지")
+    repeated = await handlers.submit_answer(out.quiz_id, answer, "중복방지")
+
+    assert first.leaderboard is not None
+    assert first.leaderboard.my_entry.score == 3
+    assert repeated.leaderboard is None
+    assert score_store.leaderboard("중복방지").my_entry.score == 3
+
+
+@pytest.mark.asyncio
+async def test_wrong_answer_does_not_show_ranking(cache):
+    """오답 중에는 점수와 랭킹을 노출하지 않는다."""
+    handlers, store = _handlers(cache)
+    out = handlers.price_quiz(Market.KR)
+    state = store.get(out.quiz_id)
+
+    wrong = await handlers.submit_answer(
+        out.quiz_id, str(state.answer.price * 0.5), "오답자"
+    )
+
+    assert wrong.leaderboard is None
+    assert "주간 TOP5" not in wrong.markdown
+
+
+@pytest.mark.asyncio
+async def test_blank_nickname_grades_without_score(cache):
+    """공백 닉네임이어도 정답 처리는 하되 점수는 부여하지 않는다."""
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store)
+    out = handlers.price_quiz(Market.KR)
+    state = store.get(out.quiz_id)
+
+    correct = await handlers.submit_answer(
+        out.quiz_id, str(state.answer.price), "   "
+    )
+
+    assert correct.verdict == Verdict.CORRECT
+    assert correct.leaderboard is None
+    assert "닉네임이 없어" in correct.markdown
+    assert score_store.rank_of("   ") == 1
+
+
+@pytest.mark.asyncio
 async def test_name_quiz_wrong_then_hint_then_correct(cache):
     handlers, store = _handlers(cache, seed=3)
     out = handlers.top_gainers_quiz(Market.KR, Period.WEEK)
     state = store.get(out.quiz_id)
     # 1차 오답 → 초성 힌트
-    r1 = await handlers.submit_answer(out.quiz_id, "없는종목")
+    r1 = await handlers.submit_answer(out.quiz_id, "없는종목", "테스터")
     assert r1.verdict == Verdict.WRONG
     assert state.hints_precomputed[0].text in r1.markdown  # 초성 단계
     # 정답
-    r2 = await handlers.submit_answer(out.quiz_id, state.answer.name)
+    r2 = await handlers.submit_answer(out.quiz_id, state.answer.name, "테스터")
     assert r2.verdict == Verdict.CORRECT
 
 
@@ -191,7 +294,7 @@ async def test_us_market_is_blocked_cleanly(cache):
 @pytest.mark.asyncio
 async def test_not_found_quiz_id(cache):
     handlers, _ = _handlers(cache)
-    r = await handlers.submit_answer("does-not-exist", "삼성전자")
+    r = await handlers.submit_answer("does-not-exist", "삼성전자", "테스터")
     assert r.verdict == Verdict.NOT_FOUND
 
 
@@ -204,7 +307,7 @@ async def test_group_chat_only_one_winner(cache):
     answer = str(state.answer.price)
 
     results = await asyncio.gather(
-        *[handlers.submit_answer(out.quiz_id, answer) for _ in range(5)]
+        *[handlers.submit_answer(out.quiz_id, answer, f"테스터{i}") for i in range(5)]
     )
     winners = [r for r in results if r.analysis is not None]
     assert len(winners) == 1
@@ -217,6 +320,116 @@ async def test_no_advice_on_leading_question(cache):
     handlers, store = _handlers(cache)
     out = handlers.price_quiz(Market.KR)
     state = store.get(out.quiz_id)
-    correct = await handlers.submit_answer(out.quiz_id, str(state.answer.price))
+    correct = await handlers.submit_answer(out.quiz_id, str(state.answer.price), "테스터")
     for banned in ("매수", "매도", "사세요", "추천"):
         assert banned not in correct.markdown
+
+
+@pytest.mark.asyncio
+async def test_refresh_today_updates_movers_and_top20(cache):
+    """당일 마켓 마감 릭킹과 시총 상위 종목을 함께 갱신한다."""
+    from server.main import _refresh_today
+
+    client = MockMarketClient()
+    cache._top20 = {}  # 리프레셔가 실제로 다시 채우는지 검증
+    await _refresh_today(cache, client)
+
+    for market in (Market.KR, Market.US):
+        assert cache.top20(market)
+        assert cache.movers(market, Period.TODAY, "up")
+        assert cache.movers(market, Period.TODAY, "down")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("now", "expected_refreshes"),
+    [
+        (datetime(2026, 8, 14, 10, 0, tzinfo=timezone(timedelta(hours=9))), 1),
+        (datetime(2026, 8, 14, 16, 0, tzinfo=timezone(timedelta(hours=9))), 0),
+    ],
+)
+async def test_refresher_loop_runs_only_during_market_hours(
+    cache, monkeypatch, now, expected_refreshes
+):
+    """리프레셔는 장중에만 갱신하고 매 tick을 60초 간격으로 두다."""
+    import server.main as main
+
+    refreshes = 0
+    sleeps = []
+
+    async def fake_refresh(cache, client):
+        nonlocal refreshes
+        refreshes += 1
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(main, "_now_kst", lambda: now)
+    monkeypatch.setattr(main, "_refresh_today", fake_refresh)
+    monkeypatch.setattr(main.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await main._refresher_loop(cache, MockMarketClient())
+
+    assert refreshes == expected_refreshes
+    assert sleeps == [main._REFRESH_INTERVAL_SEC]
+
+
+def test_build_app_requires_score_store(cache):
+    """점수 저장소를 빠뜨리면 조립 시점에 즉시 실패한다."""
+    from server.main import build_app
+
+    with pytest.raises(TypeError):
+        build_app(cache, QuizStore())
+
+
+@pytest.mark.asyncio
+async def test_weekly_reset_loop_checks_every_minute(monkeypatch):
+    """주간 리셋 루프는 현재 KST 시각을 1분마다 확인한다."""
+    import server.main as main
+
+    score_store = ScoreStore()
+    checks = []
+    now = datetime(2026, 8, 17, tzinfo=timezone(timedelta(hours=9)))
+
+    async def fake_reset(value):
+        checks.append(value)
+
+    async def fake_sleep(seconds):
+        assert seconds == main._WEEKLY_RESET_INTERVAL_SEC
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(score_store, "maybe_weekly_reset", fake_reset)
+    monkeypatch.setattr(main, "_now_kst", lambda: now)
+    monkeypatch.setattr(main.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await main._weekly_reset_loop(score_store)
+
+    assert checks == [now]
+
+
+@pytest.mark.asyncio
+async def test_snapshot_loop_saves_every_five_minutes(monkeypatch):
+    """스냅샷 루프는 5분을 기다린 뒤 저장한다."""
+    import server.main as main
+
+    score_store = ScoreStore()
+    saves = 0
+
+    async def fake_save():
+        nonlocal saves
+        saves += 1
+        raise asyncio.CancelledError
+
+    async def fake_sleep(seconds):
+        assert seconds == main._SNAPSHOT_INTERVAL_SEC
+
+    monkeypatch.setattr(score_store, "snapshot_save", fake_save)
+    monkeypatch.setattr(main.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await main._snapshot_loop(score_store)
+
+    assert saves == 1
