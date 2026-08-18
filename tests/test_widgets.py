@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from contracts.schemas import LeaderboardSnapshot, ScoreEntry
 from server.widgets import (
     correct_answer_widget,
+    leaderboard_listview_rows,
     leaderboard_table_rows,
     quiz_question_widget,
     to_content_text,
@@ -80,8 +81,14 @@ def test_correct_answer_widget_payload_and_top_five() -> None:
         ["다음 퀴즈", "종료"],
     )
     _assert_payload(payload, "correct_answer")
-    table = next(child for child in payload["widget"]["children"] if child["type"] == "Table")
-    assert len(table["children"]) == 6
+    # Table은 Preview 실측(2026-08-19)에서 정답 위젯 전체를 텍스트로 강등시켜
+    # leaderboard_listview_rows(Col+Row 조합)로 교체됨. Table 자체는 더 이상
+    # correct_answer_widget에서 쓰이지 않는다.
+    assert all(child["type"] != "Table" for child in payload["widget"]["children"])
+    leaderboard_col = next(
+        child for child in payload["widget"]["children"] if child["type"] == "Col"
+    )
+    assert len(leaderboard_col["children"]) == 5
     assert "나의 순위: 6위" in payload["copy_text"]
 
 
@@ -92,11 +99,26 @@ def test_correct_answer_widget_without_leaderboard() -> None:
 
 
 def test_leaderboard_table_rows_schema() -> None:
+    """더 이상 correct_answer_widget에서 쓰이지 않지만, Table 스키마 자체는
+    카카오 렌더러가 향후 지원할 경우를 대비해 보존·검증한다."""
     table = leaderboard_table_rows(_leaderboard())
     assert table["type"] == "Table"
     assert table["children"][0]["type"] == "Table.Row"
     assert table["children"][0]["header"] is True
     assert table["children"][0]["children"][0]["type"] == "Table.Cell"
+
+
+def test_leaderboard_listview_rows_schema() -> None:
+    col = leaderboard_listview_rows(_leaderboard())
+    assert col["type"] == "Col"
+    assert len(col["children"]) == 5
+    first_row = col["children"][0]
+    assert first_row["type"] == "Row"
+    badge, name, score = first_row["children"]
+    assert badge["type"] == "Badge" and badge["label"] == "1"
+    assert badge["color"] == "warning"  # 1위는 warning 색
+    assert name["flex"] == 1 and name["truncate"] is True
+    assert score["textAlign"] == "end"
 
 
 def test_to_content_text_preserves_korean() -> None:

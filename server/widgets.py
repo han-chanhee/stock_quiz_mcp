@@ -137,7 +137,7 @@ def correct_answer_widget(
                 }
             )
             copy_lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!"])
-        children.append(leaderboard_table_rows(leaderboard))
+        children.append(leaderboard_listview_rows(leaderboard))
         children.append(
             {"type": "Text", "value": f"나의 순위: {leaderboard.my_rank}위", "weight": "bold"}
         )
@@ -176,7 +176,13 @@ def correct_answer_widget(
 
 
 def leaderboard_table_rows(leaderboard: "LeaderboardSnapshot") -> dict:
-    """TOP5를 Table 컴포넌트로 조립한다."""
+    """TOP5를 Table 컴포넌트로 조립한다.
+
+    ⚠️ Preview 실측 결과(2026-08-19) Table 사용 시 정답 위젯 전체가 조용히
+    일반 텍스트로 강등됨을 확인(HANDOFF.md 경고가 실측으로 확인됨). 더 이상
+    correct_answer_widget에서 호출하지 않는다 — leaderboard_listview_rows 사용.
+    이 함수는 향후 카카오 렌더러가 Table을 지원하게 될 경우를 대비해 보존한다.
+    """
 
     def cell(value: str, *, align: str | None = None) -> dict:
         result: dict = {"type": "Table.Cell", "children": [{"type": "Text", "value": value}]}
@@ -203,6 +209,58 @@ def leaderboard_table_rows(leaderboard: "LeaderboardSnapshot") -> dict:
         for rank, entry in enumerate(leaderboard.top[:5], start=1)
     )
     return {"type": "Table", "children": rows}
+
+
+_TOP3_BADGE_COLORS = {1: "warning", 2: "secondary", 3: "info"}
+
+
+def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
+    """TOP5를 Row 조합으로 조립한다(Card 안에 중첩되는 자식이라 ListView 루트는 쓰지 않음).
+
+    HANDOFF.md §7 '리더보드 위젯 JSON' 샘플의 내부 Row 레이아웃(Badge+Text+Text)을
+    가져오되, 감싸는 컨테이너는 ListView/ListViewItem(루트 전용·자식 전용으로 문서에
+    명시됨 — Card 안에 중첩 시 스펙 위반 위험) 대신 이미 정답 위젯에서 검증된 Col로
+    감싼다. 닉네임 Text에 flex:1+truncate:true를 줘야 점수가 오른쪽으로 밀리고 긴
+    닉네임이 레이아웃을 안 깨뜨린다. 상위 3위는 Badge 색을 달리해 시각적 위계를 준다.
+    """
+
+    def row(rank: int, display_name: str, score: int) -> dict:
+        badge_color = _TOP3_BADGE_COLORS.get(rank, "secondary")
+        return {
+            "type": "Row",
+            "align": "center",
+            "gap": 8,
+            "children": [
+                {
+                    "type": "Badge",
+                    "label": str(rank),
+                    "color": badge_color,
+                    "variant": "solid",
+                    "pill": True,
+                    "size": "sm",
+                },
+                {
+                    "type": "Text",
+                    "value": display_name,
+                    "weight": "semibold",
+                    "flex": 1,
+                    "truncate": True,
+                },
+                {
+                    "type": "Text",
+                    "value": f"{score}점",
+                    "weight": "bold",
+                    "textAlign": "end",
+                    "color": "success",
+                },
+            ],
+        }
+
+    rows = [
+        row(rank, entry.display_name, entry.score)
+        for rank, entry in enumerate(leaderboard.top[:5], start=1)
+    ]
+    return {"type": "Col", "gap": 6, "children": rows}
 
 
 def to_content_text(payload: dict) -> str:
