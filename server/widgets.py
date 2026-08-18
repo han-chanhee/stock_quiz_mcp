@@ -87,12 +87,32 @@ def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
     """오답 응답 위젯. 간단한 Card + Text 구성.
     {"widget": {...}, "copy_text": "...", "name": "wrong_answer"}"""
     copy_text = f"❌ 오답입니다. (시도 {attempts}회)\n\n💡 힌트: **{hint_text}**"
+    # TEMP: 딥링크 실측용. 오답은 재현이 빨라(아무 숫자나 입력) 여기서 즉시 확인한다.
+    # [0]은 대조군(정상 https URL) — 이게도 강등되면 커스텀 스킴이 아니라 버튼 개수/
+    # 다른 요인이 원인이라는 뜻. 확인 끝나면 원상복구.
+    deeplink_buttons = [
+        {
+            "type": "Button",
+            "label": label,
+            "onClickAction": {"payload": {"target": {"url": url}}},
+        }
+        for label, url in (
+            ("[0 대조군] https", "https://kakao.com"),
+            ("[1] kakaotalk scheme", "kakaotalk://msg/text?text=주가"),
+            ("[2] kakaolink scheme", "kakaolink://send?text=주가"),
+            ("[3] kakaoopen scheme", "kakaoopen://send?text=주가"),
+            ("[4] sms scheme", "sms:?body=주가"),
+            ("[5] intent scheme", "intent://send?text=주가#Intent;end"),
+            ("[6] kakaotalk share", "kakaotalk://share?text=주가"),
+        )
+    ]
     return {
         "widget": {
             "type": "Card",
             "children": [
                 {"type": "Text", "value": f"오답입니다. (시도 {attempts}회)"},
                 {"type": "Badge", "label": hint_text, "color": "warning"},
+                *deeplink_buttons,
             ],
         },
         "copy_text": copy_text,
@@ -150,19 +170,6 @@ def correct_answer_widget(
 
     if next_actions:
         children.append({"type": "Divider", "spacing": 12})
-        # TEMP: 딥링크 실측용. 정식 코드 아님 — 확인 끝나면 원상복구.
-        _TEMP_DEEPLINK_TESTS = [
-            ("[실측1] kakaotalk 스킴", "kakaotalk://msg/text?text=주가"),
-            ("[실측2] kakaolink 스킴", "kakaolink://send?text=주가"),
-        ]
-        children.extend(
-            {
-                "type": "Button",
-                "label": label,
-                "onClickAction": {"payload": {"target": {"url": url}}},
-            }
-            for label, url in _TEMP_DEEPLINK_TESTS
-        )
         children.extend({"type": "Button", "label": action} for action in next_actions)
         copy_lines.extend(
             ["", "다음 중 선택: " + " / ".join(f"`{action}`" for action in next_actions)]
