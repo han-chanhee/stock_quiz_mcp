@@ -150,6 +150,19 @@ def correct_answer_widget(
 
     if next_actions:
         children.append({"type": "Divider", "spacing": 12})
+        # TEMP: 딥링크 실측용. 정식 코드 아님 — 확인 끝나면 원상복구.
+        _TEMP_DEEPLINK_TESTS = [
+            ("[실측1] kakaotalk 스킴", "kakaotalk://msg/text?text=주가"),
+            ("[실측2] kakaolink 스킴", "kakaolink://send?text=주가"),
+        ]
+        children.extend(
+            {
+                "type": "Button",
+                "label": label,
+                "onClickAction": {"payload": {"target": {"url": url}}},
+            }
+            for label, url in _TEMP_DEEPLINK_TESTS
+        )
         children.extend({"type": "Button", "label": action} for action in next_actions)
         copy_lines.extend(
             ["", "다음 중 선택: " + " / ".join(f"`{action}`" for action in next_actions)]
