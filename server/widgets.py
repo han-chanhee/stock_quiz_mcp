@@ -106,6 +106,38 @@ def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
             ("[6] kakaotalk share", "kakaotalk://share?text=주가"),
         )
     ]
+    # [7]~[10] ChatKit onAction/sendUserMessage 방식 실측 — 카카오 공식 문서엔
+    # target.url만 명시돼 근거 없음. 카카오가 handler:"client" 액션을 자체
+    # onAction으로 가로채 sendUserMessage처럼 처리하는지 확인용 필드 조합 4종.
+    quick_reply_buttons = [
+        {"type": "Button", "label": label, "onClickAction": action}
+        for label, action in (
+            (
+                "[7] payload.text + handler:client",
+                {
+                    "type": "quick_reply",
+                    "handler": "client",
+                    "payload": {"text": "주가 정답을 다시 볼래"},
+                },
+            ),
+            (
+                "[8] payload.message",
+                {"type": "quick_reply", "payload": {"message": "종목 힌트 더 줘"}},
+            ),
+            (
+                "[9] OpenAI 샘플 형태(cats.more_names 스타일)",
+                {
+                    "type": "quiz.more_hint",
+                    "handler": "client",
+                    "payload": {},
+                },
+            ),
+            (
+                "[10] target.text(경로 변형)",
+                {"payload": {"target": {"text": "힌트 더 줘"}}},
+            ),
+        )
+    ]
     return {
         "widget": {
             "type": "Card",
@@ -113,6 +145,7 @@ def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
                 {"type": "Text", "value": f"오답입니다. (시도 {attempts}회)"},
                 {"type": "Badge", "label": hint_text, "color": "warning"},
                 *deeplink_buttons,
+                *quick_reply_buttons,
             ],
         },
         "copy_text": copy_text,
