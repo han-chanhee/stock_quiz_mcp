@@ -99,13 +99,23 @@ class QuizHandlers:
 
     def quiz(
         self,
-        mode: QuizMode,
-        nickname: str,
+        mode: QuizMode | None,
+        nickname: str | None,
         market: Market = Market.KR,
         period: Period = Period.TODAY,
         sector: Sector | None = None,
     ) -> QuizOutcome:
-        """모드 하나를 받아 [모드 설명 + 퀴즈]를 반환한다. 입력은 3모드로 강제된다."""
+        """모드 하나를 받아 [모드 설명 + 퀴즈]를 반환한다. 입력은 3모드로 강제된다.
+
+        mode 또는 nickname이 없으면(생략 호출) 안내 위젯을 quiz_id 없이 반환한다.
+        """
+        if mode is None or nickname is None or not nickname.strip():
+            return QuizOutcome(
+                quiz_id="",
+                markdown="모드와 닉네임을 알려주세요. 주가 / 시장 / 종목 중에서 골라주세요.",
+                widget=widgets.mode_selection_widget(),
+            )
+
         if (blocked := self._us_guard(market)) is not None:
             return blocked
 
@@ -120,7 +130,11 @@ class QuizHandlers:
             else:
                 outcome = self.top_losers_quiz(market, period)
         else:  # 방어적: 알 수 없는 모드
-            return QuizOutcome(quiz_id="", markdown="주가 / 시장 / 종목 중에서 골라주세요.")
+            return QuizOutcome(
+                quiz_id="",
+                markdown="주가 / 시장 / 종목 중에서 골라주세요.",
+                widget=widgets.mode_unknown_widget(),
+            )
 
         # 문제 앞에 모드 설명 삽입 (quiz_id가 없는 안내 응답엔 붙이지 않음)
         if outcome.quiz_id:
@@ -136,7 +150,9 @@ class QuizHandlers:
     def _us_guard(self, market: Market) -> QuizOutcome | None:
         """US 잠금 가드. 잠긴 경우 안내 마크다운(quiz_id 없음)을 반환한다."""
         if not US_ENABLED and market == Market.US:
-            return QuizOutcome(quiz_id="", markdown=_US_BLOCKED_MD)
+            return QuizOutcome(
+                quiz_id="", markdown=_US_BLOCKED_MD, widget=widgets.us_blocked_widget()
+            )
         return None
 
     def _register(self, question, state) -> QuizOutcome:
@@ -152,12 +168,23 @@ class QuizHandlers:
             QuizType.LOSER: QuizMode.MARKET,
             QuizType.COMPANY: QuizMode.STOCK,
         }[state.quiz_type]
-        widget = widgets.quiz_question_widget(
-            question.quiz_id,
-            _MODE_INTRO[mode],
-            question.question_md,
-            _EXPIRES_SEC,
-        )
+        mode_intro = _MODE_INTRO[mode]
+        if mode == QuizMode.PRICE:
+            widget = widgets.price_quiz_widget(
+                question.quiz_id, mode_intro, question.question_md, _EXPIRES_SEC
+            )
+        elif mode == QuizMode.MARKET:
+            widget = widgets.market_quiz_widget(
+                question.quiz_id,
+                mode_intro,
+                question.question_md,
+                state.answer.change_pct,
+                _EXPIRES_SEC,
+            )
+        else:  # QuizMode.STOCK
+            widget = widgets.company_quiz_widget(
+                question.quiz_id, mode_intro, question.question_md, _EXPIRES_SEC
+            )
         return QuizOutcome(
             question.quiz_id,
             md + _as_of_footer(self._cache),
@@ -201,9 +228,14 @@ class QuizHandlers:
                 quiz_id="",
                 markdown=f"🗂️ '{sector.value}' 섹터는 아직 준비된 종목이 부족해요. "
                 "섹터를 비워두면 전체에서 출제해 드려요.",
+                widget=widgets.sector_empty_widget(sector.value),
             )
         if not pool:
-            return QuizOutcome(quiz_id="", markdown="🗂️ 회사 맞히기 데이터를 준비 중이에요.")
+            return QuizOutcome(
+                quiz_id="",
+                markdown="🗂️ 회사 맞히기 데이터를 준비 중이에요.",
+                widget=widgets.company_pool_empty_widget(),
+            )
         question, state = self._bank.company_quiz(pool, sector)
         return self._register(question, state)
 
@@ -213,12 +245,23 @@ class QuizHandlers:
         state, miss = self._store.get_state_or_verdict(quiz_id)
         if state is None:
             if miss == Verdict.EXPIRED:
-                return SubmitOutcome(Verdict.EXPIRED, "⏰ 만료된 퀴즈입니다. 새 퀴즈를 출제해주세요.")
-            return SubmitOutcome(Verdict.NOT_FOUND, "❓ 존재하지 않는 quiz_id 입니다.")
+                return SubmitOutcome(
+                    Verdict.EXPIRED,
+                    "⏰ 만료된 퀴즈입니다. 새 퀴즈를 출제해주세요.",
+                    widget=widgets.expired_quiz_widget(),
+                )
+            return SubmitOutcome(
+                Verdict.NOT_FOUND,
+                "❓ 존재하지 않는 quiz_id 입니다.",
+                widget=widgets.quiz_not_found_widget(),
+            )
 
         if state.solved:
             return SubmitOutcome(
-                Verdict.CORRECT, "🏁 이미 정답이 나온 퀴즈입니다.", attempts=state.attempts
+                Verdict.CORRECT,
+                "🏁 이미 정답이 나온 퀴즈입니다.",
+                attempts=state.attempts,
+                widget=widgets.already_solved_widget(),
             )
 
         aliases = self._cache.aliases()
@@ -229,6 +272,7 @@ class QuizHandlers:
                     Verdict.CORRECT,
                     "🏁 이미 정답이 나온 퀴즈입니다.",
                     attempts=(solved_state.attempts if solved_state else 0),
+                    widget=widgets.already_solved_widget(),
                 )
             reason = self._cache.reason(state.answer.ticker)
             analysis = build_analysis(state.answer, reason)

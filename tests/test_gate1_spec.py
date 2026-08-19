@@ -20,6 +20,7 @@ _TOOL_RE = re.compile(
 )
 
 EXPECTED_TOOLS = {
+    "help",
     "quiz",
     "submit_answer",
 }

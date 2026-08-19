@@ -34,7 +34,7 @@ from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
 
 from .cache import QuizCache
-from .auth import build_auth_provider
+from .auth import build_auth_provider, register_auth_routes
 from .handlers import QuizHandlers, QuizMode
 from . import widgets
 
@@ -121,22 +121,38 @@ def _build_app(
         return wrapper
 
     @mcp.tool(
+        name="help",
+        description=(
+            "Shows how to play 주식대결 (Stock Quiz Battle / 주식사전 퀴즈): the three "
+            "quiz modes (주가/시장/종목), why a nickname is needed for the weekly "
+            "ranking, and example phrases to start. Call this when the user asks how "
+            "the quiz works, what modes exist, or seems unsure how to start."
+        ),
+        annotations=ToolAnnotations(title="How to Play", **_COMMON_ANN),
+    )
+    @_safe
+    def help() -> str:
+        return widgets.to_content_text(widgets.welcome_widget())
+
+    @mcp.tool(
         name="quiz",
         description=(
             "Starts a stock quiz for 주식대결 (Stock Quiz Battle / 주식사전 퀴즈). "
+            "Requires mode and nickname — if either is missing, call this tool anyway "
+            "with what you have; it replies with a short guide instead of erroring. "
             "Pick one of three modes: '주가' (guess a random stock's current price, "
             "±3% correct), '시장' (guess the biggest gainer or loser over a period; "
             "direction is random), '종목' (guess the company from sector/price/market-cap "
             "hints). The reply includes a short mode intro plus the quiz and a quiz_id; "
-            "grade answers with submit_answer. nickname (닉네임) is required. "
+            "grade answers with submit_answer. nickname (닉네임) is required for scoring. "
             "Korean market only for now."
         ),
         annotations=ToolAnnotations(title="Stock Quiz", **_COMMON_ANN),
     )
     @_safe
     def quiz(
-        mode: QuizMode,
-        nickname: str,
+        mode: QuizMode | None = None,
+        nickname: str | None = None,
         market: Market = Market.KR,
         period: Period = Period.TODAY,
         sector: Sector | None = None,
@@ -250,6 +266,10 @@ def create_server() -> FastMCP:
         refresh_client=client,
         auth=auth,
     )
+
+    # OAuth 활성화 시(OAUTH_ENABLED=1)만 동의/연동해제 화면을 등록한다.
+    if auth is not None:
+        register_auth_routes(mcp, auth)
 
     @mcp.custom_route("/", methods=["GET"])
     async def root(request: Request) -> PlainTextResponse:

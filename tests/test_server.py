@@ -172,7 +172,7 @@ async def test_full_scenario_price_quiz(cache):
     state = store.get(out.quiz_id)
     assert state is not None
     assert out.widget is not None
-    assert out.widget["name"] == "quiz_question"
+    assert out.widget["name"] == "price_quiz"
 
     # 오답 → 힌트(UP/DOWN)
     wrong = await handlers.submit_answer(out.quiz_id, str(state.answer.price * 0.5), "테스터")
@@ -304,7 +304,8 @@ async def test_not_found_quiz_id(cache):
     handlers, _ = _handlers(cache)
     r = await handlers.submit_answer("does-not-exist", "삼성전자", "테스터")
     assert r.verdict == Verdict.NOT_FOUND
-    assert r.widget is None
+    assert r.widget is not None
+    assert r.widget["name"] == "quiz_not_found"
 
 
 @pytest.mark.asyncio
@@ -406,7 +407,7 @@ async def test_tool_returns_widget_json_and_markdown_fallback(cache):
     submit_tool = await app.get_tool("submit_answer")
     quiz_result = quiz_tool.fn(mode="주가", nickname="테스터")
     quiz_payload = json.loads(quiz_result)
-    assert quiz_payload["name"] == "quiz_question"
+    assert quiz_payload["name"] == "price_quiz"
 
     quiz_id = next(iter(store._data))
     state = store.get(quiz_id)
@@ -418,10 +419,11 @@ async def test_tool_returns_widget_json_and_markdown_fallback(cache):
     wrong_payload = json.loads(wrong_result)
     assert wrong_payload["name"] == "wrong_answer"
 
-    fallback_result = quiz_tool.fn(
-        mode="주가", nickname="테스터", market="US"
-    )
-    assert fallback_result == _US_BLOCKED_MD
+    # US 차단도 이제 위젯으로 반환된다(더 이상 마크다운 폴백 아님).
+    us_result = quiz_tool.fn(mode="주가", nickname="테스터", market="US")
+    us_payload = json.loads(us_result)
+    assert us_payload["name"] == "us_blocked"
+    assert _US_BLOCKED_MD in us_payload["copy_text"] or "해외" in us_payload["copy_text"]
 
 
 @pytest.mark.asyncio

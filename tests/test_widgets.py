@@ -7,11 +7,22 @@ from datetime import datetime, timezone
 
 from contracts.schemas import LeaderboardSnapshot, ScoreEntry
 from server.widgets import (
+    already_solved_widget,
+    company_pool_empty_widget,
+    company_quiz_widget,
     correct_answer_widget,
+    expired_quiz_widget,
     leaderboard_listview_rows,
     leaderboard_table_rows,
-    quiz_question_widget,
+    market_quiz_widget,
+    mode_selection_widget,
+    mode_unknown_widget,
+    price_quiz_widget,
+    quiz_not_found_widget,
+    sector_empty_widget,
     to_content_text,
+    us_blocked_widget,
+    welcome_widget,
     wrong_answer_widget,
 )
 
@@ -47,20 +58,69 @@ def _assert_payload(payload: dict, expected_name: str) -> None:
     assert not has_status(payload)
 
 
-def test_quiz_question_widget_payload() -> None:
-    payload = quiz_question_widget("QZ-한글", "종목 퀴즈\n국내 시장", "**힌트**: 반도체")
-    _assert_payload(payload, "quiz_question")
+def test_price_quiz_widget_payload() -> None:
+    payload = price_quiz_widget("QZ-한글", "📈 주가 퀴즈 — 가격 맞히기", "**힌트**: 반도체")
+    _assert_payload(payload, "price_quiz")
     assert payload["widget"]["children"][3]["type"] == "Col"
     assert "QZ-한글" in payload["copy_text"]
 
 
-def test_quiz_question_widget_uses_mode_independent_title_and_question() -> None:
+def test_price_quiz_widget_uses_mode_independent_title_and_question() -> None:
     question_md = "**삼성전자**의 현재 주가는 얼마일까요?"
-    payload = quiz_question_widget("QZ-1", "📈 주가 퀴즈 — 가격 맞히기", question_md)
+    payload = price_quiz_widget("QZ-1", "📈 주가 퀴즈 — 가격 맞히기", question_md)
     serialized = json.dumps(payload, ensure_ascii=False)
 
     assert "이 기업의 종목명은?" not in serialized
     assert question_md in serialized
+
+
+def test_market_quiz_widget_direction_badge_color() -> None:
+    up = market_quiz_widget("QZ-2", "📊 시장 퀴즈", "가장 오른 종목은?", 5.2)
+    down = market_quiz_widget("QZ-3", "📊 시장 퀴즈", "가장 떨어진 종목은?", -3.1)
+    _assert_payload(up, "market_quiz")
+    _assert_payload(down, "market_quiz")
+    up_badge = next(c for c in up["widget"]["children"] if c.get("type") == "Badge")
+    down_badge = next(c for c in down["widget"]["children"] if c.get("type") == "Badge")
+    assert up_badge["color"] == "success"
+    assert down_badge["color"] == "danger"
+
+
+def test_company_quiz_widget_payload() -> None:
+    question_md = "- 섹터: **반도체**\n- 현재가: 80,000원\n- 시총 1위권"
+    payload = company_quiz_widget("QZ-4", "🏢 종목 퀴즈", question_md)
+    _assert_payload(payload, "company_quiz")
+    assert "QZ-4" in payload["copy_text"]
+
+
+def test_welcome_widget_payload() -> None:
+    payload = welcome_widget()
+    _assert_payload(payload, "welcome")
+    assert "닉네임" in payload["copy_text"]
+
+
+def test_mode_selection_widget_payload() -> None:
+    payload = mode_selection_widget()
+    _assert_payload(payload, "mode_selection")
+    assert "닉네임" in payload["copy_text"]
+
+
+def test_notice_widgets_payload() -> None:
+    for factory, expected_name in (
+        (already_solved_widget, "already_solved"),
+        (expired_quiz_widget, "expired_quiz"),
+        (quiz_not_found_widget, "quiz_not_found"),
+        (us_blocked_widget, "us_blocked"),
+        (company_pool_empty_widget, "company_pool_empty"),
+        (mode_unknown_widget, "mode_unknown"),
+    ):
+        payload = factory()
+        _assert_payload(payload, expected_name)
+
+
+def test_sector_empty_widget_payload() -> None:
+    payload = sector_empty_widget("반도체")
+    _assert_payload(payload, "sector_empty")
+    assert "반도체" in payload["copy_text"]
 
 
 def test_wrong_answer_widget_payload() -> None:

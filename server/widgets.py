@@ -20,14 +20,15 @@ def _text_lines(value: str, **properties: object) -> dict:
     }
 
 
-def quiz_question_widget(
+def _quiz_frame(
     quiz_id: str,
     mode_intro: str,
-    question_md: str,
-    expires_in_sec: int = 1800,
+    body_children: list[dict],
+    expires_in_sec: int,
+    name: str,
+    copy_body: str,
 ) -> dict:
-    """출제 응답 위젯. HANDOFF.md §7 '퀴즈 출제 위젯 JSON' 스펙을 따른다.
-    반환값은 {"widget": {...}, "copy_text": "...", "name": "quiz_question"} 형태."""
+    """3개 출제 모드가 공유하는 공통 틀. 바디만 모드별 함수가 채워 넣는다."""
     expires_in_min = expires_in_sec // 60
     children = [
         {
@@ -59,7 +60,8 @@ def quiz_question_widget(
         },
         _text_lines(mode_intro, size="md", maxLines=3),
         {"type": "Divider", "spacing": 12},
-        {"type": "Markdown", "value": question_md},
+        *body_children,
+        {"type": "Divider", "spacing": 12},
         {"type": "Markdown", "value": f"정답 제출용 ID: `{quiz_id}`"},
         {
             "type": "Caption",
@@ -68,7 +70,7 @@ def quiz_question_widget(
         },
     ]
     copy_text = (
-        f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{question_md}\n\n"
+        f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}\n\n"
         f"제출 ID: `{quiz_id}`"
     )
     return {
@@ -79,73 +81,80 @@ def quiz_question_widget(
             "children": children,
         },
         "copy_text": copy_text,
-        "name": "quiz_question",
+        "name": name,
     }
+
+
+def price_quiz_widget(
+    quiz_id: str,
+    mode_intro: str,
+    question_md: str,
+    expires_in_sec: int = 1800,
+) -> dict:
+    """주가 퀴즈 출제 위젯. 숫자 입력을 강조하는 바디."""
+    body = [
+        {"type": "Markdown", "value": question_md},
+        {
+            "type": "Badge",
+            "label": "숫자만 입력하세요",
+            "color": "info",
+            "variant": "soft",
+            "size": "sm",
+        },
+    ]
+    return _quiz_frame(
+        quiz_id, mode_intro, body, expires_in_sec, "price_quiz", question_md
+    )
+
+
+def market_quiz_widget(
+    quiz_id: str,
+    mode_intro: str,
+    question_md: str,
+    change_pct: float,
+    expires_in_sec: int = 1800,
+) -> dict:
+    """시장 퀴즈 출제 위젯. 등락률 방향에 따라 배지 색을 다르게 준다."""
+    direction_color = "success" if change_pct >= 0 else "danger"
+    direction_label = f"{change_pct:+.2f}%"
+    body = [
+        {"type": "Markdown", "value": question_md},
+        {
+            "type": "Badge",
+            "label": direction_label,
+            "color": direction_color,
+            "variant": "soft",
+            "size": "sm",
+        },
+    ]
+    return _quiz_frame(
+        quiz_id, mode_intro, body, expires_in_sec, "market_quiz", question_md
+    )
+
+
+def company_quiz_widget(
+    quiz_id: str,
+    mode_intro: str,
+    question_md: str,
+    expires_in_sec: int = 1800,
+) -> dict:
+    """종목 퀴즈 출제 위젯. 힌트 목록(섹터/현재가/시총순위)을 그대로 표시."""
+    body = [{"type": "Markdown", "value": question_md}]
+    return _quiz_frame(
+        quiz_id, mode_intro, body, expires_in_sec, "company_quiz", question_md
+    )
 
 
 def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
     """오답 응답 위젯. 간단한 Card + Text 구성.
     {"widget": {...}, "copy_text": "...", "name": "wrong_answer"}"""
     copy_text = f"❌ 오답입니다. (시도 {attempts}회)\n\n💡 힌트: **{hint_text}**"
-    # TEMP: 딥링크 실측용. 오답은 재현이 빨라(아무 숫자나 입력) 여기서 즉시 확인한다.
-    # [0]은 대조군(정상 https URL) — 이게도 강등되면 커스텀 스킴이 아니라 버튼 개수/
-    # 다른 요인이 원인이라는 뜻. 확인 끝나면 원상복구.
-    deeplink_buttons = [
-        {
-            "type": "Button",
-            "label": label,
-            "onClickAction": {"payload": {"target": {"url": url}}},
-        }
-        for label, url in (
-            ("[0 대조군] https", "https://kakao.com"),
-            ("[1] kakaotalk scheme", "kakaotalk://msg/text?text=주가"),
-            ("[2] kakaolink scheme", "kakaolink://send?text=주가"),
-            ("[3] kakaoopen scheme", "kakaoopen://send?text=주가"),
-            ("[4] sms scheme", "sms:?body=주가"),
-            ("[5] intent scheme", "intent://send?text=주가#Intent;end"),
-            ("[6] kakaotalk share", "kakaotalk://share?text=주가"),
-        )
-    ]
-    # [7]~[10] ChatKit onAction/sendUserMessage 방식 실측 — 카카오 공식 문서엔
-    # target.url만 명시돼 근거 없음. 카카오가 handler:"client" 액션을 자체
-    # onAction으로 가로채 sendUserMessage처럼 처리하는지 확인용 필드 조합 4종.
-    quick_reply_buttons = [
-        {"type": "Button", "label": label, "onClickAction": action}
-        for label, action in (
-            (
-                "[7] payload.text + handler:client",
-                {
-                    "type": "quick_reply",
-                    "handler": "client",
-                    "payload": {"text": "주가 정답을 다시 볼래"},
-                },
-            ),
-            (
-                "[8] payload.message",
-                {"type": "quick_reply", "payload": {"message": "종목 힌트 더 줘"}},
-            ),
-            (
-                "[9] OpenAI 샘플 형태(cats.more_names 스타일)",
-                {
-                    "type": "quiz.more_hint",
-                    "handler": "client",
-                    "payload": {},
-                },
-            ),
-            (
-                "[10] target.text(경로 변형)",
-                {"payload": {"target": {"text": "힌트 더 줘"}}},
-            ),
-        )
-    ]
     return {
         "widget": {
             "type": "Card",
             "children": [
                 {"type": "Text", "value": f"오답입니다. (시도 {attempts}회)"},
                 {"type": "Badge", "label": hint_text, "color": "warning"},
-                *deeplink_buttons,
-                *quick_reply_buttons,
             ],
         },
         "copy_text": copy_text,
@@ -301,6 +310,180 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
         for rank, entry in enumerate(leaderboard.top[:5], start=1)
     ]
     return {"type": "Col", "gap": 6, "children": rows}
+
+
+# ── 웰컴 / 모드 선택 안내 ─────────────────────────────────────
+
+
+def welcome_widget() -> dict:
+    """help 툴 응답 위젯. 서비스 소개 + 3모드 + 닉네임 필요성 + 발화 예시."""
+    mode_rows = [
+        {
+            "type": "Row",
+            "align": "center",
+            "gap": 8,
+            "children": [
+                {"type": "Icon", "name": "chart", "color": "info", "size": "sm"},
+                {"type": "Text", "value": "주가 — 종목 현재가 맞히기(±3%)", "flex": 1},
+            ],
+        },
+        {
+            "type": "Row",
+            "align": "center",
+            "gap": 8,
+            "children": [
+                {"type": "Icon", "name": "analytics", "color": "info", "size": "sm"},
+                {"type": "Text", "value": "시장 — 가장 오르거나 떨어진 종목 맞히기", "flex": 1},
+            ],
+        },
+        {
+            "type": "Row",
+            "align": "center",
+            "gap": 8,
+            "children": [
+                {"type": "Icon", "name": "sparkle", "color": "info", "size": "sm"},
+                {"type": "Text", "value": "종목 — 섹터·가격·시총 힌트로 회사 맞히기", "flex": 1},
+            ],
+        },
+    ]
+    children = [
+        {"type": "Title", "value": "주식대결에 오신 걸 환영해요!", "size": "lg", "weight": "bold"},
+        {
+            "type": "Text",
+            "value": "코스피/코스닥 종목으로 즐기는 주식 퀴즈예요.",
+            "size": "md",
+        },
+        {"type": "Divider", "spacing": 12},
+        {"type": "Col", "gap": 8, "children": mode_rows},
+        {"type": "Divider", "spacing": 12},
+        {
+            "type": "Text",
+            "value": "닉네임을 알려주면 정답 시 주간 랭킹(매주 초기화)에 참여할 수 있어요.",
+            "size": "sm",
+        },
+        {
+            "type": "Caption",
+            "value": '예: "주가 모드로 퀴즈 내줘. 닉네임은 찬희야."',
+            "size": "sm",
+        },
+    ]
+    copy_text = (
+        "**주식대결에 오신 걸 환영해요!**\n\n"
+        "코스피/코스닥 종목으로 즐기는 주식 퀴즈입니다.\n\n"
+        "- 📈 주가 — 종목 현재가 맞히기(±3%)\n"
+        "- 📊 시장 — 가장 오르거나 떨어진 종목 맞히기\n"
+        "- 🏢 종목 — 섹터·가격·시총 힌트로 회사 맞히기\n\n"
+        "닉네임을 알려주면 정답 시 주간 랭킹(매주 초기화)에 참여할 수 있어요.\n\n"
+        '예: "주가 모드로 퀴즈 내줘. 닉네임은 찬희야."'
+    )
+    return {
+        "widget": {"type": "Card", "size": "full", "padding": 16, "children": children},
+        "copy_text": copy_text,
+        "name": "welcome",
+    }
+
+
+def mode_selection_widget() -> dict:
+    """quiz가 mode/nickname 없이 호출됐을 때 반환하는 안내 위젯."""
+    children = [
+        {"type": "Text", "value": "모드와 닉네임을 알려주세요.", "weight": "semibold"},
+        {
+            "type": "Row",
+            "gap": 6,
+            "children": [
+                {"type": "Badge", "label": "주가", "color": "info", "variant": "soft"},
+                {"type": "Badge", "label": "시장", "color": "info", "variant": "soft"},
+                {"type": "Badge", "label": "종목", "color": "info", "variant": "soft"},
+            ],
+        },
+        {
+            "type": "Caption",
+            "value": '예: "종목 모드로 퀴즈 내줘. 닉네임은 찬희야."',
+            "size": "sm",
+        },
+    ]
+    copy_text = (
+        "모드와 닉네임을 알려주세요.\n\n"
+        "주가 / 시장 / 종목 중 하나를 골라주세요.\n\n"
+        '예: "종목 모드로 퀴즈 내줘. 닉네임은 찬희야."'
+    )
+    return {
+        "widget": {"type": "Card", "children": children},
+        "copy_text": copy_text,
+        "name": "mode_selection",
+    }
+
+
+# ── 안내 / 오류 위젯 (quiz_id 없는 경로) ───────────────────────
+
+
+def _notice_widget(text: str, caption: str, name: str) -> dict:
+    """짧은 안내/오류 응답 공통 틀. Text 한 줄 + Caption 한 줄."""
+    children = [
+        {"type": "Text", "value": text},
+        {"type": "Caption", "value": caption, "size": "sm"},
+    ]
+    return {
+        "widget": {"type": "Card", "children": children},
+        "copy_text": f"{text}\n\n{caption}",
+        "name": name,
+    }
+
+
+def already_solved_widget() -> dict:
+    return _notice_widget(
+        "🏁 이미 정답이 나온 퀴즈입니다.",
+        "새 퀴즈를 출제해주세요.",
+        "already_solved",
+    )
+
+
+def expired_quiz_widget() -> dict:
+    return _notice_widget(
+        "⏰ 만료된 퀴즈입니다.",
+        "30분이 지나면 quiz_id가 사라져요. 새 퀴즈를 출제해주세요.",
+        "expired_quiz",
+    )
+
+
+def quiz_not_found_widget() -> dict:
+    return _notice_widget(
+        "❓ 존재하지 않는 quiz_id입니다.",
+        "quiz_id를 다시 확인해주세요.",
+        "quiz_not_found",
+    )
+
+
+def us_blocked_widget() -> dict:
+    return _notice_widget(
+        "🌏 해외 종목 퀴즈는 준비 중입니다.",
+        "지금은 국내(KR) 퀴즈만 즐길 수 있어요.",
+        "us_blocked",
+    )
+
+
+def sector_empty_widget(sector_label: str) -> dict:
+    return _notice_widget(
+        f"🗂️ '{sector_label}' 섹터는 아직 준비된 종목이 부족해요.",
+        "섹터를 비워두면 전체에서 출제해 드려요.",
+        "sector_empty",
+    )
+
+
+def company_pool_empty_widget() -> dict:
+    return _notice_widget(
+        "🗂️ 회사 맞히기 데이터를 준비 중이에요.",
+        "잠시 후 다시 시도해주세요.",
+        "company_pool_empty",
+    )
+
+
+def mode_unknown_widget() -> dict:
+    return _notice_widget(
+        "주가 / 시장 / 종목 중에서 골라주세요.",
+        '예: "주가 모드로 퀴즈 내줘."',
+        "mode_unknown",
+    )
 
 
 def to_content_text(payload: dict) -> str:
