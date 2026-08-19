@@ -1,9 +1,13 @@
 """카카오 MCP용 자체 OAuth 인증서버 골격.
 
-개인정보 제3자 제공 동의문 초안(실제 제출 전 사람의 검토 필요):
-- 제공받는 자: 주식대결 서비스 운영자
-- 제공 목적: 퀴즈 이용자 식별 및 랭킹 제공
-- 제공 항목: 카카오가 승인한 이용자 식별자
+개인정보 제3자 제공 동의문 초안(실제 제출 전 사람의 검토 필요).
+※ 정보 흐름 방향: 주식대결(우리 서비스) → 카카오. 사용자가 OAuth로 로그인하면
+우리가 보유하게 되는 이용자 식별값과 그 값에 연결된 서비스 이용 정보(정답
+기록·점수·랭킹)를 카카오에 제공해 Kakao Tools 답변에 노출시키는 흐름이다.
+- 제공받는 자: (주) 카카오
+- 제공 목적: 주식대결 퀴즈 정답/오답 기록, 시도 횟수 기반 점수 산정,
+  주간 랭킹(TOP5 및 본인 순위) 조회 및 Kakao Tools 답변 노출
+- 제공 항목: 이용자 식별값(OAuth로 식별) 및 그에 연결된 점수·랭킹 정보
 - 보유 기간: 서비스 탈퇴 또는 동의 철회 시까지 (연동 해제 화면에서 즉시 철회 가능)
 
 현재는 배포 기본값이 비활성이며, 카카오 개인정보보호팀 승인 후에만 활성화한다.
@@ -40,11 +44,18 @@ _REDIRECT_URI_TEMPLATES = (
     "https://playmcp.kakao.com/api/v1/applied-mcps/{mcp_id}/authorize/oauth:callback",
 )
 
+# PlayMCP in KC 콘솔에서 기존 등록된 서버의 환경변수를 편집할 방법을 찾지
+# 못해(OAUTH_MCP_ID를 배포 후 주입할 수 없음) mcpId를 상수로 고정한다.
+# mcpId는 서버를 삭제·재생성하지 않는 한 바뀌지 않으므로 하드코딩해도 안전하다.
+# 값이 바뀌면(재생성 등) 이 상수만 고쳐서 재배포하면 된다.
+# 2026-08-19: Git 소스 방식으로 서버 재생성, mcpId가 3556 -> 3606으로 변경됨.
+_HARDCODED_MCP_ID = "3606"
+
 CONSENT_TEXT = {
     "제공받는 자": "(주) 카카오",
-    "제공 목적": "주식대결 서비스 제공을 위한 Kakao Tools 연동 및 관리, 서비스 호출 및 응답 처리, "
-    "서비스 품질 향상 및 개선, 고객 문의 대응",
-    "제공 항목": "Kakao Tools 연동을 위한 인증 정보(이용자 식별자)",
+    "제공 목적": "주식대결 퀴즈 정답/오답 기록, 시도 횟수 기반 점수 산정, "
+    "주간 랭킹(TOP5 및 본인 순위) 조회 및 Kakao Tools 답변 노출",
+    "제공 항목": "이용자 식별값 및 그에 연결된 점수·랭킹 정보",
     "보유 및 이용 기간": "연동 해제 시 지체없이 파기",
 }
 
@@ -209,13 +220,14 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
 
 def build_auth_provider() -> "AuthProvider | None":
     """OAUTH_ENABLED=1 환경변수가 설정된 경우에만 인증 프로바이더를 구성해 반환한다.
-    미설정 시 None(비활성 — 지금 배포 기본값)."""
+    미설정 시 None(비활성 — 지금 배포 기본값).
+
+    mcpId는 OAUTH_MCP_ID 환경변수가 있으면 그 값을, 없으면 _HARDCODED_MCP_ID를
+    쓴다(콘솔에서 환경변수를 나중에 주입할 수 있게 되면 그쪽이 우선한다)."""
     if os.environ.get("OAUTH_ENABLED") != "1":
         return None
 
-    mcp_id = os.environ.get("OAUTH_MCP_ID", "").strip()
-    if not mcp_id:
-        return None
+    mcp_id = os.environ.get("OAUTH_MCP_ID", "").strip() or _HARDCODED_MCP_ID
 
     allowed_redirect_uris = tuple(
         template.format(mcp_id=mcp_id) for template in _REDIRECT_URI_TEMPLATES

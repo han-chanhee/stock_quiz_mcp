@@ -14,11 +14,18 @@ def test_oauth_is_disabled_by_default(monkeypatch):
     assert build_auth_provider() is None
 
 
-def test_oauth_requires_mcp_id(monkeypatch):
+def test_oauth_falls_back_to_hardcoded_mcp_id_when_env_missing(monkeypatch):
+    """PlayMCP 콘솔에서 기존 서버에 환경변수를 추가할 방법을 못 찾아, mcpId는
+    OAUTH_MCP_ID 환경변수가 없으면 server.auth._HARDCODED_MCP_ID로 폴백한다."""
+    from server.auth import _HARDCODED_MCP_ID
+
     monkeypatch.setenv("OAUTH_ENABLED", "1")
     monkeypatch.delenv("OAUTH_MCP_ID", raising=False)
 
-    assert build_auth_provider() is None
+    provider = build_auth_provider()
+
+    assert provider is not None
+    assert all(f"/{_HARDCODED_MCP_ID}/" in uri for uri in provider.allowed_redirect_uris)
 
 
 def test_oauth_provider_uses_injected_mcp_id(monkeypatch):
