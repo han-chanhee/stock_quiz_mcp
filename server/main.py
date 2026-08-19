@@ -259,12 +259,20 @@ def create_server() -> FastMCP:
     score_store.snapshot_load()
     client = KISClient()
     auth = build_auth_provider()
+
+    # ⚠️ FastMCP(auth=provider)로 넘기면 /mcp 엔드포인트 전체가 인증 필수가 되어
+    # 인증 없는 tools/list가 401로 거부된다(2026-08-19 배포 실측 — 플랫폼
+    # 프리뷰에서 툴이 아예 안 잡혔음). 개인정보보호팀 승인 전까지는
+    # 툴을 공개 상태로 유지해야 하므로, auth는 FastMCP에 주입하지 않고
+    # 동의/연동해제 화면(플랫폼 요구 요건)만 라우트로 노출한다.
+    # 승인 후 실제 인증을 강제할 때 OAUTH_ENFORCE=1을 켜면 auth가 주입된다.
+    enforce_auth = os.environ.get("OAUTH_ENFORCE") == "1"
     mcp = _build_app(
         cache,
         store,
         score_store,
         refresh_client=client,
-        auth=auth,
+        auth=auth if enforce_auth else None,
     )
 
     # OAuth 활성화 시(OAUTH_ENABLED=1)만 동의/연동해제 화면을 등록한다.
