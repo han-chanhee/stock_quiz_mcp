@@ -51,6 +51,10 @@ _REDIRECT_URI_TEMPLATES = (
 # 2026-08-19: Git 소스 방식으로 서버 재생성, mcpId가 3556 -> 3606으로 변경됨.
 _HARDCODED_MCP_ID = "3606"
 
+# OAuth issuer/base URL. MCP SDK가 HTTPS를 강제하므로 실제 배포 도메인을 쓴다.
+# (OAUTH_BASE_URL 환경변수로 덮어쓸 수 있음)
+_DEFAULT_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
+
 CONSENT_TEXT = {
     "제공받는 자": "(주) 카카오",
     "제공 목적": "주식대결 퀴즈 정답/오답 기록, 시도 횟수 기반 점수 산정, "
@@ -232,6 +236,11 @@ def build_auth_provider() -> "AuthProvider | None":
     allowed_redirect_uris = tuple(
         template.format(mcp_id=mcp_id) for template in _REDIRECT_URI_TEMPLATES
     )
+    # base_url을 명시하지 않으면 InMemoryOAuthProvider 기본값(http://fastmcp.example.com)이
+    # 쓰이는데, MCP SDK가 issuer URL에 HTTPS를 강제해 기동 시 ValueError로 죽는다
+    # (2026-08-19 배포 실패 실측: "Issuer URL must be HTTPS").
+    base_url = os.environ.get("OAUTH_BASE_URL", "").strip() or _DEFAULT_BASE_URL
     return KakaoRestrictedOAuthProvider(
-        allowed_redirect_uris=allowed_redirect_uris
+        allowed_redirect_uris=allowed_redirect_uris,
+        base_url=base_url,
     )
