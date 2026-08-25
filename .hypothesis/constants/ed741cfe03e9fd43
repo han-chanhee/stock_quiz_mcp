@@ -1,4 +1,0 @@
-# file: C:\Users\82109\Downloads\stock-quiz-mcp\stock-quiz-mcp\store\__init__.py
-# hypothesis_version: 6.141.1
-
-['DEFAULT_MAX_ENTRIES', 'DEFAULT_TTL_SEC', 'QuizStore', 'new_quiz_id']

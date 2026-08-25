@@ -1,383 +1,345 @@
-# 인계 문서 — 본선 추가 개발
+# 인계 문서 — 주식대결 MCP
 
-**최종 갱신: 2026-08-15** (이전 버전은 8/7 작성)
-다음 작업자용. **추측이 아니라 실측·검증한 것만** 적었다.
-읽는 순서: 0(지금 상태) → 1(일정) → 2(다음 할 일) → 나머지 참조.
+**최종 갱신: 2026-08-20**
+읽는 순서: 0(지금 상태) → 1(일하는 방식) → 2(시행착오) → 나머지 참조.
+
+이전 버전(8/15 시점, 위젯 스펙 조사·배치 사고 기록)은 `HANDOFF.archive.20260815.md`에
+남겼다. **위젯 컴포넌트 스펙 표는 아직 그 문서가 원본**이므로 위젯 작업 시 참고할 것.
 
 ---
 
 ## 0. 지금 당장 알아야 할 것
 
-### 배포는 끝났다
-```
-본선  https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/mcp   ✅ 200
-예선  https://stock-quiz-mcp.playmcp-endpoint.kakaocloud.io/mcp              ✅ 200 (규정상 유지 중)
-```
-8/7에 본선 서버 생성 + 디스코드로 Endpoint URL 전달 **완료**. 툴 2개 정상 노출.
-본선 서버 지연 실측 ~150~245ms(네트워크 포함). 예선(94ms)보다 높은데 원인 미확인 —
-파드 사양 차이 또는 콜드 스타트 추정. **개발 끝나고 재측정 필요.**
+### 배포 상태
 
-### 코드는 7/8 이후 변경 없음
-마지막 커밋은 `183d6ef`(7/8) 하나뿐. 8/15 기준 미커밋 변경:
 ```
- M .dockerignore    .hypothesis/ 추가
- M .gitignore       .hypothesis/ 추가
- ?? HANDOFF.md      이 파일
- ?? 본선_8월7일_할일.md   8/7 배포 절차 (완료됨, 참고용)
+본선  https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/mcp
+예선  https://stock-quiz-mcp.playmcp-endpoint.kakaocloud.io/mcp   (규정상 유지 중)
 ```
 
-### 데이터는 여전히 7/8자 (38일 경과)
-8/15에 배치 갱신을 시도했다가 **실패하고 롤백했다.** 아래 "배치 실패 사고" 참조.
-현재 `batch/data/*.json` 16개 전부 무결(빈 파일 0개), 테스트 55개 통과.
+- **서버가 Git 소스 방식으로 재생성됨** (2026-08-19). mcpId: 3556 → **3606**.
+  Endpoint URL은 동일하게 유지됨(디스코드 제출 URL 안 깨짐).
+- 툴 3개: `help`, `quiz`, `submit_answer`
+- 테스트 95개 통과
+
+### 미완료 항목 (우선순위 순)
+
+1. **마지막 커밋(06f028d) push + 재배포 안 됨** — OAuth 전체 흐름 완성분이
+   아직 라이브에 없다. Windows에서 `git add -A && commit && push` 후 재배포 필요.
+2. **개인정보 제3자 제공 동의문 디스코드 미제출** — `CONSENT_SUBMISSION.md`에
+   복붙용 텍스트 준비돼 있음. 카카오 개인정보보호팀 승인 필요.
+3. **OAuth 식별값 ↔ 랭킹 연결 미구현** — 지금 랭킹은 사용자가 대화에서 말하는
+   닉네임 문자열로만 동작. OAuth로 받은 식별값을 `store/score_store.py`의
+   `identity_key`에 연결하는 코드가 아직 없다.
+4. **동의/토큰 저장이 인메모리** — 재배포 시 초기화됨. 영속화 미구현.
 
 ---
 
-## 1. 일정 — 8일 남았다
+## 1. 일하는 방식 (이게 제일 중요하다)
 
-| 날짜 | 내용 | 상태 |
-|---|---|---|
-| 8/7 (금) | 본선 서버 생성 + Endpoint URL 디스코드 전달 | ✅ 완료 |
-| **8/23 (일)** | **본선용 개발 완료.** 이후 오류 수정만 가능 | ⬅ 남은 기간 8일 |
-| 8/24~26 | 카카오 QA. 오류 전달 시 빠른 수정 필요 | |
-| 8/27 (목) | **코드 프리징** — 서버 수정 불가 | |
-| 8/31 14:00 ~ 9/28 | 툴 챌린지 본선. 사용자 투표 + 심사위원 → 최종 10팀 | |
+### 1-1. 배포 경로가 특이하다 — 반드시 이 순서
 
-⚠️ **예선 서버는 삭제·중지 금지.** 계속 운영 + PlayMCP 공개 유지가 규정.
+WSL(`~/projects/stock-quiz-mcp`)에서 개발하지만, Windows Git Credential Manager에
+로그인이 들어 있으므로 push는 로컬 운영 CLI가 Windows 경로를 경유해 처리한다.
 
-**변경 가능 범위**: [불가] 서비스 컨셉·서비스명 변경, Key/Token 인증(인증은 OAuth만).
-[필수] 개발 가이드 준수, Kakao Tools Preview에서 정상 동작 확인.
-[선택] 툴 고도화/추가/삭제, OAuth, 위젯.
-예선과 **전혀 다른 컨셉/기능**이면 등록 거절 가능.
-
-출처: 상위 폴더의 `[AGENTIC PLAYER 10] 공모전 본선 가이드 (1).pdf`, `Kakao Tools 개발 가이드.pdf`
-
----
-
-## 2. 다음 할 일 (사용자가 4개 다 하겠다고 함)
-
-사용자 계획: 랭킹 시스템 / 위젯 / 차트 퀴즈 / 테스트베드 (+ codex 코딩 · claude 관장 하네스).
-**8일 기준 권장 순서 — 의존성이 순서를 강제한다:**
-
-1. **데이터 갱신** — 다른 모든 것의 전제. 아래 사고 노트 읽고 진행할 것
-2. **위젯 1개(퀴즈 출제)** — 최대 미지수. Preview에서 실제 렌더링 확인이 선행돼야
-   랭킹 UI·차트 표현을 확정할 수 있다
-3. **랭킹** — 위젯 확인 후
-4. **차트 퀴즈** — 마지막. 안 되면 이것만 버리고 나머지 3개는 살린다
-
-> 위젯 스펙 조사 **완료**(8/15). 결과는 아래 §7 참조. 재조사 불필요 —
-> 컴포넌트 카탈로그를 SDK 소스에서 직접 확보했다.
-
-### 미리 확정된 제약
-- **런타임 실시간 시세 불가.** 지금 응답이 빠른 유일한 이유가 요청 경로에 외부 호출이 0이라서다.
-  출제 시점 KIS 호출은 p99를 KIS에 종속시킨다. 대안은 배치 주기 상향.
-- **런타임 이미지 생성 불가.** 차트는 배치에서 사전 렌더링하거나 위젯 네이티브 컴포넌트를 써야 한다.
-- **OAuth는 8일 안에 무리.** 인증서버 자체 구축(카카오 미지원) + 개인정보 제3자 제공 동의문 +
-  카카오 개인정보보호팀 검토. 랭킹 유저 식별은 **닉네임 파라미터**로 갈 것.
-- ❓ **카카오가 요청에 유저 식별 헤더를 주는지 미확인.** FastMCP `Context` 주입하면 헤더를 볼 수 있다.
-  Preview에서 실측하거나 디스코드로 문의할 것(인프라 문의라 답변 대상).
-
----
-
-## 3. ⚠️ 배치 실패 사고 (2026-08-15) — 반드시 읽을 것
-
-### 무슨 일이 있었나
-KIS 연결 확인차 `top_market_cap()`을 한 번 호출한 직후 배치를 돌렸다.
-**KIS 토큰 발급은 분당 1회 제한**이라 배치가 새 토큰을 못 받고 전 종목 조회가 403으로 실패했다.
-
-### 피해와 복구
-`_build_sector_pool()`과 `_build_reasons()`는 **조회가 전부 실패해도 무조건 파일을 쓴다.**
-→ `sector_top100.json`, `reasons.json`이 **0건으로 덮어써짐** (종목 퀴즈가 죽는 상태).
-사전 백업에서 즉시 복구, 테스트 55개 통과 확인. **현재 데이터는 무결하다.**
-
-### 다시 돌릴 때 지켜야 할 것
-1. **KIS를 건드리고 나서 최소 1분 대기.** 연결 테스트와 배치를 연달아 돌리지 마라
-2. **반드시 사전 백업.** `cp batch/data/*.json <백업경로>/`
-3. 실행:
-   ```bash
-   # .env 로드 후 실행 (Windows에선 아래처럼 파이썬으로 로드)
-   .venv\Scripts\python.exe -c "import os;from pathlib import Path;[os.environ.setdefault(*l.split('=',1)) for l in Path('.env').read_text(encoding='utf-8').splitlines() if '=' in l and not l.startswith('#')];import runpy;runpy.run_module('batch',run_name='__main__')"
-   ```
-4. **실행 후 반드시 검증** — "배치 완료"가 떠도 믿지 마라:
-   ```bash
-   .venv\Scripts\python.exe -c "import json,glob,os;[print(os.path.basename(p), len(json.load(open(p,encoding='utf-8')))) for p in sorted(glob.glob('batch/data/*.json'))]"
-   ```
-   `sector_top100.json`과 `reasons.json`이 **0건이면 실패**다. 백업에서 되돌려라.
-
-### 고쳐야 할 실제 결함
-배치가 **전 종목 조회 실패에도 "배치 완료"를 출력하고 빈 파일을 쓴다.**
-크론 무인 실행 시 아무도 모르게 서비스가 죽는다. 최소한:
-- 조회 성공 건수가 임계치 미만이면 **파일을 쓰지 말고 비정상 종료**
-- `_build_reasons` / `_build_sector_pool`에 "결과가 비면 기존 파일 유지" 가드 추가
-
-(루트 `CLAUDE.md` 규칙 14: 재현 테스트 작성 → 수정 순서 강제)
-
-### 백업 위치
 ```
-C:\Users\82109\Downloads\stock-quiz-mcp\_backup\data_20260815\   (16개, 검증 완료)
+WSL에서 코드 수정 → 테스트
+   ↓
+python -m ops.release push -m "커밋 메시지"
+   ↓
+python -m ops.release wait-build
+   ↓
+PlayMCP in KC 콘솔에서 "재배포" 버튼
+   ↓
+python -m ops.release verify-remote
 ```
-**레포 밖**에 둔 이유: 레포 안에 두면 git에 잡히고 Docker 이미지에도 baked 된다.
-현재 `batch/data`와 바이트 단위로 일치함을 확인했다(빈 파일 0개).
 
-> 이전에 임시 디렉터리(`%LOCALAPPDATA%\Temp\claude\...\scratchpad\`)에 뒀던
-> 8/07 백업은 **이미 정리되어 소실됐다.** 임시 디렉터리에 백업을 두지 마라.
+**왜 이렇게 하나**: WSL에는 GitHub 인증 정보와 원격 `origin`이 없다. Windows 쪽은
+Git Credential Manager에 이미 로그인돼 있어 토큰 없이 push된다. WSL과 Windows의 git
+히스토리는 서로 다른 계보라 merge/pull 대신 tracked file tree를 동기화한다.
+`ops.release`는 `.env*` 같은 민감 파일이 tracked 상태면 중단한다.
 
-복구 명령:
+수동 동기화가 필요하면 예전 방식도 가능하지만, 기본은 아래 명령 하나다.
 ```bash
-cp ../_backup/data_20260815/*.json batch/data/
+python -m ops.release push -m "release: oauth and ops automation"
 ```
+
+### 1-2. 재배포 타이밍 함정 — 두 번 당했다
+
+**GitHub Actions 빌드가 끝나기 전에 재배포 버튼을 누르면 옛 이미지를 끌어온다.**
+겉으로는 "재배포 성공"으로 보여서 원인 파악에 시간을 날린다.
+
+반드시:
+1. GitHub Actions 탭에서 **초록불 확인** (또는 `gh run list`)
+2. 그 다음 재배포
+3. 재배포 후 curl로 실제 반영 확인 (아래 1-3)
+
+### 1-3. "배포됐다"를 믿지 말고 curl로 확인해라
+
+재배포 후 매번 확인한 명령들:
+```bash
+B=https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io
+
+curl -s $B/health          # data_as_of가 최신인지
+curl -s -X POST $B/mcp -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+`/health`의 `data_as_of`만 보면 안 된다 — 그건 배치 데이터 시각이라 코드
+변경과 무관하게 그대로일 수 있다. **코드 반영은 실제 툴을 호출해서 응답
+내용으로 확인**해야 한다(예: 새로 만든 `help` 툴이 뜨는지).
+
+### 1-4. 재배포하면 인메모리 상태가 전부 날아간다
+
+진행 중이던 quiz_id가 무효화되고("존재하지 않는 quiz_id"), 랭킹 점수도 초기화된다.
+테스트 중 갑자기 quiz_id가 안 먹으면 재배포 때문일 가능성이 크다.
+
+### 1-5. Preview 테스트는 LLM 의존이라 재현이 안 될 수 있다
+
+카카오 가이드 원문: *"MCP 툴 호출은 전적으로 ChatGPT LLM에 의존"*, *"툴 호출이
+100% 보장되지 않는다"*.
+
+실제로 겪은 것: `quiz`는 잘 호출되는데 **`submit_answer`만 LLM이 우회하고
+자기가 답변을 지어내는 현상**. `"stockquiztest-submit_answer 툴을 사용해서
+답해줘"`처럼 툴 이름을 명시해도 안 될 때가 있었다.
+
+식별 방법: **응답 문구가 우리 서버 코드에 없는 말이면 툴이 호출 안 된 것이다.**
+예) "다시 도전해봐!", "첫 번째 채점이 완료됐습니다" ← 우리 코드에 없는 문구.
+우리 서버는 항상 `"❌ 오답입니다. (시도 N회)\n\n💡 힌트: **{hint}**"` 형식.
+
+Preview에서 툴 호출률 올리는 법(가이드 기준):
+- "Kakao Tools 버튼"을 누른 채 발화
+- `{MCP식별자}-{툴이름} 툴을 사용해서 답변해줘`로 명시 호출
+- 위젯 확인 후에는 **"새 대화 시작"**으로 초기화 (이전 대화가 오염되면 계속 재현됨)
+
+### 1-6. MCP 식별자와 툴 이름
+
+Preview에서 LLM에게 전달되는 툴 이름은 `{MCP식별자}-{툴이름}` 형태다.
+- MCP 식별자는 PlayMCP 등록 폼의 "MCP 식별자" 필드값 (영문·숫자만)
+- 테스트용으로 `stockquiztest` 식별자로 임시 등록해서 쓰기도 했다
+  → 실제 툴 이름: `stockquiztest-quiz`, `stockquiztest-submit_answer`
 
 ---
 
-## 4. 알려진 결함
+## 2. 시행착오 기록 (같은 실수 반복 방지)
 
-### 4-1. 데이터 38일 경과 — 최우선
-`batch/data/*.json` 전부 `2026-07-08T03:52` 기준. `reasons.json`은 4월자.
-8/15 실측 삼성전자 **274,500원**인데 캐시는 7/8 가격. 괴리가 크다.
-데이터가 이미지에 baked되므로 **갱신 → 커밋 → push → GHCR 재빌드 → KC 재배포** 순서.
+### 2-1. 위젯이 "조용히 텍스트로 강등"된다
 
-### 4-2. stale 플래그가 나이를 안 본다
-`server/cache.py`의 `_stale`은 `_read()`에서 **파일 부재로만** True가 된다. 데이터 나이는 판정에 없다.
-그래서 38일 묵은 지금도 `/health`가 `stale:false`를 반환하고 응답 푸터에 `⚠️낡은 데이터`가 안 붙는다.
-루트 `CLAUDE.md` 규칙 13("썩은 데이터로 조용히 서비스하는 것이 최악")과 정면 충돌.
-`data_as_of`는 tz-aware(+09:00)이고 `None`일 수 있다. 규칙 14대로 재현 테스트 먼저.
+**에러가 안 뜬다.** 스펙 위반이 있으면 카드 UI 대신 그냥 평문 텍스트로 나온다.
+원인 파악이 어려우니 아래 순서로 좁혀라:
 
-### 4-3. 랭킹 도입 시 공정성 문제로 격상
-묵은 가격은 지금은 촌스러운 정도지만, 점수가 걸리면 **실제 시세를 아는 사람이 오히려 틀린다.**
-랭킹을 넣을 거면 데이터 갱신이 선택이 아니라 **전제조건**이다.
+1. curl로 서버 응답 확인 → 위젯 JSON이 정상이면 서버는 문제없음
+2. 그럼 렌더러(카카오)가 거부한 것 → 컴포넌트를 하나씩 빼보며 범인 찾기
 
-### 4-4. 기타
-- `{contracts,clients/` — PowerShell brace expansion 실패로 생긴 빈 디렉터리. 삭제 무방
-- `DEPLOY.md`가 "툴 5개"라 하는데 실제 2개(`quiz`, `submit_answer`). 문서 낡음
-- `KAKAOCLOUD_DEPLOY.md` / `FLY_DEPLOY.md` / `deploy_vm.sh` / `fly.toml` — 예선 때 시도했다 버린 경로
+**실측으로 확인된 것 (2026-08-19)**:
+- ❌ **`Table` 컴포넌트 = 강등 원인**. HANDOFF 아카이브의 경고가 사실로 확인됨.
+  (렌더러 타입에는 있는데 카카오가 지원 안 함)
+- ✅ `Card`, `Col`, `Row`, `Text`, `Title`, `Badge`, `Icon`, `Divider`,
+  `Spacer`, `Markdown`, `Caption`, `Button` — 정상 렌더링 확인
+- `ListView`/`ListViewItem`은 **루트 전용·자식 전용**이라 `Card` 안에 중첩하지
+  않았다(위험 회피). 리더보드는 `Col` + `Row` 조합으로 구현
+  (`server/widgets.py`의 `leaderboard_listview_rows`)
+
+### 2-2. 버튼으로 툴 재호출은 불가능하다 (확정)
+
+`Button.onClickAction`은 **URL 이동만** 지원한다(카카오 가이드 3장 명시).
+"버튼 누르면 자동으로 다음 퀴즈" 같은 UX는 이 플랫폼에서 구현 불가.
+
+실측으로 시도해본 것들 (전부 실패 또는 검증 불가):
+- `kakaotalk://`, `kakaolink://`, `sms:`, `intent://` 딥링크 스킴 → 검증 못 함
+- ChatKit의 `handler:"client"` + `sendUserMessage` 방식 → 카카오 미지원 추정
+  (ChatKit JS 클라이언트를 우리가 제어할 수 없음. 그 JS는 카카오 소유)
+
+**결론**: 지금 `correct_answer_widget`의 "다음 퀴즈/다른 퀴즈/종료" 버튼은
+눌러도 반응 없는 **장식용**이다. 이걸 진짜 동작하게 만들 방법은 없다.
+
+### 2-3. OAuth — 가장 많이 헤맨 부분
+
+#### 방향을 반대로 이해했다
+카카오 담당자 지적: **주식대결(우리) → 카카오**로 개인정보를 제공하는 흐름이다.
+우리가 카카오에서 정보를 받아오는 게 아니다. 동의문의 "제공 목적"은
+**우리가 넘긴 식별값이 Kakao Tools 답변에 어떻게 쓰이는지**를 써야 한다.
+→ 최종 문구: "주식대결 퀴즈 정답/오답 기록, 시도 횟수 기반 점수 산정,
+   주간 랭킹(TOP5 및 본인 순위) 조회 및 Kakao Tools 답변 노출"
+
+#### Redirect URI 경로 오타 (중요)
+```
+✅ .../applied-mcps/{mcpId}/authorize/oauth:callback
+❌ .../applied-mcps/{mcpId}/oauth/callback          ← 처음에 이렇게 썼다가 틀림
+```
+`authorize/oauth:callback`이다. 콜론(`:`)이 들어간다.
+
+#### 배포가 죽은 이유 1: Issuer URL must be HTTPS
+`InMemoryOAuthProvider`의 `base_url` 기본값이 `http://fastmcp.example.com`인데
+MCP SDK가 HTTPS를 강제해서 **기동 시 ValueError로 컨테이너가 죽었다.**
+→ `_DEFAULT_BASE_URL`을 실제 배포 도메인(HTTPS)으로 명시해 해결.
+
+#### 401은 장애가 아니라 스펙 요구사항이다 (제일 중요)
+MCP 인증 스펙(2025-03-26) 원문:
+> When authorization is required and not yet proven by the client, servers
+> **MUST** respond with *HTTP 401 Unauthorized*. Clients initiate the OAuth 2.1
+> authorization flow after receiving the *HTTP 401 Unauthorized*.
+
+`tools/list`가 401을 반환하는 걸 "서비스 장애"로 오판하고 auth를 떼어냈다가
+되돌렸다. **401이 있어야 카카오가 OAuth 흐름을 시작하고 동의 화면을 띄운다.**
+
+#### 진짜 원인: Dynamic Client Registration 미활성
+`/register` 엔드포인트가 없어서 클라이언트가 `client_id`를 얻을 방법이 없었다.
+401을 받아도 다음 단계로 못 넘어가 흐름이 시작조차 안 됐다.
+→ `ClientRegistrationOptions(enabled=True)`로 해결.
+
+#### 환경변수를 배포 후 수정할 수 없다
+PlayMCP in KC 콘솔의 서버 상세 페이지는 **읽기 전용**이다. "환경변수가 없습니다"만
+표시되고 편집 UI가 없다. 재배포 버튼을 눌러도 환경변수 입력 화면이 안 나온다.
+→ **해결책**: `mcpId`를 코드 상수(`server/auth.py`의 `_HARDCODED_MCP_ID`)로
+   하드코딩. 이제 `OAUTH_ENABLED=1` 환경변수 하나만 있으면 동작한다.
+   (신규 등록 폼에는 환경변수 입력란이 있으므로 거기서 넣는다)
+
+#### OAuth 전체 흐름 실측 완료 (2026-08-20, 로컬)
+```
+tools/list          → 401 (WWW-Authenticate 헤더 포함)
+/.well-known/...    → 200 (메타데이터)
+/register           → 201 (client_id, client_secret 발급)
+/authorize          → 302 → /oauth/consent?token=... (동의 화면)
+동의 allow          → 302 → 카카오 콜백 URL?code=...&state=...
+/token              → 200 (access_token + refresh_token)
+/oauth/disconnect   → 200 (연동 해제 화면)
+```
+
+### 2-4. 데이터 신선도 / 배치
+
+- **배치가 빈 결과로 기존 파일을 덮어쓰던 버그** 수정 완료
+  (`batch/daily.py`에 `EmptyOutputError` 가드)
+- **US(`NotImplementedError`)를 실패로 오분류**해서 정상 배치가 실패 종료하던
+  버그도 수정. `US_ENABLED=False`라 US 조회 실패는 **정상 skip**이다.
+- `QuizCache.stale`이 파일 부재만 보던 문제 → **36시간 경과 판정** 추가
+  (`STALE_AFTER_HOURS`)
+- KIS 토큰 발급은 **분당 1회 제한**. 연결 테스트 직후 배치를 돌리면 403으로
+  전부 실패한다. 최소 1분 간격을 둘 것.
+- 배치 실행 전 **반드시 백업**: `cp batch/data/*.json ../_backup/data_$(date +%Y%m%d)/`
+
+### 2-5. 테스트 환경 함정
+
+- WSL 시스템 python은 3.14인데 `ensurepip`가 없어 `python3 -m venv`가 실패한다.
+  → `python3 -m venv --without-pip .venv` 후 `get-pip.py`로 부트스트랩했다.
+- `MOCK_AS_OF`가 고정 과거 시각이면 stale 판정에 걸려 무관한 테스트가 깨진다.
+  → `clients/base.py`에서 "현재 시각 - 1시간"으로 계산하게 바꿨다.
+- `tests/test_gate1_spec.py`는 `server/main.py` **소스를 정적 분석**한다.
+  주석에 "kakao" 문자열이 들어가면 테스트가 깨진다(카카오 스펙: 툴명/설명에
+  플랫폼명 금지). 주석 쓸 때 주의.
 
 ---
 
-## 5. 검증된 사실 (재조사 불필요)
+## 3. HN 하네스 사용법
 
-### 인프라
+`.harness/` 디렉터리 기반. **Claude Code가 계획·검증, Codex가 구현**하는 구조.
+
+### 3-1. 기본 흐름
+
 ```
-이미지  ghcr.io/han-chanhee/stock-quiz-mcp:latest   (태그는 latest 하나뿐)
-        amd64 digest sha256:d39ddd793d32694614e5a284b1bac3c5621213b6d2a07980448ea368bb26045a
-        created 2026-07-08T02:25:41Z, linux/amd64, 익명 pull 가능(HTTP 200)
-        baked ENV: HOST=0.0.0.0, PORT=8080, DISABLE_HOST_PROTECTION=1 / EXPOSE 8080
-CI      main에 push → GitHub Actions가 linux/amd64 빌드 → :latest 덮어씀
+[사람] 요청
+  ↓
+[Codex 5.5] 코드 탐색 → .harness/plan.md 작성 (태스크 단위로 쪼갬)
+  ↓
+[사람] plan.md 검토 (유일한 개입 지점)
+  ↓
+[Codex Spark] 태스크별 구현 + 검증 명령 실행
+  ↓
+[Claude Code] 계획 대비 검증 → PASS/FAIL
 ```
-⚠️ **예선 서버도 `:latest`를 쓴다.** main에 push하면 예선 파드 재시작 시 새 이미지를 끌어올 수 있다.
-예선은 규정상 계속 살아 있어야 하므로, 본선 개발 중 이 점을 인지할 것.
 
-⚠️ KC 컨테이너 포트는 **8080**이어야 한다(폼 기본값 8000 아님). 이미지가 8080을 listen한다.
-업데이트는 KC **"재배포" 버튼** — 서버 삭제/재생성 아님. `Redeploying` → `Active` 대기(수 분).
-PlayMCP 등록은 **"임시 등록"** (= "등록 및 심사 요청" 아님).
+### 3-2. 실제로 쓴 명령
 
-### 성능 실측
+현재 `~/bin/hn` 기본 모델:
+- 계획: `HN_PLAN_MODEL` 기본값 `gpt-5.5`
+- 구현: `HN_IMPL_MODEL` 기본값 `gpt-5.3-codex-spark`
+- 검증: `HN_VERIFY_CMD` 기본값 `claude`
+
+Codex Spark 직접 호출 예:
+```bash
+python3 -c "
+import pathlib
+tpl = pathlib.Path('.harness/prompts/implement.md').read_text()
+plan = pathlib.Path('.harness/plan.md').read_text()
+out = tpl.replace('{{TASK_ID}}', 'TASK-002').replace('{{PLAN}}', plan)
+pathlib.Path('/tmp/impl_task002.md').write_text(out)
+"
+
+codex exec -m gpt-5.3-codex-spark -s workspace-write --skip-git-repo-check "$(cat /tmp/impl_task002.md)
+
+참고: venv는 .venv/에 있고 테스트는 .venv/bin/pytest로 실행한다."
 ```
-핸들러 CPU (in-process, Windows Python 3.12)
-  quiz(주가)          21.7 us/op   46,050 ops/s
-  quiz(시장)          27.1 us/op   36,939 ops/s
-  quiz(종목)          31.5 us/op   31,708 ops/s
-  submit_answer(오답) 53.9 us/op   18,556 ops/s
-→ 퀴즈 경로는 병목 아님. 상한은 이 코드가 아니라 FastMCP/uvicorn이 정한다.
 
-랭킹 읽기 방식별 (설계를 강제하는 수치)
-  유저   1,000명 | 매번 전체정렬     188us | heapq top10    91us | 캐시 ~0.1us
-  유저  10,000명 | 매번 전체정렬   3,383us | heapq top10   751us | 캐시 ~0.1us
-  유저 100,000명 | 매번 전체정렬  58,409us | heapq top10 13,196us | 캐시 ~0.1us
-```
-**랭킹 설계 제약(필수)**: 점수 쓰기는 O(1)(`attempts`가 이미 store에 있음) /
-랭킹은 읽을 때 계산 금지, 캐시된 top-N / top 10~20만 유지(가이드의 "result 크기 최소화"와도 일치) /
-"내 순위"는 전체 정렬 없이 근사("상위 12%").
-이유: ① 단일 이벤트 루프라 동기 정렬이 도는 동안 **모든 요청이 멈춘다**
-② 인메모리 store 전제라 **replica를 못 늘린다** ③ p99 3,000ms 위반 시 카카오가 서비스 중단/삭제 가능.
+`--full-auto`는 이 버전(codex-cli 0.147.0)에 없다. `-s workspace-write` 사용.
 
-### 배포 형상
-- **단일 인스턴스 확정** — 같은 quiz_id로 12회 연속 제출 → attempts 1~12 단조증가, NOT_FOUND 0건
-- 인메모리 store라 **재배포하면 진행 중 퀴즈·랭킹이 전부 소실**된다
-- 랭킹 영속성 현실안: 인메모리 + 주기적 JSON 스냅샷. 본선 기간(8/31~9/28)은 재배포 금지라
-  투표 기간은 통째로 커버됨. 외부 KV는 요청 경로에 네트워크 홉이 생겨 100ms 요건 위협
-- 루트 `CLAUDE.md`의 "Redis 금지 / DB 금지"는 랭킹이 없을 때 쓴 규칙 → **개정 대상**
+### 3-3. 하네스 운영 노하우
 
-### KIS API (실측)
-- **토큰 발급 분당 1회**(위반 시 403) — 이번 사고의 원인
-- 시총랭킹 `FHPST01740000`: `fid_input_price_2` 필수
-- `inquire-price`(FHKST01010100): 응답에 **종목명 없음** → ticker/큐레이션명 폴백
-- 랭킹 **페이지당 30건**
-- KIS 연결 자체는 8/15 정상 확인 (삼성전자 274,500원 / SK하이닉스 1,645,000원 조회 성공)
-- 키 5개 전부 `.env`에 존재: `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_ACCOUNT`,
-  `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`
+**계획서 아카이브**: `hn`은 `.harness/plan.md` 고정 경로만 읽으므로, 새 사이클
+시작 시 이전 계획을 `plan.archive.YYYYMMDD-주제.md`로 복사하고 덮어쓴다.
+현재 3개 아카이브가 있다(data-freshness, ranking-oauth, widgets).
 
-### 심사 대응
-가이드 요구사항 대부분 이미 충족(툴명 규칙, annotations 5필드, description 영·국문 병기,
-정제 마크다운, stateless, Streamable HTTP, protocolVersion 2025-03-26). 남은 것:
-1. **Tool description 품질** — *"툴 호출이 잘되도록 Tool Description을 잘 정의하는 것도 심사 기준에 포함"*이라고 가이드에 **명시**. 가장 확실한 가점
-2. **툴 개수 2개** — 권장 3~10개(20개 초과만 금지). 랭킹 툴 추가하면 해결
-3. **위젯** — 권장이지 필수 아님. `widget`으로 감싸고, `status`는 쓰지 말고(카카오 자동 삽입),
-   `copy_text` 포함. 버튼 `onClickAction`은 **URL 이동만** 지원(툴 재호출 불가).
-   **PlayMCP AI채팅은 위젯 렌더링 미지원** → Kakao Tools Preview에서만 검증 가능
-4. **US 모드** — `handlers.py`의 `US_ENABLED=False`인데 `inputSchema` enum엔 `US`가 남아 있다.
-   ChatGPT가 US를 고르면 "준비 중" 안내만 나온다. enum에서 제거 검토
+**병렬 실행**: 태스크가 서로 다른 파일을 건드리면 동시에 돌려도 안전하다.
+같은 파일을 건드리면 순차로 해야 한다. 실제로 TASK-002(`batch/daily.py`)와
+TASK-003(`server/cache.py`)를 병렬로 돌려 시간을 절반으로 줄였다.
 
-**Kakao Tools Preview**: `https://preview-chatgpt.kakao.com` (ChatGPT Plus/Pro 계정 필요,
-Business/Enterprise 불가). 실제 ChatGPT 환경이라 **툴 호출 100% 보장 안 됨** —
-"Kakao Tools 버튼"을 누른 채 발화하면 호출률 상승, `{툴이름} 툴을 사용해서 답변해줘`로 명시 호출 가능.
+**Codex가 계획을 넘어설 때가 있다**: TASK-002에서 계획에 없던
+`_build_top20`/`_build_movers`까지 실패 추적을 확장했다. 이건 계획서 6번
+조항("한 건이라도 실패면 raise")을 문자 그대로 만족시키려면 필연적이었고,
+오히려 내가 검토 때 지적했던 계획의 갭을 메운 것이었다.
+→ **검증 시 "계획 밖 변경"을 무조건 FAIL로 보지 말고, 계획 의도를 달성하는 데
+   필요했는지 판단할 것.**
+
+**Codex가 정직하게 막힐 때가 있다**: TASK-003에서 "기존 테스트 수정 금지" 규칙
+때문에 진행을 멈추고 실패를 보고했다. 원인은 `MOCK_AS_OF` 고정값과 새 stale
+정책의 충돌이었고, 계획 자체가 놓친 부분이었다.
+→ **Codex가 멈추면 계획을 의심해라.**
+
+**하네스를 안 쓴 경우도 있다**: 위젯 14개 화면 작업은 실시간 반복 검증이
+필요해서 Claude Code가 직접 구현했다(사용자가 "알아서 해놔"라고 위임한 상황).
+속도가 중요하고 검증 사이클이 짧으면 직접 하는 게 낫다.
 
 ---
 
-## 6. 개발 환경 함정
+## 4. 파일 지도
 
-- 실행/테스트는 **`.venv\Scripts\python.exe`** (uv 설치 CPython 3.12). 시스템 Python은 3.9뿐이라 쓰면 안 됨
-- uv 호출은 `py -3.9 -m uv ...`
-- Windows 콘솔이 cp949라 한글 출력 시 **`PYTHONIOENCODING=utf-8`** 필요
-- ⚠️ **git bash에서 curl `-d`에 한글을 직접 넣으면 cp949로 깨져 서버가 500을 뱉는다.**
-  파일에 UTF-8로 쓴 뒤 `--data-binary @file` 또는 `\uXXXX` 이스케이프를 쓸 것.
-  **서버 버그가 아니다** — 이걸로 한 번 헛짚었다
-- `.env`를 shell `while read`로 파싱하면 마지막 줄을 놓칠 수 있다(개행 없을 때).
-  파이썬으로 로드할 것
-- 아키텍처 규칙은 루트 `CLAUDE.md`와 각 모듈 폴더 `CLAUDE.md`에. `contracts/`는 읽기 전용,
-  모듈 간 직접 import 금지, 의존 방향 `server → services → (clients, store)`, 주석·독스트링은 한국어
-
----
-
-## 7. 위젯 스펙 조사 결과 (8/15 완료)
-
-**1차 출처**: `@openai/chatkit` npm 1.9.0의 `types/widgets.d.ts`(실제 렌더러 타입) +
-`openai/chatkit-python` `chatkit/widgets.py` v1.6.5. 아래 프로퍼티명은 **소스에서 그대로 옮긴 것**(추측 없음).
-오타 하나가 조용한 강등으로 이어지므로 그대로 쓸 것.
-
-### ⚠️ 핵심 리스크: SDK 두 개가 서로 다르게 뒤처져 있다
-- `Chart`는 **Python SDK에만 있고 렌더러 타입·공식 문서엔 없다**
-- `Table`은 **렌더러에만 있고 Python SDK엔 없다**
-- **카카오 렌더러가 어느 쪽인지 문서로 확인 불가** → 둘 다 "아마 됨"
-- 스펙 위배 시 **조용히 일반 텍스트로 강등**된다(에러가 안 뜬다). 그래서 Preview 검증이 필수
-
-### 루트 컨테이너 (최상위는 반드시 이 셋 중 하나)
-| 타입 | 주요 프로퍼티 |
+### 문서
+| 파일 | 용도 |
 |---|---|
-| `Card` | `children`, `background`, `border`, `size`(sm\|md\|lg\|full), `padding`, `collapsed`, `confirm`/`cancel`, `theme` |
-| `ListView` | `children`(**ListViewItem[]만**), `limit`(number\|'auto'), `theme` |
-| `Basic` | `children`, `direction`(row\|col), `gap`, `padding`, `align`, `justify`, `theme` |
+| `HANDOFF.md` | 이 문서 |
+| `HANDOFF.archive.20260815.md` | 이전 인계 문서 (**위젯 컴포넌트 스펙 표 원본**) |
+| `PROJECT.md` | 아키텍처 규칙 (Redis 금지, 의존 방향 등) |
+| `CLAUDE.md` | 하네스용 프로젝트 규칙 |
+| `CONSENT_SUBMISSION.md` | 개인정보 동의문 + 디스코드 복붙용 텍스트 |
+| `KAKAO_QUESTIONS.md` | 카카오 문의용 질문 목록 (환경변수 이슈) |
+| `.harness/plan.md` | 현재 계획 |
+| `.harness/plan.archive.*.md` | 완료된 계획 3개 |
 
-⚠️ 카카오 규칙대로 **`status`는 두 루트 모두에서 제외**한다(카카오가 자동 삽입).
-
-### 컴포넌트
-| 타입 | 프로퍼티 (정확한 이름) |
+### 코드 (모듈별 CLAUDE.md도 각 디렉터리에 있음)
+| 경로 | 역할 |
 |---|---|
-| `Text` | `value`(필수), `size`(xs~xl), `weight`(normal\|medium\|semibold\|bold), `color`, `textAlign`(start\|center\|end), `italic`, `lineThrough`, `truncate`, `maxLines`, `minLines`, `width`, `streaming`, `editable` |
-| `Title` | `value`(필수), `size`(sm\|md\|lg\|xl\|2xl~5xl), `color`/`weight`/`textAlign`/`truncate`/`maxLines` |
-| `Caption` | `value`(필수), `size`(sm\|md\|lg) |
-| `Markdown` | `value`(필수), `streaming` |
-| `Badge` | `label`(필수), `color`(secondary\|success\|danger\|warning\|info\|discovery), `variant`(solid\|soft\|outline), `size`(sm\|md\|lg), `pill` |
-| `Icon` | `name`(필수, 고정 목록), `color`, `size`(xs~3xl) |
-| `Image` | `src`(필수, str), `alt`, `fit`(cover\|contain\|fill\|scale-down\|none), `position`, `frame`, `flush`, `radius`, `width`/`height`/`size`, `aspectRatio`, `margin`, `flex` |
-| `Button` | `label`, `onClickAction`, `style`(primary\|secondary), `color`, `variant`(solid\|soft\|outline\|ghost), `size`(3xs~3xl), `iconStart`/`iconEnd`, `pill`, `block`, `disabled`, `submit` |
-| `Divider` | `color`, `size`, `spacing`, `flush` |
-| `Spacer` | `minSize` |
-| `Box`/`Row`/`Col` | `children`, `align`(start\|center\|end\|baseline\|stretch), `justify`(start\|center\|end\|**between**\|around\|evenly\|stretch), `gap`, `padding`, `wrap`, `flex`, `border`, `background`, `radius`, `margin`. `Box`만 `direction` 추가 |
-| `ListViewItem` | `children`, `onClickAction`, `gap`, `align` — **ListView 직속 자식 전용** |
-| `Table` ⚠️ | `children`(Table.Row[]) / `Table.Row`: `children`(Table.Cell[]), `header` / `Table.Cell`: `children`, `align`/`vAlign`, `width`, `colSpan`, `rowSpan`, `colSize`, `padding` — **렌더러엔 있고 Python SDK엔 없음** |
-| `Chart` ⚠️ | `data`(list[dict]), `series`(bar/area/line: `dataKey`/`label`/`color`/`stack`/`curveType`), `xAxis`, `showYAxis`, `showLegend`, `showTooltip`, `barGap`, `barCategoryGap` — **Python SDK엔 있고 렌더러·문서엔 없음** |
-
-폼 계열(`Input`/`Select`/`Form` 등)도 존재하나 **카카오는 URL 이동만 지원하고 툴 재호출이 불가**하므로 쓸모없다.
-
-유용한 `Icon.name`: `chart`, `analytics`, `star`, `star-filled`, `wreath`, `confetti`,
-`check-circle-filled`, `circle-question`, `lightbulb`, `bolt`, `sparkle`, `play`, `reload`, `external-link`.
-
-### 차트 표현 방안 — 판정
-| 경로 | 판정 | 근거 |
-|---|---|---|
-| 네이티브 `Chart` | **아마 됨 (검증 필수)** | Python SDK에 완전한 스펙. 렌더러/문서엔 부재 → 미지원이면 조용히 텍스트 강등 |
-| **유니코드 블록 스파크라인** `▁▂▃▄▅▆▇█` | **확실히 됨** | `Text.value`는 임의 문자열. 어떤 렌더러든 100% 동작, 런타임 비용 0 |
-| 사전 생성 이미지 + CDN | 아마 됨 | `Image.src`는 str, 문서상 "백엔드가 호스팅" 명시. 카카오 도메인 제한 미확인 |
-| SVG data URI 인라인 | **안 됨으로 간주** | 어떤 문서도 data URI 미언급. CSP/길이 제한 개연성 높음 |
-
-**추천 (8일 기준)**: 유니코드 스파크라인을 **기본 경로로 확정**해 먼저 완성하고,
-`Chart`는 Preview에서 확인되면 얹는 **선택적 업그레이드**로 둔다.
-차트 퀴즈의 핵심은 "모양 구분"이라 8단계 블록 문자로 상승/하락/횡보/V자/역V자는 충분히 변별된다.
-이미지 경로는 시간 남을 때의 3순위.
-
-### 리더보드 위젯 JSON (검증된 컴포넌트만 사용)
-`Table`이 불확실하므로 `ListView` + `Row` + `justify:"between"` 조합이 가장 안전하다.
-```json
-{
-  "widget": {
-    "type": "ListView",
-    "children": [
-      { "type": "ListViewItem", "align": "center", "children": [
-        { "type": "Row", "align": "center", "gap": 8, "children": [
-          { "type": "Badge", "label": "1", "color": "warning", "variant": "solid", "pill": true, "size": "sm" },
-          { "type": "Text", "value": "투자의神", "weight": "semibold", "flex": 1, "truncate": true },
-          { "type": "Text", "value": "1,250점", "weight": "bold", "textAlign": "end", "color": "success" }
-        ]}
-      ]}
-    ]
-  },
-  "copy_text": "**주식대결 랭킹 TOP 10**\n\n1. **투자의神** — 1,250점",
-  "name": "leaderboard"
-}
-```
-핵심: 닉네임 `Text`에 **`flex:1`**을 줘야 점수가 오른쪽으로 밀린다. `truncate:true`로 긴 닉네임 붕괴 방지.
-상위 3위만 `Badge` 색을 달리하면 시각적 위계가 산다.
-
-### 퀴즈 출제 위젯 JSON
-```json
-{
-  "widget": {
-    "type": "Card", "size": "full", "padding": 16,
-    "children": [
-      { "type": "Row", "align": "center", "gap": 6, "children": [
-        { "type": "Icon", "name": "circle-question", "color": "info", "size": "md" },
-        { "type": "Badge", "label": "난이도 중", "color": "info", "variant": "soft", "size": "sm" }
-      ]},
-      { "type": "Spacer", "minSize": 8 },
-      { "type": "Title", "value": "이 기업의 종목명은?", "size": "lg", "weight": "bold" },
-      { "type": "Text", "value": "국내 시가총액 1위, 반도체 메모리 세계 선두", "size": "md", "maxLines": 3 },
-      { "type": "Divider", "spacing": 12 },
-      { "type": "Markdown", "value": "정답 제출용 ID: `QZ-8F3A21`" },
-      { "type": "Caption", "value": "위 ID와 정답을 함께 말해주세요", "size": "sm" }
-    ]
-  },
-  "copy_text": "**주식대결 퀴즈**\n\n이 기업의 종목명은?\n\n제출 ID: `QZ-8F3A21`",
-  "name": "quiz_question"
-}
-```
-⚠️ `Text.value` 안의 `\n`이 줄바꿈으로 렌더링되는지 **불확실**하다. 힌트는 항목별 `Text`를 `Col`에 담는 편이 안전.
-
-### Preview에서 반드시 확인할 것 (우선순위 순)
-각 항목은 **실패해도 조용히 텍스트로 강등**되므로 하나씩 단독 검증해야 원인 파악이 된다.
-1. **`Chart` 렌더링 여부** — 되면 차트 퀴즈 설계가 완전히 달라진다. 가장 먼저
-2. **`Table`/`Table.Row`/`Table.Cell`** — 되면 리더보드가 훨씬 깔끔해진다
-3. **`Text.value` 내 `\n` 줄바꿈 처리** — 안 되면 `Col`+개별 `Text`로 분해
-4. **`Image.src` 외부 URL 허용 여부 및 도메인 제한** — 이미지 경로의 생사
-5. `Image.src`의 data URI 수용 여부 (기대치 낮게)
-6. **`Markdown` 컴포넌트 지원 여부** — `copy_text`의 Markdown 지원과 **별개 문제**.
-   미지원이면 `quiz_id` 강조를 `Badge`/`Title`로 교체
-7. `Basic` 루트 지원 여부 — 카카오 문서 예시는 `ListView`/`Card`만 언급
-8. **유니코드 블록 문자 폰트 렌더링·정렬** — 카카오톡 웹뷰 폰트에서 안 깨지는지
-9. `ListView.limit` 동작 — TOP 10이 잘리는지
-10. `Icon.name` 값들이 실제로 그려지는지 — 아이콘 세트 번들 여부 불확실
-
-### 참고 URL
-- https://developers.openai.com/api/docs/guides/chatkit-widgets — 공식 가이드 (Chart/Table 미기재)
-- https://github.com/openai/chatkit-js/blob/main/packages/chatkit/types/widgets.d.ts — 렌더러 타입
-- https://registry.npmjs.org/@openai/chatkit/-/chatkit-1.9.0.tgz — 퍼블리시 렌더러 타입 (Table 있음, Chart 없음)
-- https://raw.githubusercontent.com/openai/chatkit-python/main/chatkit/widgets.py — Python SDK (**Chart 전체 스펙**, Table 없음)
-- https://widgets.chatkit.studio/ — Widget Builder (SPA라 정적 페치 불가)
+| `contracts/schemas.py` | **읽기 전용 계약**. 수정 시 사용자 승인 필요 |
+| `clients/` | KIS API 래퍼 + mock |
+| `services/` | 퀴즈 출제·채점·힌트·미니분석 |
+| `store/quiz_store.py` | quiz_id TTL 스토어 |
+| `store/score_store.py` | 랭킹 (닉네임 기반, 주간 리셋, JSON 스냅샷) |
+| `server/handlers.py` | 툴 오케스트레이션 (fastmcp 비의존) |
+| `server/widgets.py` | 위젯 JSON 조립 (14개 화면) |
+| `server/auth.py` | OAuth 인증서버 (동의/연동해제 화면 포함) |
+| `server/main.py` | FastMCP 엔트리, 툴 3개 등록 |
+| `batch/` | 일일 데이터 갱신 |
 
 ---
 
-## 8. 이 세션(8/15)에서 실제로 바꾼 것
+## 5. 다음 사람이 할 일 (순서대로)
 
-- `batch/data/sector_top100.json`, `reasons.json` — 배치 사고로 비었다가 **백업에서 복구**(원상복구, 순변화 0)
-- `_backup/data_20260815/` 신규 — 임시 디렉터리에 있던 백업을 레포 밖 영구 위치로 이전
-- `.dockerignore` / `.gitignore` — `.hypothesis/` 추가 (8/7 작업분, 미커밋)
-- `HANDOFF.md` — 이 파일 갱신 (위젯 조사 결과 §7 추가, 배치 사고 §3 추가)
-- **코드 변경 없음. 커밋·push 없음. 데이터 순변화 없음.**
+1. **미push 커밋 배포** — Windows에서 push → Actions 확인 → 재배포 →
+   curl로 OAuth 흐름 확인
+2. **동의문 디스코드 제출** — `CONSENT_SUBMISSION.md` 복붙
+3. **승인 후 OAuth 켜기** — 신규 등록 폼에서 `OAUTH_ENABLED=1` 환경변수 추가
+4. **OAuth 식별값 ↔ 랭킹 연결** — 지금은 닉네임만 씀. 별도 계획 필요
+5. **토큰/동의 영속화** — 재배포 시 초기화되는 문제
 
-### 파일 위치
-```
-C:\Users\82109\Downloads\stock-quiz-mcp\
-  ├─ stock-quiz-mcp\          ← 실제 프로젝트(git 레포)
-  │   ├─ HANDOFF.md           ← 이 문서
-  │   └─ 본선_8월7일_할일.md    ← 8/7 배포 절차(완료됨, 참고용)
-  ├─ _backup\data_20260815\   ← 데이터 백업 (레포 밖)
-  └─ *.pdf                    ← 공모전 가이드 2종
-```
+### 손대지 말 것
+- 예선 서버(`stock-quiz-mcp`) 삭제·중지 — 규정 위반
+- `contracts/schemas.py` 임의 수정
+- 서버 재생성 시 Endpoint URL 확인 필수 (바뀌면 디스코드 재제출)

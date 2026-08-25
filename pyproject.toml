@@ -23,4 +23,4 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.setuptools]
-packages = ["contracts", "clients", "services", "store", "batch", "server"]
+packages = ["contracts", "clients", "services", "store", "batch", "server", "ops"]

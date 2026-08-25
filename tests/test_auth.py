@@ -4,7 +4,12 @@ import pytest
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from mcp.shared.auth import OAuthClientInformationFull
 
-from server.auth import KakaoRestrictedOAuthProvider, build_auth_provider
+from server.auth import (
+    KakaoRestrictedOAuthProvider,
+    _authorization_error_redirect,
+    _consent_page_html,
+    build_auth_provider,
+)
 
 
 def test_oauth_is_disabled_by_default(monkeypatch):
@@ -117,6 +122,27 @@ async def test_authorize_after_consent_issues_real_redirect():
 
     assert result.startswith("https://allowed.example/oauth/callback")
     assert "code=" in result
+
+
+def test_consent_page_escapes_token_and_has_mobile_viewport():
+    html = _consent_page_html('tok"><script>alert(1)</script>')
+
+    assert '<meta name="viewport"' in html
+    assert 'value="tok&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"' in html
+    assert "<script>alert(1)</script>" not in html
+    assert "동의하고 계속" in html
+
+
+def test_authorization_error_redirect_preserves_state_and_query():
+    params = _params()
+    params.redirect_uri = "https://allowed.example/oauth/callback?existing=1"
+
+    redirect = _authorization_error_redirect(params, "access_denied")
+
+    assert redirect.startswith("https://allowed.example/oauth/callback?")
+    assert "existing=1" in redirect
+    assert "error=access_denied" in redirect
+    assert "state=s1" in redirect
 
 
 @pytest.mark.asyncio

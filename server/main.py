@@ -260,19 +260,19 @@ def create_server() -> FastMCP:
     client = KISClient()
     auth = build_auth_provider()
 
-    # ⚠️ FastMCP(auth=provider)로 넘기면 /mcp 엔드포인트 전체가 인증 필수가 되어
-    # 인증 없는 tools/list가 401로 거부된다(2026-08-19 배포 실측 — 플랫폼
-    # 프리뷰에서 툴이 아예 안 잡혔음). 개인정보보호팀 승인 전까지는
-    # 툴을 공개 상태로 유지해야 하므로, auth는 FastMCP에 주입하지 않고
-    # 동의/연동해제 화면(플랫폼 요구 요건)만 라우트로 노출한다.
-    # 승인 후 실제 인증을 강제할 때 OAUTH_ENFORCE=1을 켜면 auth가 주입된다.
-    enforce_auth = os.environ.get("OAUTH_ENFORCE") == "1"
+    # OAuth 활성화 시 auth를 주입한다. 이때 인증 없는 요청은 401을 받게 되는데,
+    # 이는 MCP 인증 스펙(2025-03-26 Authorization)이 명시적으로 요구하는 동작이다:
+    #   "When authorization is required and not yet proven by the client, servers
+    #    MUST respond with HTTP 401 Unauthorized. Clients initiate the OAuth 2.1
+    #    authorization flow after receiving the HTTP 401 Unauthorized."
+    # 즉 401은 장애가 아니라 클라이언트에게 인증 흐름 시작을 알리는 신호이며,
+    # 이 신호가 있어야 플랫폼이 사용자에게 동의 화면을 띄운다.
     mcp = _build_app(
         cache,
         store,
         score_store,
         refresh_client=client,
-        auth=auth if enforce_auth else None,
+        auth=auth,
     )
 
     # OAuth 활성화 시(OAUTH_ENABLED=1)만 동의/연동해제 화면을 등록한다.

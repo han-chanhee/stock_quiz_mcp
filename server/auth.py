@@ -26,10 +26,13 @@ from __future__ import annotations
 
 import os
 import secrets
+from html import escape
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from mcp.server.auth.provider import AuthorizationParams
+from mcp.server.auth.settings import ClientRegistrationOptions
 from mcp.shared.auth import OAuthClientInformationFull
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
@@ -135,25 +138,98 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             self.refresh_tokens.pop(token, None)
 
 
+def _with_query(url: str, values: dict[str, str | None]) -> str:
+    """기존 query를 보존하면서 OAuth callback 파라미터를 덧붙인다."""
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query.update({key: value for key, value in values.items() if value is not None})
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _authorization_error_redirect(params: AuthorizationParams, error: str) -> str:
+    """동의 거부도 OAuth callback으로 돌려보내 linking UI가 닫히게 한다."""
+    return _with_query(
+        str(params.redirect_uri),
+        {
+            "error": error,
+            "error_description": "user denied third-party information sharing consent",
+            "state": params.state,
+        },
+    )
+
+
 def _consent_page_html(consent_token: str) -> str:
     rows = "".join(
-        f"<tr><th>{key}</th><td>{value}</td></tr>"
+        f"<tr><th scope=\"row\">{escape(key)}</th><td>{escape(value)}</td></tr>"
         for key, value in CONSENT_TEXT.items()
     )
+    token = escape(consent_token, quote=True)
     return f"""<!doctype html>
 <html lang="ko">
-<head><meta charset="utf-8"><title>주식대결 - 개인정보 제3자 제공 동의</title></head>
-<body style="font-family:sans-serif;max-width:480px;margin:40px auto;">
-  <h2>Kakao Tools 연동 동의</h2>
-  <p>주식대결 서비스 이용을 위해 아래 정보가 카카오로 제공됩니다.</p>
-  <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>주식대결 - 개인정보 제3자 제공 동의</title>
+  <style>
+    :root {{ color-scheme: light; }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f6f7f9;
+      color: #17191c;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    main {{
+      width: min(100%, 520px);
+      padding: 28px 20px;
+      background: #fff;
+      border: 1px solid #e4e7ec;
+      border-radius: 12px;
+      box-shadow: 0 12px 36px rgba(17, 24, 39, .08);
+    }}
+    h1 {{ margin: 0 0 10px; font-size: 22px; line-height: 1.3; }}
+    p {{ margin: 0 0 18px; color: #4b5563; line-height: 1.55; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }}
+    th, td {{ border: 1px solid #d9dee7; padding: 11px 12px; vertical-align: top; }}
+    th {{ width: 32%; background: #f9fafb; text-align: left; color: #303846; }}
+    .notice {{ font-size: 13px; color: #596579; }}
+    .actions {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }}
+    button {{
+      min-height: 44px;
+      border: 1px solid #cfd6e3;
+      border-radius: 8px;
+      background: #fff;
+      color: #20252d;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    button[value="allow"] {{ background: #111827; border-color: #111827; color: #fff; }}
+    @media (max-width: 420px) {{
+      body {{ display: block; background: #fff; }}
+      main {{ min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; }}
+      .actions {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+<main>
+  <h1>주식대결 연동 동의</h1>
+  <p>퀴즈 점수와 랭킹을 표시하기 위해 아래 정보 제공에 동의해주세요.</p>
+  <table aria-label="개인정보 제3자 제공 항목">
     {rows}
   </table>
+  <p class="notice">동의하지 않으면 연동은 취소됩니다. 연동 해제 화면에서 언제든 동의를 철회할 수 있습니다.</p>
   <form method="post" action="/oauth/consent">
-    <input type="hidden" name="token" value="{consent_token}">
-    <button type="submit" name="decision" value="allow" style="margin-top:16px;padding:8px 16px;">동의하고 계속하기</button>
-    <button type="submit" name="decision" value="deny" style="margin-top:16px;padding:8px 16px;">거부</button>
+    <input type="hidden" name="token" value="{token}">
+    <div class="actions">
+      <button type="submit" name="decision" value="allow">동의하고 계속</button>
+      <button type="submit" name="decision" value="deny">거부</button>
+    </div>
   </form>
+</main>
 </body>
 </html>"""
 
@@ -201,7 +277,10 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
 
         client, params = pending
         if decision != "allow":
-            return HTMLResponse("동의를 거부해 연동이 취소되었습니다.")
+            return RedirectResponse(
+                _authorization_error_redirect(params, "access_denied"),
+                status_code=302,
+            )
 
         client_id = client.client_id or ""
         provider._consented_clients.add(client_id)
@@ -240,7 +319,12 @@ def build_auth_provider() -> "AuthProvider | None":
     # 쓰이는데, MCP SDK가 issuer URL에 HTTPS를 강제해 기동 시 ValueError로 죽는다
     # (2026-08-19 배포 실패 실측: "Issuer URL must be HTTPS").
     base_url = os.environ.get("OAUTH_BASE_URL", "").strip() or _DEFAULT_BASE_URL
+    # Dynamic Client Registration(/register)을 켠다. MCP 인증 스펙(2025-03-26)이
+    # "MCP clients and servers SHOULD support RFC7591"이라고 권고하며, 이게 없으면
+    # 클라이언트가 client_id를 얻을 방법이 없어 인증 흐름이 시작조차 되지 않는다
+    # (401 -> 메타데이터 조회 -> /register -> /authorize -> /token 순서).
     return KakaoRestrictedOAuthProvider(
         allowed_redirect_uris=allowed_redirect_uris,
         base_url=base_url,
+        client_registration_options=ClientRegistrationOptions(enabled=True),
     )
