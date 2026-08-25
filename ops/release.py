@@ -59,6 +59,8 @@ def run_cmd(
         [str(arg) for arg in args],
         cwd=str(cwd) if cwd else None,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=False,
     )
