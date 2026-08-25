@@ -23,6 +23,7 @@ from server.widgets import (
     to_content_text,
     us_blocked_widget,
     welcome_widget,
+    with_leaderboard,
     wrong_answer_widget,
 )
 
@@ -83,6 +84,9 @@ def test_market_quiz_widget_direction_badge_color() -> None:
     down_badge = next(c for c in down["widget"]["children"] if c.get("type") == "Badge")
     assert up_badge["color"] == "success"
     assert down_badge["color"] == "danger"
+    assert "차트형 힌트" in up["copy_text"]
+    assert "▁▂▃" in up["copy_text"]
+    assert "▅▄▃" in down["copy_text"]
 
 
 def test_company_quiz_widget_payload() -> None:
@@ -179,6 +183,20 @@ def test_leaderboard_listview_rows_schema() -> None:
     assert badge["color"] == "warning"  # 1위는 warning 색
     assert name["flex"] == 1 and name["truncate"] is True
     assert score["textAlign"] == "end"
+
+
+def test_with_leaderboard_appends_common_ranking_panel() -> None:
+    payload = price_quiz_widget("QZ-5", "📈 주가 퀴즈", "현재가는?")
+    combined = with_leaderboard(payload, _leaderboard())
+    _assert_payload(combined, "price_quiz")
+
+    assert combined["widget"] is not payload["widget"]
+    assert "주간 TOP5" in combined["copy_text"]
+    assert "내 점수" in combined["copy_text"]
+    assert any(
+        child.get("type") == "Title" and child.get("value") == "주간 랭킹"
+        for child in combined["widget"]["children"]
+    )
 
 
 def test_to_content_text_preserves_korean() -> None:

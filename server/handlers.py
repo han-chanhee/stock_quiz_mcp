@@ -104,20 +104,21 @@ class QuizHandlers:
         market: Market = Market.KR,
         period: Period = Period.TODAY,
         sector: Sector | None = None,
+        identity_key: str | None = None,
     ) -> QuizOutcome:
         """모드 하나를 받아 [모드 설명 + 퀴즈]를 반환한다. 입력은 3모드로 강제된다.
 
         mode 또는 nickname이 없으면(생략 호출) 안내 위젯을 quiz_id 없이 반환한다.
         """
         if mode is None or nickname is None or not nickname.strip():
-            return QuizOutcome(
+            return self._with_live_leaderboard(QuizOutcome(
                 quiz_id="",
                 markdown="모드와 닉네임을 알려주세요. 주가 / 시장 / 종목 중에서 골라주세요.",
                 widget=widgets.mode_selection_widget(),
-            )
+            ), nickname, identity_key)
 
         if (blocked := self._us_guard(market)) is not None:
-            return blocked
+            return self._with_live_leaderboard(blocked, nickname, identity_key)
 
         if mode == QuizMode.PRICE:
             outcome = self.price_quiz(market)
@@ -143,7 +144,7 @@ class QuizHandlers:
                 f"{_MODE_INTRO[mode]}\n\n{outcome.markdown}",
                 outcome.widget,
             )
-        return outcome
+        return self._with_live_leaderboard(outcome, nickname, identity_key)
 
     # ── 출제 4종 (내부 구현 — quiz()가 라우팅) ────────────────
 
@@ -241,39 +242,46 @@ class QuizHandlers:
 
     # ── 채점 ─────────────────────────────────────────────────
 
-    async def submit_answer(self, quiz_id: str, answer: str, nickname: str) -> SubmitOutcome:
+    async def submit_answer(
+        self,
+        quiz_id: str,
+        answer: str,
+        nickname: str,
+        identity_key: str | None = None,
+    ) -> SubmitOutcome:
+        score_identity = self._score_identity(nickname, identity_key)
         state, miss = self._store.get_state_or_verdict(quiz_id)
         if state is None:
             if miss == Verdict.EXPIRED:
-                return SubmitOutcome(
+                return self._with_submit_leaderboard(SubmitOutcome(
                     Verdict.EXPIRED,
                     "⏰ 만료된 퀴즈입니다. 새 퀴즈를 출제해주세요.",
                     widget=widgets.expired_quiz_widget(),
-                )
-            return SubmitOutcome(
+                ), score_identity)
+            return self._with_submit_leaderboard(SubmitOutcome(
                 Verdict.NOT_FOUND,
                 "❓ 존재하지 않는 quiz_id 입니다.",
                 widget=widgets.quiz_not_found_widget(),
-            )
+            ), score_identity)
 
         if state.solved:
-            return SubmitOutcome(
+            return self._with_submit_leaderboard(SubmitOutcome(
                 Verdict.CORRECT,
                 "🏁 이미 정답이 나온 퀴즈입니다.",
                 attempts=state.attempts,
                 widget=widgets.already_solved_widget(),
-            )
+            ), score_identity)
 
         aliases = self._cache.aliases()
         if is_correct(state, answer, aliases):
             solved_state, was_first = await self._store.compare_and_solve(quiz_id)
             if not was_first:
-                return SubmitOutcome(
+                return self._with_submit_leaderboard(SubmitOutcome(
                     Verdict.CORRECT,
                     "🏁 이미 정답이 나온 퀴즈입니다.",
                     attempts=(solved_state.attempts if solved_state else 0),
                     widget=widgets.already_solved_widget(),
-                )
+                ), score_identity)
             reason = self._cache.reason(state.answer.ticker)
             analysis = build_analysis(state.answer, reason)
             attempts = (solved_state.attempts if solved_state else 0) + 1
@@ -286,11 +294,12 @@ class QuizHandlers:
             )
             leaderboard = None
             earned_score = None
-            if nickname.strip():
+            if score_identity is not None:
+                display_name = nickname.strip() or score_identity
                 earned_score = await self._score_store.add_result(
-                    nickname, nickname, result.attempts
+                    score_identity, display_name, result.attempts
                 )
-                leaderboard = self._score_store.leaderboard(nickname)
+                leaderboard = self._score_store.leaderboard(score_identity)
             md = self._render_correct(
                 state.answer.name, result, earned_score, leaderboard
             )
@@ -321,12 +330,48 @@ class QuizHandlers:
             f"💡 힌트: **{hint.text}**"
             + _as_of_footer(self._cache)
         )
-        return SubmitOutcome(
+        return self._with_submit_leaderboard(SubmitOutcome(
             Verdict.WRONG,
             md,
             attempts=attempts,
             widget=widgets.wrong_answer_widget(hint.text, attempts),
+        ), score_identity)
+
+    @staticmethod
+    def _score_identity(nickname: str | None, identity_key: str | None) -> str | None:
+        """OAuth/플랫폼 식별자를 우선하고, 없으면 닉네임으로 점수 키를 만든다."""
+        if identity_key is not None and identity_key.strip():
+            return identity_key.strip()
+        if nickname is not None and nickname.strip():
+            return nickname.strip()
+        return None
+
+    def _with_live_leaderboard(
+        self,
+        outcome: QuizOutcome,
+        nickname: str | None,
+        identity_key: str | None,
+    ) -> QuizOutcome:
+        score_identity = self._score_identity(nickname, identity_key)
+        if score_identity is None or outcome.widget is None:
+            return outcome
+        leaderboard = self._score_store.leaderboard(score_identity)
+        return QuizOutcome(
+            outcome.quiz_id,
+            outcome.markdown,
+            widgets.with_leaderboard(outcome.widget, leaderboard),
         )
+
+    def _with_submit_leaderboard(
+        self,
+        outcome: SubmitOutcome,
+        identity_key: str | None,
+    ) -> SubmitOutcome:
+        if identity_key is None or outcome.widget is None or outcome.leaderboard is not None:
+            return outcome
+        leaderboard = self._score_store.leaderboard(identity_key)
+        outcome.widget = widgets.with_leaderboard(outcome.widget, leaderboard)
+        return outcome
 
     def _render_correct(
         self,

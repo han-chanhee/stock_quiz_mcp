@@ -246,6 +246,62 @@ async def test_wrong_answer_does_not_show_ranking(cache):
 
 
 @pytest.mark.asyncio
+async def test_wrong_answer_widget_shows_live_leaderboard(cache):
+    """매턴 랭킹 UX: 오답도 위젯에는 현재 점수와 순위를 포함한다."""
+    handlers, store = _handlers(cache)
+    out = handlers.price_quiz(Market.KR)
+    state = store.get(out.quiz_id)
+
+    wrong = await handlers.submit_answer(
+        out.quiz_id, str(state.answer.price * 0.5), "오답자"
+    )
+
+    assert wrong.leaderboard is None
+    assert wrong.widget is not None
+    assert "내 점수 0점" in wrong.widget["copy_text"]
+
+
+@pytest.mark.asyncio
+async def test_quiz_widget_shows_live_leaderboard(cache):
+    """출제 턴도 현재 주간 랭킹을 같은 하단 패널로 보여준다."""
+    from server.handlers import QuizMode
+
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store)
+    await score_store.add_result("랭커", "랭커", 1)
+
+    out = handlers.quiz(QuizMode.PRICE, "랭커", Market.KR)
+
+    assert out.widget is not None
+    assert "주간 TOP5" in out.widget["copy_text"]
+    assert "내 점수 3점" in out.widget["copy_text"]
+
+
+@pytest.mark.asyncio
+async def test_oauth_identity_key_scores_under_stable_identity(cache):
+    """OAuth/플랫폼 식별자가 있으면 닉네임은 표시명, 점수 키는 식별자로 쓴다."""
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store)
+    out = handlers.price_quiz(Market.KR)
+    state = store.get(out.quiz_id)
+
+    correct = await handlers.submit_answer(
+        out.quiz_id,
+        str(state.answer.price),
+        "화면닉",
+        identity_key="oauth-user-1",
+    )
+
+    assert correct.leaderboard is not None
+    assert correct.leaderboard.my_entry.identity_key == "oauth-user-1"
+    assert correct.leaderboard.my_entry.display_name == "화면닉"
+    assert score_store.leaderboard("oauth-user-1").my_entry.score == 3
+    assert score_store.leaderboard("화면닉").my_entry.score == 0
+
+
+@pytest.mark.asyncio
 async def test_blank_nickname_grades_without_score(cache):
     """공백 닉네임이어도 정답 처리는 하되 점수는 부여하지 않는다."""
     store = QuizStore()

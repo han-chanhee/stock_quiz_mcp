@@ -114,11 +114,16 @@ def market_quiz_widget(
     change_pct: float,
     expires_in_sec: int = 1800,
 ) -> dict:
-    """시장 퀴즈 출제 위젯. 등락률 방향에 따라 배지 색을 다르게 준다."""
+    """시장 퀴즈 출제 위젯. 등락률 방향에 따라 배지 색과 차트형 힌트를 다르게 준다."""
     direction_color = "success" if change_pct >= 0 else "danger"
     direction_label = f"{change_pct:+.2f}%"
+    sparkline = _change_sparkline(change_pct)
     body = [
         {"type": "Markdown", "value": question_md},
+        {
+            "type": "Markdown",
+            "value": f"**차트형 힌트** `{sparkline}`",
+        },
         {
             "type": "Badge",
             "label": direction_label,
@@ -128,8 +133,25 @@ def market_quiz_widget(
         },
     ]
     return _quiz_frame(
-        quiz_id, mode_intro, body, expires_in_sec, "market_quiz", question_md
+        quiz_id,
+        mode_intro,
+        body,
+        expires_in_sec,
+        "market_quiz",
+        f"{question_md}\n\n차트형 힌트: `{sparkline}`",
     )
+
+
+def _change_sparkline(change_pct: float) -> str:
+    """등락 방향과 강도를 한 줄 차트 모양으로 표현한다."""
+    if change_pct >= 0:
+        levels = "▁▂▃▄▅"
+        arrow = "↗"
+    else:
+        levels = "▅▄▃▂▁"
+        arrow = "↘"
+    strength = min(5, max(1, int(abs(change_pct) // 2) + 1))
+    return f"{levels} {arrow} {change_pct:+.2f}% · 강도 {strength}/5"
 
 
 def company_quiz_widget(
@@ -221,6 +243,46 @@ def correct_answer_widget(
         "widget": {"type": "Card", "size": "full", "padding": 16, "children": children},
         "copy_text": "\n".join(copy_lines),
         "name": "correct_answer",
+    }
+
+
+def with_leaderboard(payload: dict, leaderboard: "LeaderboardSnapshot | None") -> dict:
+    """기존 위젯 끝에 공통 주간 랭킹 패널을 붙인다.
+
+    Preview에서 확인된 컴포넌트만 사용해 모든 응답의 하단 모양을 통일한다.
+    """
+    if leaderboard is None:
+        return payload
+
+    widget = dict(payload["widget"])
+    children = list(widget.get("children", []))
+    children.extend(
+        [
+            {"type": "Divider", "spacing": 12},
+            {"type": "Title", "value": "주간 랭킹", "size": "md", "weight": "bold"},
+            leaderboard_listview_rows(leaderboard),
+            {
+                "type": "Text",
+                "value": f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위",
+                "weight": "bold",
+            },
+        ]
+    )
+    widget["children"] = children
+
+    copy_text = payload["copy_text"]
+    ranking_lines = ["", "**주간 TOP5**"]
+    ranking_lines.extend(
+        f"{rank}. {entry.display_name} — {entry.score}점"
+        for rank, entry in enumerate(leaderboard.top[:5], start=1)
+    )
+    ranking_lines.append(
+        f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+    )
+    return {
+        "widget": widget,
+        "copy_text": copy_text + "\n".join(ranking_lines),
+        "name": payload["name"],
     }
 
 

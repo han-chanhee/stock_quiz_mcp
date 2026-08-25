@@ -23,6 +23,7 @@ from datetime import timezone
 from pathlib import Path
 
 from fastmcp import FastMCP
+from fastmcp import Context
 from fastmcp.tools.tool import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
@@ -56,6 +57,24 @@ _COMMON_ANN = dict(
 )
 
 _SAFE_ERROR = "잠시 후 다시 시도해주세요."
+
+
+def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
+    """툴 호출 컨텍스트에서 점수용 식별자를 뽑는다.
+
+    OAuth/DCR client_id를 우선 사용한다. 향후 플랫폼이 subject 메타를 제공하면
+    같은 함수에서 흡수한다. 둘 다 없으면 핸들러가 닉네임 fallback을 쓴다.
+    """
+    if ctx is None:
+        return None
+    meta = getattr(ctx.request_context, "meta", None) if ctx.request_context else None
+    for name in ("subject", "user_id", "client_id"):
+        value = getattr(meta, name, None) if meta is not None else None
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    if ctx.client_id:
+        return ctx.client_id
+    return None
 
 
 def build_app(
@@ -156,8 +175,16 @@ def _build_app(
         market: Market = Market.KR,
         period: Period = Period.TODAY,
         sector: Sector | None = None,
+        ctx: Context | None = None,
     ) -> str:
-        outcome = handlers.quiz(mode, nickname, market, period, sector)
+        outcome = handlers.quiz(
+            mode,
+            nickname,
+            market,
+            period,
+            sector,
+            identity_key=_tool_identity_key(nickname, ctx),
+        )
         if outcome.widget is not None:
             return widgets.to_content_text(outcome.widget)
         return outcome.markdown
@@ -173,9 +200,19 @@ def _build_app(
         ),
         annotations=ToolAnnotations(title="Submit Answer", **_COMMON_ANN),
     )
-    async def submit_answer(quiz_id: str, answer: str, nickname: str) -> str:
+    async def submit_answer(
+        quiz_id: str,
+        answer: str,
+        nickname: str,
+        ctx: Context | None = None,
+    ) -> str:
         try:
-            outcome = await handlers.submit_answer(quiz_id, answer, nickname)
+            outcome = await handlers.submit_answer(
+                quiz_id,
+                answer,
+                nickname,
+                identity_key=_tool_identity_key(nickname, ctx),
+            )
             if outcome.widget is not None:
                 return widgets.to_content_text(outcome.widget)
             return outcome.markdown

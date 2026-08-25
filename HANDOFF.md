@@ -1,6 +1,6 @@
 # 인계 문서 — 주식대결 MCP
 
-**최종 갱신: 2026-08-20**
+**최종 갱신: 2026-08-26**
 읽는 순서: 0(지금 상태) → 1(일하는 방식) → 2(시행착오) → 나머지 참조.
 
 이전 버전(8/15 시점, 위젯 스펙 조사·배치 사고 기록)은 `HANDOFF.archive.20260815.md`에
@@ -20,18 +20,32 @@
 - **서버가 Git 소스 방식으로 재생성됨** (2026-08-19). mcpId: 3556 → **3606**.
   Endpoint URL은 동일하게 유지됨(디스코드 제출 URL 안 깨짐).
 - 툴 3개: `help`, `quiz`, `submit_answer`
-- 테스트 95개 통과
+- 테스트 112개 통과
 
-### 미완료 항목 (우선순위 순)
+### 현재 완료된 핵심 항목
 
-1. **마지막 커밋(06f028d) push + 재배포 안 됨** — OAuth 전체 흐름 완성분이
-   아직 라이브에 없다. Windows에서 `git add -A && commit && push` 후 재배포 필요.
-2. **개인정보 제3자 제공 동의문 디스코드 미제출** — `CONSENT_SUBMISSION.md`에
+1. **Git push 자동화** — `ops.release`가 WSL tracked tree를 Windows repo로 동기화,
+   커밋, push, 빌드 대기, 원격 검증까지 처리한다.
+2. **HN 하네스 모델 역할 변경** — 계획 `gpt-5.5`, 구현
+   `gpt-5.3-codex-spark`, 검증 `claude`.
+3. **OAuth 위젯/동의 화면 보강** — 모바일 레이아웃, deny redirect, HTML escaping까지
+   테스트됨.
+4. **OAuth 식별값 ↔ 랭킹 연결** — 툴 컨텍스트의 `subject`/`user_id`/`client_id`를
+   점수 키로 우선 사용하고, 없으면 닉네임 fallback.
+5. **매턴 실시간 랭킹 위젯** — 출제/오답/만료/이미 풂 응답 하단에 같은 주간 랭킹
+   패널을 붙인다. 정답 응답은 기존 득점 + TOP5 패널을 유지한다.
+6. **차트형 시장 퀴즈 힌트** — 계약 enum을 건드리지 않고 기존 시장 퀴즈 위젯에
+   스파크라인형 힌트를 추가했다.
+7. **로컬 테스트베드** — `ops.testbed`로 위젯 payload 검증, 인프로세스 부하 스모크,
+   MCP 툴명 충돌 체크 가능.
+
+### 남은 항목 (우선순위 순)
+
+1. **개인정보 제3자 제공 동의문 디스코드 미제출** — `CONSENT_SUBMISSION.md`에
    복붙용 텍스트 준비돼 있음. 카카오 개인정보보호팀 승인 필요.
-3. **OAuth 식별값 ↔ 랭킹 연결 미구현** — 지금 랭킹은 사용자가 대화에서 말하는
-   닉네임 문자열로만 동작. OAuth로 받은 식별값을 `store/score_store.py`의
-   `identity_key`에 연결하는 코드가 아직 없다.
-4. **동의/토큰 저장이 인메모리** — 재배포 시 초기화됨. 영속화 미구현.
+2. **동의/토큰 저장이 인메모리** — 재배포 시 초기화됨. 영속화 미구현.
+3. **운영 화면 재배포 수동 버튼** — URL 오픈은 `ops.release open-redeploy`로 가능하지만,
+   콘솔 버튼 클릭 자동화는 브라우저 로그인/PIN/사용자 조작과 충돌할 수 있다.
 
 ---
 
@@ -118,6 +132,21 @@ Preview에서 LLM에게 전달되는 툴 이름은 `{MCP식별자}-{툴이름}` 
 - MCP 식별자는 PlayMCP 등록 폼의 "MCP 식별자" 필드값 (영문·숫자만)
 - 테스트용으로 `stockquiztest` 식별자로 임시 등록해서 쓰기도 했다
   → 실제 툴 이름: `stockquiztest-quiz`, `stockquiztest-submit_answer`
+
+### 1-7. 로컬 테스트베드
+
+배포 전 빠른 확인:
+```bash
+.venv/bin/python -m ops.testbed widgets
+.venv/bin/python -m ops.testbed load --requests 200 --concurrency 20
+.venv/bin/python -m ops.testbed conflicts
+.venv/bin/pytest -q
+```
+
+- `widgets`: 대표 payload 12개가 JSON 직렬화되고 Preview 위험 컴포넌트(`Table`,
+  `status`)를 쓰지 않는지 확인.
+- `load`: 캐시/스토어/핸들러를 인프로세스로 조립해 출제 + 오답 제출을 반복.
+- `conflicts`: 등록 툴이 `help`, `quiz`, `submit_answer`뿐인지 확인.
 
 ---
 
@@ -321,23 +350,22 @@ TASK-003(`server/cache.py`)를 병렬로 돌려 시간을 절반으로 줄였다
 | `clients/` | KIS API 래퍼 + mock |
 | `services/` | 퀴즈 출제·채점·힌트·미니분석 |
 | `store/quiz_store.py` | quiz_id TTL 스토어 |
-| `store/score_store.py` | 랭킹 (닉네임 기반, 주간 리셋, JSON 스냅샷) |
+| `store/score_store.py` | 랭킹 (OAuth/플랫폼 식별자 우선, 닉네임 fallback, 주간 리셋, JSON 스냅샷) |
 | `server/handlers.py` | 툴 오케스트레이션 (fastmcp 비의존) |
-| `server/widgets.py` | 위젯 JSON 조립 (14개 화면) |
+| `server/widgets.py` | 위젯 JSON 조립 (공통 랭킹 패널, 차트형 시장 힌트 포함) |
 | `server/auth.py` | OAuth 인증서버 (동의/연동해제 화면 포함) |
 | `server/main.py` | FastMCP 엔트리, 툴 3개 등록 |
 | `batch/` | 일일 데이터 갱신 |
+| `ops/release.py` | 로컬 push/build/원격 검증/화면 오픈 자동화 |
+| `ops/testbed.py` | 로컬 위젯/부하/툴 충돌 테스트베드 |
 
 ---
 
 ## 5. 다음 사람이 할 일 (순서대로)
 
-1. **미push 커밋 배포** — Windows에서 push → Actions 확인 → 재배포 →
-   curl로 OAuth 흐름 확인
-2. **동의문 디스코드 제출** — `CONSENT_SUBMISSION.md` 복붙
-3. **승인 후 OAuth 켜기** — 신규 등록 폼에서 `OAUTH_ENABLED=1` 환경변수 추가
-4. **OAuth 식별값 ↔ 랭킹 연결** — 지금은 닉네임만 씀. 별도 계획 필요
-5. **토큰/동의 영속화** — 재배포 시 초기화되는 문제
+1. **동의문 디스코드 제출** — `CONSENT_SUBMISSION.md` 복붙
+2. **승인 후 OAuth 켜기** — 신규 등록 폼에서 `OAUTH_ENABLED=1` 환경변수 추가
+3. **토큰/동의 영속화** — 재배포 시 초기화되는 문제
 
 ### 손대지 말 것
 - 예선 서버(`stock-quiz-mcp`) 삭제·중지 — 규정 위반
