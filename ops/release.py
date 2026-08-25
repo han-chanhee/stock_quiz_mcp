@@ -227,17 +227,28 @@ def latest_workflow_run(owner_repo: str, branch: str) -> dict | None:
     return runs[0] if runs else None
 
 
+def latest_check_run(owner_repo: str, head_sha: str) -> dict | None:
+    data = github_api(f"/repos/{owner_repo}/commits/{head_sha}/check-runs")
+    runs = data.get("check_runs", [])
+    return runs[0] if runs else None
+
+
 def wait_for_build(
     *,
     owner_repo: str = DEFAULT_OWNER_REPO,
     branch: str = "master",
+    head_sha: str = "",
     timeout_sec: int = 600,
     interval_sec: int = 10,
 ) -> dict:
     deadline = time.monotonic() + timeout_sec
     last: dict | None = None
     while time.monotonic() < deadline:
-        run = latest_workflow_run(owner_repo, branch)
+        run = (
+            latest_check_run(owner_repo, head_sha)
+            if head_sha
+            else latest_workflow_run(owner_repo, branch)
+        )
         if run:
             last = run
             status = run.get("status")
@@ -315,10 +326,11 @@ def cmd_wait_build(args: argparse.Namespace) -> int:
     run = wait_for_build(
         owner_repo=args.owner_repo,
         branch=args.branch,
+        head_sha=args.head_sha,
         timeout_sec=args.timeout,
         interval_sec=args.interval,
     )
-    print(json.dumps({"id": run.get("id"), "url": run.get("html_url")}, ensure_ascii=False))
+    print(json.dumps({"id": run.get("id"), "url": run.get("html_url"), "head_sha": run.get("head_sha")}, ensure_ascii=False))
     return 0
 
 
@@ -349,6 +361,7 @@ def build_parser() -> argparse.ArgumentParser:
     wait = sub.add_parser("wait-build", help="wait for the latest GitHub Actions run")
     wait.add_argument("--owner-repo", default=DEFAULT_OWNER_REPO)
     wait.add_argument("--branch", default="master")
+    wait.add_argument("--head-sha", default="", help="wait for checks on this exact commit")
     wait.add_argument("--timeout", type=int, default=600)
     wait.add_argument("--interval", type=int, default=10)
     wait.set_defaults(func=cmd_wait_build)

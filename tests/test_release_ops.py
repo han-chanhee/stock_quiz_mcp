@@ -123,3 +123,30 @@ def test_cli_verify_remote_prints_json(monkeypatch, capsys):
         "health_status": 200,
         "base": "https://example.test",
     }
+
+
+def test_wait_for_build_can_target_head_sha(monkeypatch):
+    seen = []
+
+    def fake_latest_check_run(owner_repo: str, head_sha: str):
+        seen.append((owner_repo, head_sha))
+        return {
+            "id": 7,
+            "head_sha": head_sha,
+            "status": "completed",
+            "conclusion": "success",
+            "html_url": "https://example.test/run",
+        }
+
+    monkeypatch.setattr(release, "latest_check_run", fake_latest_check_run)
+
+    run = release.wait_for_build(
+        owner_repo="owner/repo",
+        branch="main",
+        head_sha="abc123",
+        timeout_sec=1,
+        interval_sec=0,
+    )
+
+    assert run["id"] == 7
+    assert seen == [("owner/repo", "abc123")]
