@@ -137,6 +137,19 @@ def windows_status(repo: Path, git_bin: Path) -> str:
     return run_cmd([git_bin, "status", "--short"], cwd=repo).stdout
 
 
+def status_paths(status: str) -> set[str]:
+    """Parse porcelain short status into normalized repository paths."""
+    paths: set[str] = set()
+    for line in status.splitlines():
+        if not line:
+            continue
+        raw = line[3:]
+        if " -> " in raw:
+            raw = raw.split(" -> ", 1)[1]
+        paths.add(raw.strip().strip('"').replace("\\", "/"))
+    return paths
+
+
 def commit_and_push(
     *,
     repo: Path,
@@ -144,10 +157,21 @@ def commit_and_push(
     message: str,
     remote: str = DEFAULT_REMOTE,
     branch: str | None = None,
+    stage_paths: Iterable[Path] | None = None,
 ) -> str:
-    run_cmd([git_bin, "add", "-A"], cwd=repo)
-    status = windows_status(repo, git_bin)
-    if status.strip():
+    if stage_paths is None:
+        run_cmd([git_bin, "add", "-A"], cwd=repo)
+    else:
+        paths = [str(path).replace("\\", "/") for path in stage_paths]
+        if paths:
+            run_cmd([git_bin, "add", "--", *paths], cwd=repo)
+
+    staged = subprocess.run(
+        [str(git_bin), "diff", "--cached", "--quiet"],
+        cwd=str(repo),
+        check=False,
+    ).returncode
+    if staged == 1:
         run_cmd([git_bin, "commit", "-m", message], cwd=repo)
     else:
         print("No Windows repo changes to commit; pushing current HEAD.", file=sys.stderr)
@@ -163,9 +187,24 @@ def sync_commit_push(message: str) -> str:
     src = wsl_repo_root()
     dst = windows_repo()
     git_bin = windows_git()
+    preexisting_dirty = status_paths(windows_status(dst, git_bin))
     copied = sync_tracked_tree(source_repo=src, dest_repo=dst, dest_git=git_bin)
     print(f"Synced {len(copied)} tracked files to {dst}", file=sys.stderr)
-    return commit_and_push(repo=dst, git_bin=git_bin, message=message)
+    stage_paths = [
+        path for path in copied if str(path).replace("\\", "/") not in preexisting_dirty
+    ]
+    if preexisting_dirty:
+        print(
+            "Skipped pre-existing dirty Windows paths: "
+            + ", ".join(sorted(preexisting_dirty)),
+            file=sys.stderr,
+        )
+    return commit_and_push(
+        repo=dst,
+        git_bin=git_bin,
+        message=message,
+        stage_paths=stage_paths,
+    )
 
 
 def github_api(path: str) -> dict:

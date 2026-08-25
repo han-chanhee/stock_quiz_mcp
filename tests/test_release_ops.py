@@ -58,6 +58,42 @@ def test_tracked_sensitive_files_are_rejected(tmp_path):
         release.tracked_files(repo)
 
 
+def test_status_paths_parses_renames_and_normal_paths():
+    status = " M server/auth.py\nR  old.py -> ops/release.py\n?? tests/test_release_ops.py\n"
+
+    assert release.status_paths(status) == {
+        "server/auth.py",
+        "ops/release.py",
+        "tests/test_release_ops.py",
+    }
+
+
+def test_commit_and_push_stages_only_requested_paths(tmp_path):
+    remote = tmp_path / "remote.git"
+    work = tmp_path / "work"
+    release.run_cmd(["git", "init", "--bare", remote])
+    _init_repo(work)
+    _git(work, "remote", "add", "origin", str(remote))
+    (work / "keep.txt").write_text("base\n", encoding="utf-8")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-m", "base")
+    _git(work, "push", "origin", "master")
+
+    (work / "keep.txt").write_text("dirty\n", encoding="utf-8")
+    (work / "ship.txt").write_text("ship\n", encoding="utf-8")
+
+    release.commit_and_push(
+        repo=work,
+        git_bin=Path("git"),
+        message="ship only",
+        stage_paths=[Path("ship.txt")],
+    )
+
+    assert " M keep.txt" in release.windows_status(work, Path("git"))
+    log = release.run_cmd(["git", "log", "--oneline", "-n", "1"], cwd=work).stdout
+    assert "ship only" in log
+
+
 def test_verify_remote_accepts_oauth_challenge(monkeypatch):
     calls = []
 
