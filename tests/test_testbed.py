@@ -40,4 +40,6 @@ async def test_load_testbed_runs_in_process_smoke() -> None:
 
     assert report["requests"] == 12
     assert report["stored_quizzes"] == 12
+    assert report["max_active_quizzes"] == 10_000
+    assert report["cap_reached"] is False
     assert report["rps"] > 0

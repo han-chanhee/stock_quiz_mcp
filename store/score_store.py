@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from bisect import bisect_left, insort
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,6 +17,16 @@ _SCORE_TABLE = {1: 3, 2: 2}
 DEFAULT_SNAPSHOT_PATH = Path(__file__).parent / "data" / "scores.json"
 DEFAULT_RESET_WEEKDAY = 0   # 월요일 (datetime.weekday() 기준 0=월)
 DEFAULT_RESET_HOUR = 0      # 00:00 KST — 실제 값은 팀 확인 필요, 임시 기본값
+MAX_DISPLAY_NAME_LEN = 24
+_MARKDOWN_UNSAFE = str.maketrans({
+    "`": "'",
+    "*": "",
+    "_": " ",
+    "[": "(",
+    "]": ")",
+    "<": "(",
+    ">": ")",
+})
 
 
 class ScoreStore:
@@ -57,6 +68,23 @@ class ScoreStore:
     def _ranking_key(entry: ScoreEntry) -> tuple[int, datetime, str]:
         return (-entry.score, entry.updated_at, entry.identity_key)
 
+    @staticmethod
+    def _clean_display_name(value: str | None) -> str:
+        text = " ".join((value or "").split()).translate(_MARKDOWN_UNSAFE).strip()
+        if not text:
+            return "익명 참가자"
+        if len(text) > MAX_DISPLAY_NAME_LEN:
+            return text[:MAX_DISPLAY_NAME_LEN - 1] + "…"
+        return text
+
+    def _quarantine_snapshot(self) -> None:
+        if not self._snapshot_path.exists():
+            return
+        target = self._snapshot_path.with_suffix(
+            self._snapshot_path.suffix + f".corrupt.{int(time.time())}"
+        )
+        self._snapshot_path.replace(target)
+
     def _remove_from_ranking(self, entry: ScoreEntry) -> None:
         key = self._ranking_key(entry)
         index = bisect_left(self._ranking, key)
@@ -71,6 +99,7 @@ class ScoreStore:
         1회=3점, 2회=2점, 3회 이상=1점."""
         earned = _SCORE_TABLE.get(attempts, 1)
         now = self._now()
+        safe_display_name = self._clean_display_name(display_name)
         async with self._lock:
             previous = self._entries.get(identity_key)
             if previous is not None:
@@ -80,7 +109,7 @@ class ScoreStore:
                 score = earned
             entry = ScoreEntry(
                 identity_key=identity_key,
-                display_name=display_name,
+                display_name=safe_display_name,
                 score=score,
                 updated_at=now,
             )
@@ -141,16 +170,27 @@ class ScoreStore:
     def snapshot_load(self) -> None:
         if not self._snapshot_path.exists():
             return
-        payload = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
-        if isinstance(payload, list):
-            entries_payload = payload
-        else:
-            entries_payload = payload.get("entries", [])
-            if payload.get("week_started_at"):
-                self._week_started_at = datetime.fromisoformat(payload["week_started_at"])
-            if payload.get("last_reset_at"):
-                self._last_reset_at = datetime.fromisoformat(payload["last_reset_at"])
-        entries = [ScoreEntry.model_validate(item) for item in entries_payload]
+        try:
+            payload = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
+            if isinstance(payload, list):
+                entries_payload = payload
+            else:
+                entries_payload = payload.get("entries", [])
+                if payload.get("week_started_at"):
+                    self._week_started_at = datetime.fromisoformat(payload["week_started_at"])
+                if payload.get("last_reset_at"):
+                    self._last_reset_at = datetime.fromisoformat(payload["last_reset_at"])
+            entries = []
+            for item in entries_payload:
+                entry = ScoreEntry.model_validate(item)
+                entries.append(
+                    entry.model_copy(
+                        update={"display_name": self._clean_display_name(entry.display_name)}
+                    )
+                )
+        except (json.JSONDecodeError, ValueError, TypeError):
+            self._quarantine_snapshot()
+            return
         self._entries = {entry.identity_key: entry for entry in entries}
         self._rebuild_ranking()
 

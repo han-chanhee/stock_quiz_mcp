@@ -3,7 +3,7 @@
 import pytest
 from urllib.parse import parse_qs, urlsplit
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
-from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.provider import AccessToken, RegistrationError
 from mcp.shared.auth import OAuthClientInformationFull
 
 from server.auth import (
@@ -59,11 +59,13 @@ async def test_oauth_rejects_unregistered_redirect_uri():
         redirect_uris=["https://attacker.example/oauth/callback"],
     )
 
-    with pytest.raises(
-        ValueError,
-        match="허용되지 않은 redirect_uri: https://attacker.example/oauth/callback",
-    ):
+    with pytest.raises(RegistrationError) as exc_info:
         await provider.register_client(client)
+    assert exc_info.value.error == "invalid_redirect_uri"
+    assert (
+        exc_info.value.error_description
+        == "허용되지 않은 redirect_uri: https://attacker.example/oauth/callback"
+    )
 
 
 @pytest.mark.asyncio
@@ -200,6 +202,21 @@ async def test_revoke_token_updates_oauth_snapshot(tmp_path):
     )
     restored.snapshot_load()
     assert await restored.load_access_token("tok") is None
+
+
+def test_corrupt_oauth_snapshot_is_quarantined_instead_of_crashing(tmp_path):
+    path = tmp_path / "oauth.json"
+    path.write_text("{broken", encoding="utf-8")
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
+    )
+
+    provider.snapshot_load()
+
+    assert not path.exists()
+    assert list(tmp_path.glob("oauth.json.corrupt.*"))
+    assert provider.clients == {}
 
 
 def test_consent_page_escapes_token_and_has_mobile_viewport():

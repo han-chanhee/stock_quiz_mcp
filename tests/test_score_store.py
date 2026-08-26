@@ -96,3 +96,51 @@ def test_snapshot_loads_legacy_list_payload(tmp_path):
     restored.snapshot_load()
 
     assert restored.leaderboard("legacy").my_entry.score == 7
+
+
+def test_snapshot_load_sanitizes_legacy_display_name(tmp_path):
+    path = tmp_path / "legacy.json"
+    entry = ScoreEntry(
+        identity_key="legacy",
+        display_name="<script>x</script>\n" + "가" * 40,
+        score=7,
+        updated_at=datetime(2026, 8, 17, tzinfo=_KST),
+    )
+    path.write_text(f"[{entry.model_dump_json()}]", encoding="utf-8")
+
+    restored = ScoreStore(snapshot_path=path)
+    restored.snapshot_load()
+
+    display_name = restored.leaderboard("legacy").my_entry.display_name
+    assert "<" not in display_name
+    assert "\n" not in display_name
+    assert len(display_name) <= 24
+
+
+@pytest.mark.asyncio
+async def test_display_name_is_sanitized_for_ranking_copy(tmp_path):
+    store = ScoreStore(snapshot_path=tmp_path / "scores.json")
+
+    await store.add_result(
+        "id-1",
+        "<script>alert(1)</script>\n**" + "아" * 40,
+        1,
+    )
+
+    entry = store.leaderboard("id-1").my_entry
+    assert "\n" not in entry.display_name
+    assert "<" not in entry.display_name
+    assert "*" not in entry.display_name
+    assert len(entry.display_name) <= 24
+
+
+def test_corrupt_snapshot_is_quarantined_instead_of_crashing(tmp_path):
+    path = tmp_path / "scores.json"
+    path.write_text("{broken", encoding="utf-8")
+
+    store = ScoreStore(snapshot_path=path)
+    store.snapshot_load()
+
+    assert not path.exists()
+    assert list(tmp_path.glob("scores.json.corrupt.*"))
+    assert store.leaderboard("unknown").my_entry.score == 0

@@ -27,6 +27,7 @@ from __future__ import annotations
 import os
 import secrets
 import json
+import time
 from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -37,6 +38,7 @@ from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
     AuthorizationParams,
+    RegistrationError,
     RefreshToken,
 )
 from mcp.server.auth.settings import ClientRegistrationOptions
@@ -107,7 +109,10 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         for uri in client_info.redirect_uris or ():
             uri_text = str(uri)
             if uri_text not in self._allowed_redirect_uri_set:
-                raise ValueError(f"허용되지 않은 redirect_uri: {uri_text}")
+                raise RegistrationError(
+                    "invalid_redirect_uri",
+                    f"허용되지 않은 redirect_uri: {uri_text}",
+                )
 
         await super().register_client(client_info)
         self.snapshot_save()
@@ -183,6 +188,14 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         }
         self.snapshot_save()
 
+    def _quarantine_snapshot(self) -> None:
+        if not self._snapshot_path.exists():
+            return
+        target = self._snapshot_path.with_suffix(
+            self._snapshot_path.suffix + f".corrupt.{int(time.time())}"
+        )
+        self._snapshot_path.replace(target)
+
     def snapshot_save(self) -> None:
         """DCR clients, active tokens, token pair maps, and consent flags are persisted."""
         self._snapshot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -212,30 +225,33 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         """Restore persisted OAuth runtime state if a snapshot exists."""
         if not self._snapshot_path.exists():
             return
-        payload = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
-        self.clients = {
-            client_id: OAuthClientInformationFull.model_validate(client)
-            for client_id, client in payload.get("clients", {}).items()
-        }
-        self.access_tokens = {
-            token: AccessToken.model_validate(info)
-            for token, info in payload.get("access_tokens", {}).items()
-        }
-        self.refresh_tokens = {
-            token: RefreshToken.model_validate(info)
-            for token, info in payload.get("refresh_tokens", {}).items()
-        }
-        self._consented_clients = set(payload.get("consented_clients", []))
-        self._access_to_refresh_map = {
-            access: refresh
-            for access, refresh in payload.get("access_to_refresh", {}).items()
-            if access in self.access_tokens and refresh in self.refresh_tokens
-        }
-        self._refresh_to_access_map = {
-            refresh: access
-            for refresh, access in payload.get("refresh_to_access", {}).items()
-            if refresh in self.refresh_tokens and access in self.access_tokens
-        }
+        try:
+            payload = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
+            self.clients = {
+                client_id: OAuthClientInformationFull.model_validate(client)
+                for client_id, client in payload.get("clients", {}).items()
+            }
+            self.access_tokens = {
+                token: AccessToken.model_validate(info)
+                for token, info in payload.get("access_tokens", {}).items()
+            }
+            self.refresh_tokens = {
+                token: RefreshToken.model_validate(info)
+                for token, info in payload.get("refresh_tokens", {}).items()
+            }
+            self._consented_clients = set(payload.get("consented_clients", []))
+            self._access_to_refresh_map = {
+                access: refresh
+                for access, refresh in payload.get("access_to_refresh", {}).items()
+                if access in self.access_tokens and refresh in self.refresh_tokens
+            }
+            self._refresh_to_access_map = {
+                refresh: access
+                for refresh, access in payload.get("refresh_to_access", {}).items()
+                if refresh in self.refresh_tokens and access in self.access_tokens
+            }
+        except (json.JSONDecodeError, ValueError, TypeError):
+            self._quarantine_snapshot()
 
 
 def _with_query(url: str, values: dict[str, str | None]) -> str:

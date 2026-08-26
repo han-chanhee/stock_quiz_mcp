@@ -23,6 +23,7 @@ from server.cache import QuizCache
 from server.handlers import QuizHandlers, QuizMode
 from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
+from store.quiz_store import DEFAULT_MAX_ENTRIES
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "batch" / "data"
 _EXPECTED_TOOLS = {"help", "quiz", "submit_answer"}
@@ -135,6 +136,8 @@ async def load_smoke(requests: int = 200, concurrency: int = 20) -> dict[str, An
         "elapsed_sec": round(elapsed, 4),
         "rps": round(requests / elapsed, 2) if elapsed else requests,
         "stored_quizzes": len(store),
+        "max_active_quizzes": DEFAULT_MAX_ENTRIES,
+        "cap_reached": len(store) == DEFAULT_MAX_ENTRIES,
     }
 
 
