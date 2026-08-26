@@ -182,3 +182,28 @@ def test_wait_for_build_can_target_head_sha(monkeypatch):
 
     assert run["id"] == 7
     assert seen == [("owner/repo", "abc123")]
+
+
+def test_wait_for_build_falls_back_to_workflow_run_before_check_run(monkeypatch):
+    monkeypatch.setattr(release, "latest_check_run", lambda owner_repo, head_sha: None)
+    monkeypatch.setattr(
+        release,
+        "workflow_run_for_head",
+        lambda owner_repo, branch, head_sha: {
+            "id": 8,
+            "head_sha": head_sha,
+            "status": "completed",
+            "conclusion": "success",
+            "html_url": "https://example.test/run",
+        },
+    )
+
+    run = release.wait_for_build(
+        owner_repo="owner/repo",
+        branch="main",
+        head_sha="abc123",
+        timeout_sec=1,
+        interval_sec=0,
+    )
+
+    assert run["id"] == 8

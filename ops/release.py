@@ -236,6 +236,15 @@ def latest_workflow_run(owner_repo: str, branch: str) -> dict | None:
     return runs[0] if runs else None
 
 
+def workflow_run_for_head(owner_repo: str, branch: str, head_sha: str) -> dict | None:
+    query = urllib.parse.urlencode({"branch": branch, "per_page": 10})
+    data = github_api(f"/repos/{owner_repo}/actions/runs?{query}")
+    for run in data.get("workflow_runs", []):
+        if run.get("head_sha") == head_sha:
+            return run
+    return None
+
+
 def latest_check_run(owner_repo: str, head_sha: str) -> dict | None:
     data = github_api(f"/repos/{owner_repo}/commits/{head_sha}/check-runs")
     runs = data.get("check_runs", [])
@@ -253,11 +262,12 @@ def wait_for_build(
     deadline = time.monotonic() + timeout_sec
     last: dict | None = None
     while time.monotonic() < deadline:
-        run = (
-            latest_check_run(owner_repo, head_sha)
-            if head_sha
-            else latest_workflow_run(owner_repo, branch)
-        )
+        if head_sha:
+            run = latest_check_run(owner_repo, head_sha)
+            if run is None:
+                run = workflow_run_for_head(owner_repo, branch, head_sha)
+        else:
+            run = latest_workflow_run(owner_repo, branch)
         if run:
             last = run
             status = run.get("status")
