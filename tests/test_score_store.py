@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from contracts.schemas import ScoreEntry
 from store.score_store import ScoreStore
 
 _KST = timezone(timedelta(hours=9))
@@ -65,3 +66,33 @@ async def test_snapshot_round_trip(tmp_path):
     restored.snapshot_load()
 
     assert restored.leaderboard("alpha").model_dump() == original.leaderboard("alpha").model_dump()
+
+
+@pytest.mark.asyncio
+async def test_snapshot_restores_week_metadata(tmp_path):
+    path = tmp_path / "scores.json"
+    store = ScoreStore(snapshot_path=path)
+    monday = datetime(2026, 8, 17, 0, 0, tzinfo=_KST)
+    await store.maybe_weekly_reset(monday)
+    await store.snapshot_save()
+
+    restored = ScoreStore(snapshot_path=path)
+    restored.snapshot_load()
+
+    assert restored.leaderboard("unknown").week_started_at == monday
+
+
+def test_snapshot_loads_legacy_list_payload(tmp_path):
+    path = tmp_path / "legacy.json"
+    entry = ScoreEntry(
+        identity_key="legacy",
+        display_name="레거시",
+        score=7,
+        updated_at=datetime(2026, 8, 17, tzinfo=_KST),
+    )
+    path.write_text(f"[{entry.model_dump_json()}]", encoding="utf-8")
+
+    restored = ScoreStore(snapshot_path=path)
+    restored.snapshot_load()
+
+    assert restored.leaderboard("legacy").my_entry.score == 7

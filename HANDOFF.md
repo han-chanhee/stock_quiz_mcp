@@ -36,15 +36,16 @@
    패널을 붙인다. 정답 응답은 기존 득점 + TOP5 패널을 유지한다.
 6. **차트형 시장 퀴즈 힌트** — 계약 enum을 건드리지 않고 기존 시장 퀴즈 위젯에
    스파크라인형 힌트를 추가했다.
-7. **로컬 테스트베드** — `ops.testbed`로 위젯 payload 검증, 인프로세스 부하 스모크,
+7. **OAuth/점수 영속화** — OAuth 클라이언트/동의/토큰과 주간 점수 스냅샷을
+   `store/data/` 아래 JSON으로 저장한다. `OAUTH_SNAPSHOT_PATH`로 OAuth 저장 경로 변경 가능.
+8. **로컬 테스트베드** — `ops.testbed`로 위젯 payload 검증, 인프로세스 부하 스모크,
    MCP 툴명 충돌 체크 가능.
 
 ### 남은 항목 (우선순위 순)
 
-1. **개인정보 제3자 제공 동의문 디스코드 미제출** — `CONSENT_SUBMISSION.md`에
-   복붙용 텍스트 준비돼 있음. 카카오 개인정보보호팀 승인 필요.
-2. **동의/토큰 저장이 인메모리** — 재배포 시 초기화됨. 영속화 미구현.
-3. **운영 화면 재배포 수동 버튼** — URL 오픈은 `ops.release open-redeploy`로 가능하지만,
+1. **개인정보 제3자 제공 동의문 디스코드 미제출** — 현재 세션에는 디스코드 전송
+   커넥터가 없어 자동 제출 불가. `CONSENT_SUBMISSION.md` 본문은 최신 구현/검증 상태로 갱신됨.
+2. **운영 화면 재배포 수동 버튼** — URL 오픈은 `ops.release open-redeploy`로 가능하지만,
    콘솔 버튼 클릭 자동화는 브라우저 로그인/PIN/사용자 조작과 충돌할 수 있다.
 
 ---
@@ -140,6 +141,7 @@ Preview에서 LLM에게 전달되는 툴 이름은 `{MCP식별자}-{툴이름}` 
 .venv/bin/python -m ops.testbed widgets
 .venv/bin/python -m ops.testbed load --requests 200 --concurrency 20
 .venv/bin/python -m ops.testbed conflicts
+.venv/bin/python -m ops.release oauth-smoke
 .venv/bin/pytest -q
 ```
 
@@ -147,6 +149,8 @@ Preview에서 LLM에게 전달되는 툴 이름은 `{MCP식별자}-{툴이름}` 
   `status`)를 쓰지 않는지 확인.
 - `load`: 캐시/스토어/핸들러를 인프로세스로 조립해 출제 + 오답 제출을 반복.
 - `conflicts`: 등록 툴이 `help`, `quiz`, `submit_answer`뿐인지 확인.
+- `oauth-smoke`: 원격 DCR → authorize → 동의 화면 → token → 인증된
+  `tools/list` → 인증된 `quiz` 호출까지 확인.
 
 ---
 
@@ -365,7 +369,8 @@ TASK-003(`server/cache.py`)를 병렬로 돌려 시간을 절반으로 줄였다
 
 1. **동의문 디스코드 제출** — `CONSENT_SUBMISSION.md` 복붙
 2. **승인 후 OAuth 켜기** — 신규 등록 폼에서 `OAUTH_ENABLED=1` 환경변수 추가
-3. **토큰/동의 영속화** — 재배포 시 초기화되는 문제
+3. **심사 피드백 반영** — 개인정보보호팀이 문구/화면 수정을 요구하면 `server/auth.py`와
+   `CONSENT_SUBMISSION.md`를 함께 수정
 
 ### 손대지 말 것
 - 예선 서버(`stock-quiz-mcp`) 삭제·중지 — 규정 위반

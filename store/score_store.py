@@ -1,4 +1,4 @@
-"""닉네임 기반 주간 점수와 랭킹을 관리하는 인메모리 저장소."""
+"""OAuth/플랫폼 식별자 또는 닉네임 기반 주간 점수와 랭킹을 관리하는 저장소."""
 
 from __future__ import annotations
 
@@ -117,21 +117,40 @@ class ScoreStore:
 
     async def snapshot_save(self) -> None:
         async with self._lock:
-            payload = [
-                self._entries[key].model_dump(mode="json")
-                for _, _, key in self._ranking
-            ]
+            payload = {
+                "version": 1,
+                "week_started_at": self._week_started_at.isoformat(),
+                "last_reset_at": (
+                    self._last_reset_at.isoformat()
+                    if self._last_reset_at is not None
+                    else None
+                ),
+                "entries": [
+                    self._entries[key].model_dump(mode="json")
+                    for _, _, key in self._ranking
+                ],
+            }
             self._snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-            self._snapshot_path.write_text(
+            tmp = self._snapshot_path.with_suffix(self._snapshot_path.suffix + ".tmp")
+            tmp.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            tmp.replace(self._snapshot_path)
 
     def snapshot_load(self) -> None:
         if not self._snapshot_path.exists():
             return
         payload = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
-        entries = [ScoreEntry.model_validate(item) for item in payload]
+        if isinstance(payload, list):
+            entries_payload = payload
+        else:
+            entries_payload = payload.get("entries", [])
+            if payload.get("week_started_at"):
+                self._week_started_at = datetime.fromisoformat(payload["week_started_at"])
+            if payload.get("last_reset_at"):
+                self._last_reset_at = datetime.fromisoformat(payload["last_reset_at"])
+        entries = [ScoreEntry.model_validate(item) for item in entries_payload]
         self._entries = {entry.identity_key: entry for entry in entries}
         self._rebuild_ranking()
 

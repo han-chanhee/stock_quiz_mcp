@@ -26,14 +26,21 @@ from __future__ import annotations
 
 import os
 import secrets
+import json
 from html import escape
+from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
-from mcp.server.auth.provider import AuthorizationParams
+from mcp.server.auth.provider import (
+    AccessToken,
+    AuthorizationCode,
+    AuthorizationParams,
+    RefreshToken,
+)
 from mcp.server.auth.settings import ClientRegistrationOptions
-from mcp.shared.auth import OAuthClientInformationFull
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
@@ -57,6 +64,7 @@ _HARDCODED_MCP_ID = "3606"
 # OAuth issuer/base URL. MCP SDK가 HTTPS를 강제하므로 실제 배포 도메인을 쓴다.
 # (OAUTH_BASE_URL 환경변수로 덮어쓸 수 있음)
 _DEFAULT_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
+_DEFAULT_OAUTH_SNAPSHOT_PATH = Path(__file__).parent.parent / "store" / "data" / "oauth.json"
 
 CONSENT_TEXT = {
     "제공받는 자": "(주) 카카오",
@@ -76,12 +84,16 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
     동의를 받는 화면"을 요구하므로, authorize() 앞단에 동의 여부 확인을 추가한다.
     """
 
-    def __init__(self, allowed_redirect_uris: tuple[str, ...], **kwargs) -> None:
+    def __init__(
+        self,
+        allowed_redirect_uris: tuple[str, ...],
+        snapshot_path: Path | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         self.allowed_redirect_uris = allowed_redirect_uris
+        self._snapshot_path = snapshot_path or _DEFAULT_OAUTH_SNAPSHOT_PATH
         self._allowed_redirect_uri_set = set(allowed_redirect_uris)
-        # 동의를 마친 (client_id) 집합. 프로세스 재시작 시 초기화됨 —
-        # 토큰/클라이언트와 동일하게 영속화는 별도 태스크 범위.
         self._consented_clients: set[str] = set()
         # 동의 대기 중인 요청: consent_token -> (client, params)
         self._pending_consents: dict[
@@ -97,8 +109,31 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             if uri_text not in self._allowed_redirect_uri_set:
                 raise ValueError(f"허용되지 않은 redirect_uri: {uri_text}")
 
-        # 토큰과 클라이언트 영속화는 별도 태스크에서 구현한다.
         await super().register_client(client_info)
+        self.snapshot_save()
+
+    async def exchange_authorization_code(
+        self,
+        client: OAuthClientInformationFull,
+        authorization_code: AuthorizationCode,
+    ) -> OAuthToken:
+        token = await super().exchange_authorization_code(client, authorization_code)
+        self.snapshot_save()
+        return token
+
+    async def exchange_refresh_token(
+        self,
+        client: OAuthClientInformationFull,
+        refresh_token: RefreshToken,
+        scopes: list[str],
+    ) -> OAuthToken:
+        token = await super().exchange_refresh_token(client, refresh_token, scopes)
+        self.snapshot_save()
+        return token
+
+    async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        await super().revoke_token(token)
+        self.snapshot_save()
 
     async def authorize(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
@@ -136,6 +171,71 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         ]
         for token in stale_refresh:
             self.refresh_tokens.pop(token, None)
+        self._access_to_refresh_map = {
+            access: refresh
+            for access, refresh in self._access_to_refresh_map.items()
+            if access in self.access_tokens and refresh in self.refresh_tokens
+        }
+        self._refresh_to_access_map = {
+            refresh: access
+            for refresh, access in self._refresh_to_access_map.items()
+            if refresh in self.refresh_tokens and access in self.access_tokens
+        }
+        self.snapshot_save()
+
+    def snapshot_save(self) -> None:
+        """DCR clients, active tokens, token pair maps, and consent flags are persisted."""
+        self._snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "version": 1,
+            "clients": {
+                client_id: client.model_dump(mode="json")
+                for client_id, client in self.clients.items()
+            },
+            "access_tokens": {
+                token: info.model_dump(mode="json")
+                for token, info in self.access_tokens.items()
+            },
+            "refresh_tokens": {
+                token: info.model_dump(mode="json")
+                for token, info in self.refresh_tokens.items()
+            },
+            "access_to_refresh": dict(self._access_to_refresh_map),
+            "refresh_to_access": dict(self._refresh_to_access_map),
+            "consented_clients": sorted(self._consented_clients),
+        }
+        tmp = self._snapshot_path.with_suffix(self._snapshot_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(self._snapshot_path)
+
+    def snapshot_load(self) -> None:
+        """Restore persisted OAuth runtime state if a snapshot exists."""
+        if not self._snapshot_path.exists():
+            return
+        payload = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
+        self.clients = {
+            client_id: OAuthClientInformationFull.model_validate(client)
+            for client_id, client in payload.get("clients", {}).items()
+        }
+        self.access_tokens = {
+            token: AccessToken.model_validate(info)
+            for token, info in payload.get("access_tokens", {}).items()
+        }
+        self.refresh_tokens = {
+            token: RefreshToken.model_validate(info)
+            for token, info in payload.get("refresh_tokens", {}).items()
+        }
+        self._consented_clients = set(payload.get("consented_clients", []))
+        self._access_to_refresh_map = {
+            access: refresh
+            for access, refresh in payload.get("access_to_refresh", {}).items()
+            if access in self.access_tokens and refresh in self.refresh_tokens
+        }
+        self._refresh_to_access_map = {
+            refresh: access
+            for refresh, access in payload.get("refresh_to_access", {}).items()
+            if refresh in self.refresh_tokens and access in self.access_tokens
+        }
 
 
 def _with_query(url: str, values: dict[str, str | None]) -> str:
@@ -235,7 +335,7 @@ def _consent_page_html(consent_token: str) -> str:
 
 
 def _disconnect_page_html(message: str | None = None) -> str:
-    notice = f"<p style='color:green'>{message}</p>" if message else ""
+    notice = f"<p style='color:green'>{escape(message)}</p>" if message else ""
     return f"""<!doctype html>
 <html lang="ko">
 <head><meta charset="utf-8"><title>주식대결 - Kakao Tools 연동 해제</title></head>
@@ -284,6 +384,7 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
 
         client_id = client.client_id or ""
         provider._consented_clients.add(client_id)
+        provider.snapshot_save()
         redirect_uri = await provider.authorize(client, params)
         return RedirectResponse(redirect_uri, status_code=302)
 
@@ -323,8 +424,14 @@ def build_auth_provider() -> "AuthProvider | None":
     # "MCP clients and servers SHOULD support RFC7591"이라고 권고하며, 이게 없으면
     # 클라이언트가 client_id를 얻을 방법이 없어 인증 흐름이 시작조차 되지 않는다
     # (401 -> 메타데이터 조회 -> /register -> /authorize -> /token 순서).
-    return KakaoRestrictedOAuthProvider(
+    provider = KakaoRestrictedOAuthProvider(
         allowed_redirect_uris=allowed_redirect_uris,
+        snapshot_path=Path(
+            os.environ.get("OAUTH_SNAPSHOT_PATH", "").strip()
+            or _DEFAULT_OAUTH_SNAPSHOT_PATH
+        ),
         base_url=base_url,
         client_registration_options=ClientRegistrationOptions(enabled=True),
     )
+    provider.snapshot_load()
+    return provider

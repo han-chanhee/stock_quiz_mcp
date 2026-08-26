@@ -8,6 +8,8 @@ deployed MCP without exposing write actions to end users.
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import os
 import shutil
@@ -30,6 +32,11 @@ DEFAULT_REMOTE = "origin"
 DEFAULT_OWNER_REPO = "han-chanhee/stock_quiz_mcp"
 DEFAULT_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
 DEFAULT_PREVIEW_URL = "https://preview-chatgpt.kakao.com"
+DEFAULT_MCP_ID = "3606"
+DEFAULT_OAUTH_REDIRECT_URI = (
+    f"https://playmcp.kakao.com/api/v1/applied-mcps/{DEFAULT_MCP_ID}/"
+    "authorize/oauth:callback"
+)
 
 SENSITIVE_PATHS = {
     ".env",
@@ -288,6 +295,30 @@ def http_json(url: str, *, method: str = "GET", body: dict | None = None) -> tup
         return exc.code, parsed, dict(exc.headers)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def http_text(
+    url: str,
+    *,
+    method: str = "GET",
+    body: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    follow_redirects: bool = True,
+) -> tuple[int, str, dict]:
+    req = urllib.request.Request(url, data=body, method=method, headers=headers or {})
+    opener = urllib.request.urlopen
+    if not follow_redirects:
+        opener = urllib.request.build_opener(_NoRedirect).open
+    try:
+        with opener(req, timeout=20) as response:
+            return response.status, response.read().decode("utf-8", "replace"), dict(response.headers)
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8", "replace"), dict(exc.headers)
+
+
 def verify_remote(base_url: str = DEFAULT_BASE_URL) -> dict:
     base = base_url.rstrip("/")
     health_status, health, _ = http_json(f"{base}/health")
@@ -307,6 +338,161 @@ def verify_remote(base_url: str = DEFAULT_BASE_URL) -> dict:
         "health": health,
         "tools_status": tools_status,
         "oauth_challenge": tools_status == 401,
+    }
+
+
+def _header(headers: dict, name: str) -> str:
+    for key, value in headers.items():
+        if key.lower() == name.lower():
+            return value
+    return ""
+
+
+def _pkce_s256(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def remote_oauth_smoke(
+    base_url: str = DEFAULT_BASE_URL,
+    redirect_uri: str = DEFAULT_OAUTH_REDIRECT_URI,
+) -> dict:
+    base = base_url.rstrip("/")
+    client_payload = {
+        "redirect_uris": [redirect_uri],
+        "client_name": "codex release smoke",
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "client_secret_post",
+    }
+    status, raw, _ = http_text(
+        f"{base}/register",
+        method="POST",
+        body=json.dumps(client_payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    if status != 201:
+        raise ReleaseError(f"/register returned {status}: {raw[:300]}")
+    client = json.loads(raw)
+
+    verifier = "codex-release-smoke-verifier-01234567890123456789"
+    query = urllib.parse.urlencode(
+        {
+            "response_type": "code",
+            "client_id": client["client_id"],
+            "redirect_uri": redirect_uri,
+            "state": "codex-release-smoke",
+            "code_challenge": _pkce_s256(verifier),
+            "code_challenge_method": "S256",
+        }
+    )
+    status, raw, headers = http_text(
+        f"{base}/authorize?{query}",
+        headers={"Accept": "text/html,application/json"},
+        follow_redirects=False,
+    )
+    consent_location = _header(headers, "location")
+    if status != 302 or not consent_location.startswith("/oauth/consent?token="):
+        raise ReleaseError(f"/authorize did not redirect to consent: {status} {raw[:300]}")
+
+    status, consent_html, _ = http_text(
+        f"{base}{consent_location}",
+        headers={"Accept": "text/html"},
+    )
+    if status != 200 or "동의하고 계속" not in consent_html:
+        raise ReleaseError(f"/oauth/consent page invalid: {status}")
+
+    token = urllib.parse.parse_qs(urllib.parse.urlsplit(consent_location).query)["token"][0]
+    consent_body = urllib.parse.urlencode(
+        {"token": token, "decision": "allow"}
+    ).encode("utf-8")
+    status, raw, headers = http_text(
+        f"{base}/oauth/consent",
+        method="POST",
+        body=consent_body,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "text/html",
+        },
+        follow_redirects=False,
+    )
+    callback = _header(headers, "location")
+    code = urllib.parse.parse_qs(urllib.parse.urlsplit(callback).query).get("code", [""])[0]
+    if status != 302 or not code:
+        raise ReleaseError(f"consent did not issue callback code: {status} {raw[:300]}")
+
+    token_body = urllib.parse.urlencode(
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client["client_id"],
+            "client_secret": client.get("client_secret", ""),
+            "code_verifier": verifier,
+        }
+    ).encode("utf-8")
+    status, raw, _ = http_text(
+        f"{base}/token",
+        method="POST",
+        body=token_body,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        },
+    )
+    if status != 200:
+        raise ReleaseError(f"/token returned {status}: {raw[:300]}")
+    access_token = json.loads(raw)["access_token"]
+
+    auth_headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "Authorization": f"Bearer {access_token}",
+    }
+    tools_body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode("utf-8")
+    status, raw, _ = http_text(
+        f"{base}/mcp",
+        method="POST",
+        body=tools_body,
+        headers=auth_headers,
+    )
+    if status != 200:
+        raise ReleaseError(f"authenticated tools/list returned {status}: {raw[:300]}")
+    tools = json.loads(raw)["result"]["tools"]
+    tool_names = sorted(tool["name"] for tool in tools)
+
+    quiz_body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "quiz",
+                "arguments": {"mode": "시장", "nickname": "원격검증", "period": "1w"},
+            },
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    status, quiz_raw, _ = http_text(
+        f"{base}/mcp",
+        method="POST",
+        body=quiz_body,
+        headers=auth_headers,
+    )
+    if status != 200:
+        raise ReleaseError(f"authenticated quiz call returned {status}: {quiz_raw[:300]}")
+
+    return {
+        "register_status": 201,
+        "authorize_redirect": True,
+        "consent_page": True,
+        "token_status": 200,
+        "tools_status": 200,
+        "tool_names": tool_names,
+        "quiz_status": 200,
+        "quiz_has_chart_hint": "차트형 힌트" in quiz_raw,
+        "quiz_has_leaderboard": "주간 TOP5" in quiz_raw,
+        "ctx_exposed": '"ctx"' in raw or '"ctx"' in quiz_raw,
     }
 
 
@@ -341,6 +527,17 @@ def cmd_verify_remote(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_oauth_smoke(args: argparse.Namespace) -> int:
+    print(
+        json.dumps(
+            remote_oauth_smoke(args.base_url, args.redirect_uri),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def cmd_open_preview(args: argparse.Namespace) -> int:
     open_url(args.url or os.environ.get("KAKAO_PREVIEW_URL", DEFAULT_PREVIEW_URL))
     return 0
@@ -371,6 +568,11 @@ def build_parser() -> argparse.ArgumentParser:
     verify = sub.add_parser("verify-remote", help="check health and MCP auth/list behavior")
     verify.add_argument("--base-url", default=DEFAULT_BASE_URL)
     verify.set_defaults(func=cmd_verify_remote)
+
+    oauth = sub.add_parser("oauth-smoke", help="run remote OAuth and authenticated quiz smoke")
+    oauth.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    oauth.add_argument("--redirect-uri", default=DEFAULT_OAUTH_REDIRECT_URI)
+    oauth.set_defaults(func=cmd_oauth_smoke)
 
     preview = sub.add_parser("open-preview", help="open the Kakao Tools preview screen")
     preview.add_argument("--url", default="")

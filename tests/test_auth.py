@@ -1,13 +1,16 @@
 """기본 비활성 OAuth 인증서버 골격 테스트."""
 
 import pytest
+from urllib.parse import parse_qs, urlsplit
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
+from mcp.server.auth.provider import AccessToken
 from mcp.shared.auth import OAuthClientInformationFull
 
 from server.auth import (
     KakaoRestrictedOAuthProvider,
     _authorization_error_redirect,
     _consent_page_html,
+    _disconnect_page_html,
     build_auth_provider,
 )
 
@@ -78,6 +81,30 @@ async def test_oauth_registers_allowed_redirect_uri():
     assert await provider.get_client("allowed-client") == client
 
 
+def test_oauth_provider_loads_configured_snapshot(monkeypatch, tmp_path):
+    path = tmp_path / "oauth.json"
+    original = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
+    )
+    original.clients["c-load"] = OAuthClientInformationFull(
+        client_id="c-load",
+        redirect_uris=["https://allowed.example/oauth/callback"],
+    )
+    original._consented_clients.add("c-load")
+    original.snapshot_save()
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("OAUTH_MCP_ID", "test-id")
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(path))
+
+    restored = build_auth_provider()
+
+    assert restored is not None
+    assert "c-load" in restored.clients
+    assert "c-load" in restored._consented_clients
+
+
 def _params():
     from mcp.server.auth.provider import AuthorizationParams
 
@@ -124,6 +151,57 @@ async def test_authorize_after_consent_issues_real_redirect():
     assert "code=" in result
 
 
+@pytest.mark.asyncio
+async def test_oauth_snapshot_round_trip_after_token_issue(tmp_path):
+    path = tmp_path / "oauth.json"
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
+    )
+    client = OAuthClientInformationFull(
+        client_id="c-token", redirect_uris=["https://allowed.example/oauth/callback"]
+    )
+    await provider.register_client(client)
+    provider._consented_clients.add("c-token")
+    redirect = await provider.authorize(client, _params())
+    code = parse_qs(urlsplit(redirect).query)["code"][0]
+    auth_code = await provider.load_authorization_code(client, code)
+
+    token = await provider.exchange_authorization_code(client, auth_code)
+
+    restored = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
+    )
+    restored.snapshot_load()
+
+    assert await restored.get_client("c-token") == client
+    assert await restored.load_access_token(token.access_token) is not None
+    assert await restored.load_refresh_token(client, token.refresh_token) is not None
+    assert "c-token" in restored._consented_clients
+
+
+@pytest.mark.asyncio
+async def test_revoke_token_updates_oauth_snapshot(tmp_path):
+    path = tmp_path / "oauth.json"
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
+    )
+    access = AccessToken(token="tok", client_id="c1", scopes=[])
+    provider.access_tokens["tok"] = access
+    provider.snapshot_save()
+
+    await provider.revoke_token(access)
+
+    restored = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
+    )
+    restored.snapshot_load()
+    assert await restored.load_access_token("tok") is None
+
+
 def test_consent_page_escapes_token_and_has_mobile_viewport():
     html = _consent_page_html('tok"><script>alert(1)</script>')
 
@@ -131,6 +209,13 @@ def test_consent_page_escapes_token_and_has_mobile_viewport():
     assert 'value="tok&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"' in html
     assert "<script>alert(1)</script>" not in html
     assert "동의하고 계속" in html
+
+
+def test_disconnect_page_escapes_message():
+    html = _disconnect_page_html("<script>alert(1)</script>")
+
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
 
 
 def test_authorization_error_redirect_preserves_state_and_query():

@@ -125,6 +125,38 @@ def test_cli_verify_remote_prints_json(monkeypatch, capsys):
     }
 
 
+def test_pkce_s256_challenge_is_urlsafe():
+    challenge = release._pkce_s256("codex-release-smoke-verifier-01234567890123456789")
+
+    assert "=" not in challenge
+    assert len(challenge) == 43
+
+
+def test_cli_oauth_smoke_prints_json(monkeypatch, capsys):
+    monkeypatch.setattr(
+        release,
+        "remote_oauth_smoke",
+        lambda base_url, redirect_uri: {
+            "base": base_url,
+            "redirect": redirect_uri,
+            "token_status": 200,
+        },
+    )
+
+    assert release.main([
+        "oauth-smoke",
+        "--base-url",
+        "https://example.test",
+        "--redirect-uri",
+        "https://redirect.test/callback",
+    ]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "base": "https://example.test",
+        "redirect": "https://redirect.test/callback",
+        "token_status": 200,
+    }
+
+
 def test_wait_for_build_can_target_head_sha(monkeypatch):
     seen = []
 
