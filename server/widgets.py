@@ -193,7 +193,7 @@ def correct_answer_widget(
     leaderboard: "LeaderboardSnapshot | None",
     next_actions: list[str],
 ) -> dict:
-    """정답 응답 위젯. 미니분석 + (있으면) 점수·TOP5 랭킹 + 다음 액션.
+    """정답 응답 위젯. 미니분석 + (있으면) 점수·TOP3 랭킹 + 다음 액션.
     {"widget": {...}, "copy_text": "...", "name": "correct_answer"}"""
     children: list[dict] = [
         {"type": "Title", "value": f"정답! {answer_name}", "size": "lg", "weight": "bold"},
@@ -223,14 +223,20 @@ def correct_answer_widget(
             copy_lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!"])
         children.append(leaderboard_listview_rows(leaderboard))
         children.append(
-            {"type": "Text", "value": f"나의 순위: {leaderboard.my_rank}위", "weight": "bold"}
+            {
+                "type": "Text",
+                "value": f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위",
+                "weight": "bold",
+            }
         )
-        copy_lines.extend(["", "**주간 TOP5**"])
+        copy_lines.extend(["", "**주간 TOP3**"])
         copy_lines.extend(
             f"{rank}. {entry.display_name} — {entry.score}점"
-            for rank, entry in enumerate(leaderboard.top[:5], start=1)
+            for rank, entry in enumerate(leaderboard.top[:3], start=1)
         )
-        copy_lines.append(f"나의 순위: {leaderboard.my_rank}위")
+        copy_lines.append(
+            f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+        )
 
     if next_actions:
         children.append({"type": "Divider", "spacing": 12})
@@ -246,7 +252,11 @@ def correct_answer_widget(
     }
 
 
-def with_leaderboard(payload: dict, leaderboard: "LeaderboardSnapshot | None") -> dict:
+def with_leaderboard(
+    payload: dict,
+    leaderboard: "LeaderboardSnapshot | None",
+    score_delta: int | None = None,
+) -> dict:
     """기존 위젯 끝에 공통 주간 랭킹 패널을 붙인다.
 
     Preview에서 확인된 컴포넌트만 사용해 모든 응답의 하단 모양을 통일한다.
@@ -271,10 +281,15 @@ def with_leaderboard(payload: dict, leaderboard: "LeaderboardSnapshot | None") -
     widget["children"] = children
 
     copy_text = payload["copy_text"]
-    ranking_lines = ["", "**주간 TOP5**"]
+    ranking_lines = [""]
+    if score_delta is not None:
+        action = "획득" if score_delta > 0 else "감점"
+        ranking_lines.append(f"점수 {abs(score_delta)}점 {action}")
+        ranking_lines.append("")
+    ranking_lines.append("**주간 TOP3**")
     ranking_lines.extend(
         f"{rank}. {entry.display_name} — {entry.score}점"
-        for rank, entry in enumerate(leaderboard.top[:5], start=1)
+        for rank, entry in enumerate(leaderboard.top[:3], start=1)
     )
     ranking_lines.append(
         f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
@@ -287,7 +302,7 @@ def with_leaderboard(payload: dict, leaderboard: "LeaderboardSnapshot | None") -
 
 
 def leaderboard_table_rows(leaderboard: "LeaderboardSnapshot") -> dict:
-    """TOP5를 Table 컴포넌트로 조립한다.
+    """TOP3를 Table 컴포넌트로 조립한다.
 
     ⚠️ Preview 실측 결과(2026-08-19) Table 사용 시 정답 위젯 전체가 조용히
     일반 텍스트로 강등됨을 확인(HANDOFF.md 경고가 실측으로 확인됨). 더 이상
@@ -317,7 +332,7 @@ def leaderboard_table_rows(leaderboard: "LeaderboardSnapshot") -> dict:
                 cell(f"{entry.score}점", align="end"),
             ],
         }
-        for rank, entry in enumerate(leaderboard.top[:5], start=1)
+        for rank, entry in enumerate(leaderboard.top[:3], start=1)
     )
     return {"type": "Table", "children": rows}
 
@@ -326,7 +341,7 @@ _TOP3_BADGE_COLORS = {1: "warning", 2: "secondary", 3: "info"}
 
 
 def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
-    """TOP5를 Row 조합으로 조립한다(Card 안에 중첩되는 자식이라 ListView 루트는 쓰지 않음).
+    """TOP3를 Row 조합으로 조립한다(Card 안에 중첩되는 자식이라 ListView 루트는 쓰지 않음).
 
     HANDOFF.md §7 '리더보드 위젯 JSON' 샘플의 내부 Row 레이아웃(Badge+Text+Text)을
     가져오되, 감싸는 컨테이너는 ListView/ListViewItem(루트 전용·자식 전용으로 문서에
@@ -369,7 +384,7 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
 
     rows = [
         row(rank, entry.display_name, entry.score)
-        for rank, entry in enumerate(leaderboard.top[:5], start=1)
+        for rank, entry in enumerate(leaderboard.top[:3], start=1)
     ]
     return {"type": "Col", "gap": 6, "children": rows}
 
@@ -494,7 +509,7 @@ def _notice_widget(text: str, caption: str, name: str) -> dict:
 
 def already_solved_widget() -> dict:
     return _notice_widget(
-        "🏁 이미 정답이 나온 퀴즈입니다.",
+        "🏁 이미 정답 처리된 퀴즈입니다.",
         "새 퀴즈를 출제해주세요.",
         "already_solved",
     )

@@ -17,7 +17,7 @@ class QuizStore:
 ## 요구사항
 
 - TTL 30분 (created_at 기준)
-- quiz_id 생성: `secrets.token_urlsafe(8)` — 추측 불가해야 함 (단체방 부정행위 방지)
+- quiz_id 생성: `secrets.token_urlsafe(8)` — 다른 사용자가 정답 상태를 추측하기 어렵게 해야 함
 - asyncio 환경에서 안전할 것 (동시 제출 대비 lock 또는 단일 이벤트루프 전제 명시)
 - 최대 보관 개수 상한 (예: 10,000) 초과 시 오래된 것부터 제거 — 메모리 폭주 방지
 

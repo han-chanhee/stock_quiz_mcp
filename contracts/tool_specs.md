@@ -27,11 +27,10 @@
   1. store에서 quiz_id 조회. 없으면 NOT_FOUND, TTL 만료면 EXPIRED
   2. 종목명 판정: 공백/대소문자/한영 정규화 + 별칭 테이블
   3. 가격 판정: ±3% 룰 (경계 3.0% 포함)
-  4. WRONG → attempts 증가, 단계별 Hint 반환
-  5. CORRECT → solved=true, MiniAnalysis + next_actions 2택 반환
+  4. WRONG → attempts 증가, 점수 감점, 단계별 Hint + 내 점수/순위 + TOP3 반환
+  5. CORRECT → solved=true, 점수 가점, MiniAnalysis + 내 점수/순위 + TOP3 + next_actions 반환
 - Output: 마크다운(GradingResult 기반)
-- 단체방: 같은 quiz_id에 여러 명 제출 가능. solved된 퀴즈 재제출 시 "이미 정답" 응답.
-  동시 정답은 선착순 1명만 CORRECT 처리.
+- 개인 이용: 사용자가 받은 quiz_id는 정답 처리 후 재제출해도 점수를 다시 반영하지 않는다.
 
 ## annotations 공통값
 

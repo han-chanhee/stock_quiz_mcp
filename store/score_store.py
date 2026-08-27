@@ -12,7 +12,8 @@ from pathlib import Path
 from contracts.schemas import LeaderboardSnapshot, ScoreEntry
 
 _KST = timezone(timedelta(hours=9))
-_SCORE_TABLE = {1: 3, 2: 2}
+_CORRECT_SCORE_TABLE = {1: 3, 2: 2}
+WRONG_PENALTY = -1
 
 DEFAULT_SNAPSHOT_PATH = Path(__file__).parent / "data" / "scores.json"
 DEFAULT_RESET_WEEKDAY = 0   # 월요일 (datetime.weekday() 기준 0=월)
@@ -94,19 +95,16 @@ class ScoreStore:
     def _rebuild_ranking(self) -> None:
         self._ranking = sorted(self._ranking_key(entry) for entry in self._entries.values())
 
-    async def add_result(self, identity_key: str, display_name: str, attempts: int) -> int:
-        """정답 확정 시 호출. attempts(1부터)로 점수를 계산해 가산하고 이번에 획득한 점수를 반환한다.
-        1회=3점, 2회=2점, 3회 이상=1점."""
-        earned = _SCORE_TABLE.get(attempts, 1)
+    async def _apply_delta(self, identity_key: str, display_name: str, delta: int) -> int:
         now = self._now()
         safe_display_name = self._clean_display_name(display_name)
         async with self._lock:
             previous = self._entries.get(identity_key)
             if previous is not None:
                 self._remove_from_ranking(previous)
-                score = previous.score + earned
+                score = previous.score + delta
             else:
-                score = earned
+                score = delta
             entry = ScoreEntry(
                 identity_key=identity_key,
                 display_name=safe_display_name,
@@ -115,9 +113,19 @@ class ScoreStore:
             )
             self._entries[identity_key] = entry
             insort(self._ranking, self._ranking_key(entry))
-        return earned
+        return delta
 
-    def leaderboard(self, identity_key: str, top_n: int = 5) -> LeaderboardSnapshot:
+    async def add_result(self, identity_key: str, display_name: str, attempts: int) -> int:
+        """정답 확정 시 호출. attempts(1부터)로 점수를 계산해 가산하고 이번에 획득한 점수를 반환한다.
+        1회=3점, 2회=2점, 3회 이상=1점."""
+        earned = _CORRECT_SCORE_TABLE.get(attempts, 1)
+        return await self._apply_delta(identity_key, display_name, earned)
+
+    async def add_penalty(self, identity_key: str, display_name: str) -> int:
+        """오답 확정 시 호출. 이번 감점 값을 반환한다."""
+        return await self._apply_delta(identity_key, display_name, WRONG_PENALTY)
+
+    def leaderboard(self, identity_key: str, top_n: int = 3) -> LeaderboardSnapshot:
         """TOP N + 본인 정확한 순위. identity_key가 아직 없으면 score=0인 엔트리로 취급."""
         top = [self._entries[key].model_copy() for _, _, key in self._ranking[:top_n]]
         entry = self._entries.get(identity_key)

@@ -118,7 +118,7 @@ async def test_concurrent_solve_only_one_winner():
         return was_first
 
     results = await asyncio.gather(*[attempt() for _ in range(5)])
-    assert sum(results) == 1  # 선착순 1명만 정답 처리
+    assert sum(results) == 1  # 중복 제출이어도 점수는 1회만 반영
 
 
 @pytest.mark.asyncio

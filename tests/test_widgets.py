@@ -133,7 +133,7 @@ def test_wrong_answer_widget_payload() -> None:
     assert payload["widget"]["children"][1]["color"] == "warning"
 
 
-def test_correct_answer_widget_payload_and_top_five() -> None:
+def test_correct_answer_widget_payload_and_top_three() -> None:
     leaderboard = _leaderboard()
     payload = correct_answer_widget(
         "삼성전자",
@@ -152,8 +152,9 @@ def test_correct_answer_widget_payload_and_top_five() -> None:
     leaderboard_col = next(
         child for child in payload["widget"]["children"] if child["type"] == "Col"
     )
-    assert len(leaderboard_col["children"]) == 5
-    assert "나의 순위: 6위" in payload["copy_text"]
+    assert len(leaderboard_col["children"]) == 3
+    assert "주간 TOP3" in payload["copy_text"]
+    assert "내 점수 54점 · 6위" in payload["copy_text"]
 
 
 def test_correct_answer_widget_without_leaderboard() -> None:
@@ -175,7 +176,7 @@ def test_leaderboard_table_rows_schema() -> None:
 def test_leaderboard_listview_rows_schema() -> None:
     col = leaderboard_listview_rows(_leaderboard())
     assert col["type"] == "Col"
-    assert len(col["children"]) == 5
+    assert len(col["children"]) == 3
     first_row = col["children"][0]
     assert first_row["type"] == "Row"
     badge, name, score = first_row["children"]
@@ -191,7 +192,7 @@ def test_with_leaderboard_appends_common_ranking_panel() -> None:
     _assert_payload(combined, "price_quiz")
 
     assert combined["widget"] is not payload["widget"]
-    assert "주간 TOP5" in combined["copy_text"]
+    assert "주간 TOP3" in combined["copy_text"]
     assert "내 점수" in combined["copy_text"]
     assert any(
         child.get("type") == "Title" and child.get("value") == "주간 랭킹"

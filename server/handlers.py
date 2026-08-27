@@ -264,21 +264,13 @@ class QuizHandlers:
                 widget=widgets.quiz_not_found_widget(),
             ), score_identity)
 
-        if state.solved:
-            return self._with_submit_leaderboard(SubmitOutcome(
-                Verdict.CORRECT,
-                "🏁 이미 정답이 나온 퀴즈입니다.",
-                attempts=state.attempts,
-                widget=widgets.already_solved_widget(),
-            ), score_identity)
-
         aliases = self._cache.aliases()
         if is_correct(state, answer, aliases):
             solved_state, was_first = await self._store.compare_and_solve(quiz_id)
             if not was_first:
                 return self._with_submit_leaderboard(SubmitOutcome(
                     Verdict.CORRECT,
-                    "🏁 이미 정답이 나온 퀴즈입니다.",
+                    "🏁 이미 정답 처리된 퀴즈입니다.",
                     attempts=(solved_state.attempts if solved_state else 0),
                     widget=widgets.already_solved_widget(),
                 ), score_identity)
@@ -325,17 +317,28 @@ class QuizHandlers:
         updated = await self._store.record_attempt(quiz_id)
         attempts = updated.attempts if updated else 1
         hint = pick_hint(state, answer, attempts)
+        leaderboard = None
+        penalty = None
+        if score_identity is not None:
+            display_name = nickname.strip() or score_identity
+            penalty = await self._score_store.add_penalty(score_identity, display_name)
+            leaderboard = self._score_store.leaderboard(score_identity)
         md = (
             f"❌ 오답입니다. (시도 {attempts}회)\n\n"
             f"💡 힌트: **{hint.text}**"
+            + self._render_score_delta(penalty, leaderboard)
             + _as_of_footer(self._cache)
         )
-        return self._with_submit_leaderboard(SubmitOutcome(
+        widget = widgets.wrong_answer_widget(hint.text, attempts)
+        if leaderboard is not None:
+            widget = widgets.with_leaderboard(widget, leaderboard, penalty)
+        return SubmitOutcome(
             Verdict.WRONG,
             md,
             attempts=attempts,
-            widget=widgets.wrong_answer_widget(hint.text, attempts),
-        ), score_identity)
+            leaderboard=leaderboard,
+            widget=widget,
+        )
 
     @staticmethod
     def _score_identity(nickname: str | None, identity_key: str | None) -> str | None:
@@ -370,8 +373,44 @@ class QuizHandlers:
         if identity_key is None or outcome.widget is None or outcome.leaderboard is not None:
             return outcome
         leaderboard = self._score_store.leaderboard(identity_key)
+        outcome.leaderboard = leaderboard
+        outcome.markdown += self._render_score_delta(None, leaderboard)
         outcome.widget = widgets.with_leaderboard(outcome.widget, leaderboard)
         return outcome
+
+    def _render_score_delta(
+        self,
+        delta: int | None,
+        leaderboard: LeaderboardSnapshot | None,
+    ) -> str:
+        if leaderboard is None:
+            return "\n\n닉네임이 없어 점수와 랭킹은 반영하지 않았습니다."
+        if delta is None:
+            lines = ["", "**주간 TOP3**"]
+            lines.extend(
+                f"{rank}. {entry.display_name} — {entry.score}점"
+                for rank, entry in enumerate(leaderboard.top[:3], start=1)
+            )
+            lines.append(
+                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+            )
+            return "\n".join(lines)
+        action = "획득" if delta > 0 else "감점"
+        amount = abs(delta)
+        lines = [
+            "",
+            f"점수 {amount}점 {action}",
+            "",
+            "**주간 TOP3**",
+        ]
+        lines.extend(
+            f"{rank}. {entry.display_name} — {entry.score}점"
+            for rank, entry in enumerate(leaderboard.top[:3], start=1)
+        )
+        lines.append(
+            f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+        )
+        return "\n".join(lines)
 
     def _render_correct(
         self,
@@ -390,13 +429,14 @@ class QuizHandlers:
             f"- {a.reason_line}",
         ]
         if leaderboard is not None and earned_score is not None:
-            lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!", "", "**주간 TOP5**"])
+            lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!", "", "**주간 TOP3**"])
             lines.extend(
                 f"{rank}. {entry.display_name} — {entry.score}점"
-                for rank, entry in enumerate(leaderboard.top, start=1)
+                for rank, entry in enumerate(leaderboard.top[:3], start=1)
             )
-            if leaderboard.my_rank > len(leaderboard.top):
-                lines.append(f"당신은 {leaderboard.my_rank}위")
+            lines.append(
+                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+            )
         else:
             lines.extend(["", "닉네임이 없어 점수와 랭킹은 반영하지 않았습니다."])
         lines.extend([

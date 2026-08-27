@@ -24,7 +24,17 @@ async def test_attempts_have_differential_scores(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_leaderboard_top_five_and_exact_rank(monkeypatch, tmp_path):
+async def test_wrong_answer_penalty_decrements_score(tmp_path):
+    store = ScoreStore(snapshot_path=tmp_path / "scores.json")
+
+    assert await store.add_penalty("wrong", "오답자") == -1
+    assert store.leaderboard("wrong").my_entry.score == -1
+    assert await store.add_result("wrong", "오답자", 1) == 3
+    assert store.leaderboard("wrong").my_entry.score == 2
+
+
+@pytest.mark.asyncio
+async def test_leaderboard_top_three_and_exact_rank(monkeypatch, tmp_path):
     store = ScoreStore(snapshot_path=tmp_path / "scores.json")
     reached = iter(
         datetime(2026, 8, 10, 9, minute, tzinfo=_KST) for minute in range(6)
@@ -36,7 +46,7 @@ async def test_leaderboard_top_five_and_exact_rank(monkeypatch, tmp_path):
 
     board = store.leaderboard("user-5")
     assert [entry.identity_key for entry in board.top] == [
-        "user-0", "user-1", "user-2", "user-3", "user-4"
+        "user-0", "user-1", "user-2"
     ]
     assert board.my_rank == 6
     assert store.rank_of("unknown") == 7

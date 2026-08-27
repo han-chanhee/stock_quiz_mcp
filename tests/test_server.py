@@ -1,4 +1,4 @@
-"""모듈 E 테스트: 캐시 로드 + 풀 시나리오 왕복 + NOT_FOUND + 단체방 동시 제출.
+"""모듈 E 테스트: 캐시 로드 + 풀 시나리오 왕복 + NOT_FOUND + 개인 중복 제출.
 
 fastmcp 없이 handlers/cache만으로 오케스트레이션을 검증한다(툴 등록은 main.py 얇은 래핑).
 """
@@ -194,7 +194,7 @@ async def test_full_scenario_price_quiz(cache):
 
 @pytest.mark.asyncio
 async def test_first_try_correct_adds_three_points_and_ranking(cache):
-    """첫 시도 정답은 3점과 TOP5 및 본인 순위를 함께 반환한다."""
+    """첫 시도 정답은 3점과 TOP3 및 본인 순위/점수를 함께 반환한다."""
     store = QuizStore()
     score_store = ScoreStore()
     handlers = QuizHandlers(cache, store, score_store)
@@ -206,14 +206,15 @@ async def test_first_try_correct_adds_three_points_and_ranking(cache):
     )
 
     assert "3점" in correct.markdown
-    assert "주간 TOP5" in correct.markdown
+    assert "주간 TOP3" in correct.markdown
+    assert "내 점수 3점 · 1위" in correct.markdown
     assert correct.leaderboard is not None
     assert correct.leaderboard.my_rank == 1
 
 
 @pytest.mark.asyncio
-async def test_solved_quiz_does_not_add_score_twice(cache):
-    """이미 해결된 퀴즈 재제출은 점수와 랭킹을 다시 계산하지 않는다."""
+async def test_same_user_does_not_add_score_twice(cache):
+    """같은 사용자의 같은 퀴즈 재제출은 점수와 랭킹을 다시 계산하지 않는다."""
     store = QuizStore()
     score_store = ScoreStore()
     handlers = QuizHandlers(cache, store, score_store)
@@ -226,13 +227,14 @@ async def test_solved_quiz_does_not_add_score_twice(cache):
 
     assert first.leaderboard is not None
     assert first.leaderboard.my_entry.score == 3
-    assert repeated.leaderboard is None
+    assert repeated.widget is not None
+    assert "내 점수 3점" in repeated.widget["copy_text"]
     assert score_store.leaderboard("중복방지").my_entry.score == 3
 
 
 @pytest.mark.asyncio
-async def test_wrong_answer_does_not_show_ranking(cache):
-    """오답 중에는 점수와 랭킹을 노출하지 않는다."""
+async def test_wrong_answer_subtracts_score_and_shows_ranking(cache):
+    """오답은 1점 감점하고 TOP3 및 본인 순위/점수를 함께 반환한다."""
     handlers, store = _handlers(cache)
     out = handlers.price_quiz(Market.KR)
     state = store.get(out.quiz_id)
@@ -241,8 +243,11 @@ async def test_wrong_answer_does_not_show_ranking(cache):
         out.quiz_id, str(state.answer.price * 0.5), "오답자"
     )
 
-    assert wrong.leaderboard is None
-    assert "주간 TOP5" not in wrong.markdown
+    assert wrong.leaderboard is not None
+    assert wrong.leaderboard.my_entry.score == -1
+    assert "점수 1점 감점" in wrong.markdown
+    assert "주간 TOP3" in wrong.markdown
+    assert "내 점수 -1점" in wrong.markdown
 
 
 @pytest.mark.asyncio
@@ -256,9 +261,33 @@ async def test_wrong_answer_widget_shows_live_leaderboard(cache):
         out.quiz_id, str(state.answer.price * 0.5), "오답자"
     )
 
-    assert wrong.leaderboard is None
+    assert wrong.leaderboard is not None
     assert wrong.widget is not None
-    assert "내 점수 0점" in wrong.widget["copy_text"]
+    assert "점수 1점 감점" in wrong.widget["copy_text"]
+    assert "내 점수 -1점" in wrong.widget["copy_text"]
+
+
+@pytest.mark.asyncio
+async def test_wrong_then_correct_applies_penalty_then_reward(cache):
+    """한 번 틀리고 맞히면 -1점 후 2점 획득으로 순점수 1점이 된다."""
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store)
+    out = handlers.price_quiz(Market.KR)
+    state = store.get(out.quiz_id)
+
+    wrong = await handlers.submit_answer(
+        out.quiz_id, str(state.answer.price * 0.5), "도전자"
+    )
+    correct = await handlers.submit_answer(
+        out.quiz_id, str(state.answer.price), "도전자"
+    )
+
+    assert wrong.leaderboard.my_entry.score == -1
+    assert "점수 1점 감점" in wrong.markdown
+    assert "이번 정답으로 **2점** 획득" in correct.markdown
+    assert correct.leaderboard.my_entry.score == 1
+    assert "내 점수 1점" in correct.markdown
 
 
 @pytest.mark.asyncio
@@ -274,7 +303,7 @@ async def test_quiz_widget_shows_live_leaderboard(cache):
     out = handlers.quiz(QuizMode.PRICE, "랭커", Market.KR)
 
     assert out.widget is not None
-    assert "주간 TOP5" in out.widget["copy_text"]
+    assert "주간 TOP3" in out.widget["copy_text"]
     assert "내 점수 3점" in out.widget["copy_text"]
 
 
@@ -365,19 +394,30 @@ async def test_not_found_quiz_id(cache):
 
 
 @pytest.mark.asyncio
-async def test_group_chat_only_one_winner(cache):
-    """단체방: 같은 quiz_id에 5명 동시 정답 제출 → 1명만 미니분석(선착순)."""
-    handlers, store = _handlers(cache)
+async def test_same_user_concurrent_duplicate_is_not_scored_twice(cache):
+    """같은 사용자가 같은 quiz_id를 동시에 여러 번 맞혀도 점수는 1회만."""
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store)
     out = handlers.price_quiz(Market.KR)
     state = store.get(out.quiz_id)
     answer = str(state.answer.price)
 
     results = await asyncio.gather(
-        *[handlers.submit_answer(out.quiz_id, answer, f"테스터{i}") for i in range(5)]
+        *[
+            handlers.submit_answer(
+                out.quiz_id,
+                answer,
+                "화면닉",
+                identity_key="oauth-same-user",
+            )
+            for _ in range(5)
+        ]
     )
+
     winners = [r for r in results if r.analysis is not None]
     assert len(winners) == 1
-    assert all(r.verdict == Verdict.CORRECT for r in results)
+    assert score_store.leaderboard("oauth-same-user").my_entry.score == 3
 
 
 @pytest.mark.asyncio

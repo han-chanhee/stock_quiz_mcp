@@ -1,7 +1,7 @@
 """모듈 C: quiz_id 인메모리 TTL 스토어.
 
 단일 인스턴스/단일 이벤트루프 전제. Redis 금지(루트 규칙 — 오버엔지니어링).
-동시 제출(단체방)에 대비해 asyncio.Lock으로 보호한다.
+동시 제출/중복 제출에 대비해 asyncio.Lock으로 보호한다.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ DEFAULT_MAX_ENTRIES = 10_000    # 메모리 폭주 방지 상한
 
 
 def new_quiz_id() -> str:
-    """추측 불가한 quiz_id. 단체방 부정행위(정답 URL 추측) 방지."""
+    """추측 불가한 quiz_id. 다른 사용자가 정답 상태를 추측하기 어렵게 한다."""
     return secrets.token_urlsafe(8)
 
 
@@ -28,7 +28,7 @@ class QuizStore:
     """TTL 만료 + LRU 상한을 가진 quiz 상태 저장소.
 
     동기 인터페이스(put/get/update/purge_expired)는 계약 유지.
-    동시 제출 원자 처리(선착순 1명 정답)는 async compare_and_solve로 제공한다.
+    중복 제출 원자 처리(퀴즈별 1회 정답)는 async compare_and_solve로 제공한다.
     """
 
     def __init__(
@@ -113,8 +113,8 @@ class QuizStore:
 
         반환: (state, was_first)
           - state None: 없음/만료
-          - was_first True: 이번 호출이 최초 정답자(선착순 1명)
-          - was_first False: 이미 다른 사용자가 맞힘(solved된 상태)
+          - was_first True: 이번 호출이 이 퀴즈의 첫 정답 처리
+          - was_first False: 이미 정답 처리된 상태
         """
         async with self._lock:
             state = self.get(quiz_id)
