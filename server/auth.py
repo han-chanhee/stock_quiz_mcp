@@ -57,7 +57,7 @@ from mcp.server.auth.routes import cors_middleware
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.routing import Route
 
 if TYPE_CHECKING:
@@ -511,14 +511,21 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         }
         if config.client_secret:
             data["client_secret"] = config.client_secret
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(_KAKAO_TOKEN_URL, data=data)
+        response = await self._post_kakao_token(data)
+        if response.status_code == 401 and config.client_secret:
+            retry_data = dict(data)
+            retry_data.pop("client_secret", None)
+            response = await self._post_kakao_token(retry_data)
         response.raise_for_status()
         payload = response.json()
         access_token = payload.get("access_token")
         if not isinstance(access_token, str) or not access_token:
             raise ValueError("카카오 token 응답에 access_token이 없습니다.")
         return access_token
+
+    async def _post_kakao_token(self, data: dict[str, str]) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await client.post(_KAKAO_TOKEN_URL, data=data)
 
     async def _fetch_kakao_subject(self, access_token: str) -> str:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -823,6 +830,19 @@ def _disconnect_page_html(message: str | None = None) -> str:
 </html>"""
 
 
+def _oauth_runtime_diagnostics(provider: KakaoRestrictedOAuthProvider) -> dict[str, object]:
+    config = provider.kakao_login_config
+    rest_key = config.rest_api_key if config else ""
+    return {
+        "oauth_enabled": True,
+        "external_login_enabled": config is not None,
+        "external_key_present": bool(rest_key),
+        "external_key_suffix": rest_key[-6:] if rest_key else None,
+        "external_secret_present": bool(config and config.client_secret),
+        "external_redirect_uri": config.redirect_uri if config else None,
+    }
+
+
 def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider) -> None:
     """동의 화면(/oauth/consent)과 연동 해제 화면(/oauth/disconnect)을 등록한다.
 
@@ -888,6 +908,10 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
                 status_code=302,
             )
         return RedirectResponse(consent_url, status_code=302)
+
+    @mcp.custom_route("/oauth/runtime", methods=["GET"])
+    async def oauth_runtime_get(request: Request) -> JSONResponse:
+        return JSONResponse(_oauth_runtime_diagnostics(provider))
 
     @mcp.custom_route("/oauth/disconnect", methods=["GET"])
     async def disconnect_get(request: Request) -> HTMLResponse:

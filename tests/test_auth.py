@@ -2,6 +2,7 @@
 
 import pytest
 from urllib.parse import parse_qs, urlsplit
+import httpx
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from mcp.server.auth.provider import AccessToken, RegistrationError
 from mcp.shared.auth import OAuthClientInformationFull
@@ -14,6 +15,7 @@ from server.auth import (
     _disconnect_page_html,
     _DEFAULT_PLAYMCP_BEARER_TOKEN,
     _DEFAULT_PLAYMCP_CLIENT_SECRET,
+    _oauth_runtime_diagnostics,
     _kakao_login_config,
     build_auth_provider,
 )
@@ -311,6 +313,65 @@ async def test_kakao_login_callback_continues_to_local_consent(monkeypatch):
     consent_token = parse_qs(urlsplit(consent_redirect).query)["token"][0]
     _, _, subject = provider._pending_consents[consent_token]
     assert subject == "kakao:12345"
+
+
+@pytest.mark.asyncio
+async def test_kakao_token_exchange_retries_without_stale_client_secret():
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        kakao_login_config=KakaoLoginConfig(
+            rest_api_key="rest-api-key",
+            client_secret="stale-secret",
+            redirect_uri="https://issuer.example/oauth/kakao/callback",
+        ),
+    )
+    request = httpx.Request("POST", "https://kauth.kakao.com/oauth/token")
+    calls = []
+
+    async def post_stub(data):
+        calls.append(dict(data))
+        if len(calls) == 1:
+            return httpx.Response(
+                401,
+                json={"error": "invalid_client"},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={"access_token": "kakao-access-token"},
+            request=request,
+        )
+
+    provider._post_kakao_token = post_stub
+
+    token = await provider._exchange_kakao_code("kakao-code")
+
+    assert token == "kakao-access-token"
+    assert calls[0]["client_secret"] == "stale-secret"
+    assert "client_secret" not in calls[1]
+
+
+def test_oauth_runtime_diagnostics_do_not_expose_secrets():
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        kakao_login_config=KakaoLoginConfig(
+            rest_api_key="rest-api-key",
+            client_secret="secret-value",
+            redirect_uri="https://issuer.example/oauth/kakao/callback",
+        ),
+    )
+
+    diagnostics = _oauth_runtime_diagnostics(provider)
+
+    assert diagnostics == {
+        "oauth_enabled": True,
+        "external_login_enabled": True,
+        "external_key_present": True,
+        "external_key_suffix": "pi-key",
+        "external_secret_present": True,
+        "external_redirect_uri": "https://issuer.example/oauth/kakao/callback",
+    }
+    assert "secret-value" not in str(diagnostics)
 
 
 @pytest.mark.asyncio
