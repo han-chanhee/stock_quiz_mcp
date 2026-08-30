@@ -702,6 +702,12 @@ def test_chart_image_route_renders_png(cache):
     assert response.content.startswith(b"\x89PNG")
 
 
+def test_runtime_requirements_include_chart_renderer():
+    requirements = Path("requirements.txt").read_text(encoding="utf-8")
+
+    assert "matplotlib" in requirements
+
+
 def test_ops_stats_reports_aggregate_counts(cache, monkeypatch, tmp_path):
     from server.main import _runtime_middleware, build_app
 
