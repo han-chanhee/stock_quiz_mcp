@@ -28,7 +28,7 @@ from fastmcp.tools.tool import ToolAnnotations
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse
 
 from contracts.schemas import Market, Period, Sector
 
@@ -59,6 +59,11 @@ _COMMON_ANN = dict(
 )
 
 _SAFE_ERROR = "잠시 후 다시 시도해주세요."
+
+
+def _public_https_url(request: Request, path: str) -> str:
+    host = request.headers.get("host") or request.url.netloc
+    return f"https://{host}{path}"
 
 
 class ForwardedHttpsRedirectMiddleware(BaseHTTPMiddleware):
@@ -246,6 +251,10 @@ def _build_app(
                 ),
             }
         )
+
+    @mcp.custom_route("/mcp/", methods=["POST", "DELETE"], include_in_schema=False)
+    async def mcp_trailing_slash(request: Request):
+        return RedirectResponse(_public_https_url(request, "/mcp"), status_code=307)
 
     return mcp
 
