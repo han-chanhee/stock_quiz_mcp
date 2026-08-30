@@ -7,7 +7,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+import re
+from html import unescape
 from datetime import datetime, timezone
 from typing import Protocol
 
@@ -25,12 +28,71 @@ _RELEVANT = (
 )
 # 매수/매도 권유성 표현 — 제목에 있으면 노출 거부(루트 규칙 8: 권유 문장 금지).
 _ADVISORY = ("매수", "매도", "추천", "사라", "팔아", "담아", "손절", "익절", "비중확대", "비중축소")
+_FEATURE_KEYWORDS = (
+    ("HBM", "HBM"),
+    ("D램", "메모리"),
+    ("DRAM", "메모리"),
+    ("낸드", "메모리"),
+    ("반도체", "반도체"),
+    ("파운드리", "파운드리"),
+    ("AI", "AI"),
+    ("인공지능", "AI"),
+    ("배터리", "2차전지"),
+    ("2차전지", "2차전지"),
+    ("전기차", "전기차"),
+    ("바이오", "바이오"),
+    ("신약", "신약"),
+    ("임상", "임상"),
+    ("조선", "조선"),
+    ("수주", "수주"),
+    ("방산", "방산"),
+    ("원전", "원전"),
+    ("로봇", "로봇"),
+    ("플랫폼", "플랫폼"),
+    ("커머스", "커머스"),
+    ("게임", "게임"),
+    ("엔터", "엔터"),
+    ("콘텐츠", "콘텐츠"),
+    ("배당", "배당"),
+    ("자사주", "자사주"),
+    ("영업이익", "영업이익"),
+    ("실적", "실적"),
+    ("매출", "매출"),
+)
 
 
 def _is_relevant(title: str) -> bool:
     if any(w in title for w in _ADVISORY):
         return False
     return any(w in title for w in _RELEVANT)
+
+
+def _company_key(name: str) -> str:
+    return name.replace(" ", "")[:3]
+
+
+def _mentions_company(text: str, name: str) -> bool:
+    key = _company_key(name)
+    return bool(key and key in text.replace(" ", ""))
+
+
+def _feature_summary(texts: list[str]) -> str | None:
+    joined = " ".join(texts)
+    found: list[str] = []
+    for needle, label in _FEATURE_KEYWORDS:
+        if needle in joined and label not in found:
+            found.append(label)
+        if len(found) >= 3:
+            break
+    if not found:
+        return None
+    return "특징: " + ", ".join(found)
+
+
+def _clean_search_text(s: str) -> str:
+    text = re.sub(r"</?b>", "", s)
+    text = re.sub(r"\s+", " ", unescape(text)).strip()
+    return text
 
 
 class ReasonProvider(Protocol):
@@ -82,55 +144,71 @@ class NaverReasonProvider:
         client_id: str | None = None,
         client_secret: str | None = None,
         timeout: float = 5.0,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._client_id = client_id or os.environ.get("NAVER_CLIENT_ID", "")
         self._client_secret = client_secret or os.environ.get("NAVER_CLIENT_SECRET", "")
         self._timeout = timeout
+        self._transport = transport
 
     @staticmethod
     def _strip_tags(s: str) -> str:
         # 네이버 응답의 <b> 태그/엔티티 정리
-        return (
-            s.replace("<b>", "")
-            .replace("</b>", "")
-            .replace("&quot;", '"')
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .strip()
-        )
+        return _clean_search_text(s)
 
     async def fetch(self, ticker: str, name: str, market: Market) -> Reason | None:
         headers = {
             "X-Naver-Client-Id": self._client_id,
             "X-Naver-Client-Secret": self._client_secret,
         }
-        # 주가 관련 뉴스로 검색을 좁히고, 후보 여러 개 중 관련 있는 첫 건만 채택.
-        params = {"query": f"{name} 주가", "display": 10, "sort": "sim"}
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.get(self._ENDPOINT, headers=headers, params=params)
-            if resp.status_code != 200:
-                return None
-            items = resp.json().get("items", [])
+        async with httpx.AsyncClient(
+            timeout=self._timeout,
+            transport=self._transport,
+        ) as client:
+            async def fetch_query(query: str) -> list[dict]:
+                resp = await client.get(
+                    self._ENDPOINT,
+                    headers=headers,
+                    params={"query": query, "display": 10, "sort": "sim"},
+                )
+                if resp.status_code != 200:
+                    return []
+                return resp.json().get("items", [])
+
+            results = await asyncio.gather(
+                fetch_query(f"{name} 주가"),
+                fetch_query(f"{name} 실적 사업"),
+            )
+        items = [item for result in results for item in result]
         # 종목 특정성: 제목에 종목명(앞 3글자)이 들어가야 함. 다른 회사 기사 배제.
-        key = name.replace(" ", "")[:3]
+        feature_sources: list[str] = []
+        best: tuple[str, str, datetime] | None = None
         for item in items:
             url = item.get("originallink") or item.get("link")
             if not url:  # 링크 없으면 근거 불충분 → 건너뜀
                 continue
             title = self._strip_tags(item.get("title", ""))
+            description = self._strip_tags(item.get("description", ""))
             if not title or not _is_relevant(title):
                 continue  # 무관/권유성 제목은 재료로 안 씀
-            if key and key not in title.replace(" ", ""):
+            searchable = f"{title} {description}"
+            if not _mentions_company(searchable, name):
                 continue  # 해당 종목이 제목에 없으면 배제(시장 전반 기사 등)
-            try:
-                published = datetime.strptime(
-                    item.get("pubDate", ""), "%a, %d %b %Y %H:%M:%S %z"
-                )
-            except ValueError:
-                published = datetime.now(timezone.utc)
+            feature_sources.append(searchable)
+            if best is None:
+                try:
+                    published = datetime.strptime(
+                        item.get("pubDate", ""), "%a, %d %b %Y %H:%M:%S %z"
+                    )
+                except ValueError:
+                    published = datetime.now(timezone.utc)
+                best = (title, url, published)
+        if best is not None:
+            title, url, published = best
+            feature = _feature_summary(feature_sources)
+            text = f"{title} · {feature}" if feature else title
             return Reason(
-                ticker=ticker, text=title, source_url=url, published_at=published
+                ticker=ticker, text=text, source_url=url, published_at=published
             )
         # 관련 재료를 못 찾음 → None (런타임에서 "특별한 재료 확인 안 됨")
         return None

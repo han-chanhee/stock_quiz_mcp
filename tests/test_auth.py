@@ -15,8 +15,9 @@ from server.auth import (
     _disconnect_page_html,
     _DEFAULT_PLAYMCP_BEARER_TOKEN,
     _DEFAULT_PLAYMCP_CLIENT_SECRET,
-    _kakao_http_error_summary,
+    _oauth_runtime_diagnostics,
     _kakao_login_config,
+    _normalize_token_request,
     build_auth_provider,
 )
 
@@ -358,6 +359,68 @@ async def test_kakao_login_state_can_survive_memory_loss(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_consent_token_can_survive_memory_loss(monkeypatch):
+    monkeypatch.setenv("OAUTH_STATE_SECRET", "stable-state-secret")
+    config = KakaoLoginConfig(
+        rest_api_key="rest-api-key",
+        client_secret=None,
+        redirect_uri="https://issuer.example/oauth/kakao/callback",
+    )
+    first = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        kakao_login_config=config,
+    )
+    client = OAuthClientInformationFull(
+        client_id="c-kakao", redirect_uris=["https://allowed.example/oauth/callback"]
+    )
+    await first.register_client(client)
+    consent_url = first.begin_local_consent(client, _params(), "kakao:12345")
+    token = parse_qs(urlsplit(consent_url).query)["token"][0]
+
+    second = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        kakao_login_config=config,
+    )
+    await second.register_client(client)
+    recovered_client, recovered_params, subject = await second._decode_consent_token(token)
+    redirect = await second.finish_authorize(
+        recovered_client,
+        recovered_params,
+        subject,
+    )
+
+    assert subject == "kakao:12345"
+    assert redirect.startswith("https://allowed.example/oauth/callback")
+    assert "code=" in redirect
+
+
+@pytest.mark.asyncio
+async def test_authorization_code_can_survive_memory_loss(monkeypatch):
+    monkeypatch.setenv("OAUTH_STATE_SECRET", "stable-state-secret")
+    first = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+    )
+    client = OAuthClientInformationFull(
+        client_id="c-token", redirect_uris=["https://allowed.example/oauth/callback"]
+    )
+    await first.register_client(client)
+    redirect = await first.finish_authorize(client, _params(), "kakao:12345")
+    code = parse_qs(urlsplit(redirect).query)["code"][0]
+
+    second = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+    )
+    await second.register_client(client)
+    auth_code = await second.load_authorization_code(client, code)
+
+    assert auth_code is not None
+    assert code.startswith("sq1_")
+    assert auth_code.code == code
+    assert auth_code.subject == "kakao:12345"
+    assert second._oauth_events[-1]["event"] == "auth_code_restored"
+
+
+@pytest.mark.asyncio
 async def test_kakao_token_exchange_retries_without_stale_client_secret():
     provider = KakaoRestrictedOAuthProvider(
         allowed_redirect_uris=("https://allowed.example/oauth/callback",),
@@ -393,19 +456,61 @@ async def test_kakao_token_exchange_retries_without_stale_client_secret():
     assert "client_secret" not in calls[1]
 
 
-def test_kakao_http_error_summary_includes_provider_error_body():
-    response = httpx.Response(
-        401,
-        json={
-            "error": "invalid_client",
-            "error_description": "client_secret mismatch",
-        },
-        request=httpx.Request("POST", "https://kauth.kakao.com/oauth/token"),
+def test_oauth_runtime_diagnostics_do_not_expose_secrets():
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        kakao_login_config=KakaoLoginConfig(
+            rest_api_key="rest-api-key",
+            client_secret="secret-value",
+            redirect_uri="https://issuer.example/oauth/kakao/callback",
+        ),
     )
 
-    assert _kakao_http_error_summary(response) == (
-        "error=invalid_client; error_description=client_secret mismatch"
+    diagnostics = _oauth_runtime_diagnostics(provider)
+
+    assert diagnostics == {
+        "oauth_enabled": True,
+        "external_login_enabled": True,
+        "external_key_present": True,
+        "external_key_suffix": "pi-key",
+        "external_secret_present": True,
+        "external_redirect_uri": "https://issuer.example/oauth/kakao/callback",
+        "authorization_code_format": "compact_signed_snapshot",
+        "recent_events": [],
+    }
+    assert "secret-value" not in str(diagnostics)
+
+
+@pytest.mark.asyncio
+async def test_token_request_normalization_adds_missing_static_client_id():
+    async def receive():
+        return {
+            "type": "http.request",
+            "body": (
+                b"grant_type=AUTHORIZATION_CODE&code=abc&"
+                b"redirect_uri=https%3A%2F%2Fplaymcp.kakao.com%2Fcallback"
+            ),
+            "more_body": False,
+        }
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/token",
+        "headers": [
+            (b"content-type", b"application/x-www-form-urlencoded"),
+        ],
+    }
+    from starlette.requests import Request
+
+    normalized = await _normalize_token_request(
+        Request(scope, receive),
+        "stockquiz-playmcp-87440044842919710",
     )
+    body = (await normalized.body()).decode("utf-8")
+
+    assert "grant_type=authorization_code" in body
+    assert "client_id=stockquiz-playmcp-87440044842919710" in body
 
 
 @pytest.mark.asyncio
@@ -423,6 +528,7 @@ async def test_authorize_after_consent_issues_real_redirect():
     assert result.startswith("https://allowed.example/oauth/callback")
     assert "code=" in result
     code = parse_qs(urlsplit(result).query)["code"][0]
+    assert code.startswith("sq1_")
     assert provider.auth_codes[code].subject == "subject-c2"
 
 

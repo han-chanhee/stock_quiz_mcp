@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
 from bisect import bisect_left, insort
@@ -28,6 +29,7 @@ _MARKDOWN_UNSAFE = str.maketrans({
     "<": "(",
     ">": ")",
 })
+_AUTO_NICKNAME_PREFIX = "주식러"
 
 
 class ScoreStore:
@@ -47,6 +49,11 @@ class ScoreStore:
         self._lock = asyncio.Lock()
         self._last_reset_at: datetime | None = None
         self._week_started_at = self._reset_boundary(self._now())
+        self._quiz_starts = 0
+        self._submitted_answers = 0
+        self._correct_answers = 0
+        self._wrong_answers = 0
+        self._quiz_players: set[str] = set()
 
     @staticmethod
     def _now() -> datetime:
@@ -78,6 +85,16 @@ class ScoreStore:
             return text[:MAX_DISPLAY_NAME_LEN - 1] + "…"
         return text
 
+    def generated_display_name(self, identity_key: str) -> str:
+        """OAuth identity별로 안정적인 자동 닉네임을 만든다."""
+        digest = hashlib.sha256(identity_key.encode("utf-8")).hexdigest()
+        suffix = int(digest[:8], 16) % 10000
+        return f"{_AUTO_NICKNAME_PREFIX}{suffix:04d}"
+
+    def display_name_for(self, identity_key: str) -> str | None:
+        entry = self._entries.get(identity_key)
+        return entry.display_name if entry is not None else None
+
     def _quarantine_snapshot(self) -> None:
         if not self._snapshot_path.exists():
             return
@@ -95,7 +112,13 @@ class ScoreStore:
     def _rebuild_ranking(self) -> None:
         self._ranking = sorted(self._ranking_key(entry) for entry in self._entries.values())
 
-    async def _apply_delta(self, identity_key: str, display_name: str, delta: int) -> int:
+    async def _apply_delta(
+        self,
+        identity_key: str,
+        display_name: str,
+        delta: int,
+        verdict: str,
+    ) -> int:
         now = self._now()
         safe_display_name = self._clean_display_name(display_name)
         async with self._lock:
@@ -113,26 +136,42 @@ class ScoreStore:
             )
             self._entries[identity_key] = entry
             insort(self._ranking, self._ranking_key(entry))
+            self._submitted_answers += 1
+            if verdict == "correct":
+                self._correct_answers += 1
+            elif verdict == "wrong":
+                self._wrong_answers += 1
         return delta
 
     async def add_result(self, identity_key: str, display_name: str, attempts: int) -> int:
         """정답 확정 시 호출. attempts(1부터)로 점수를 계산해 가산하고 이번에 획득한 점수를 반환한다.
         1회=3점, 2회=2점, 3회 이상=1점."""
         earned = _CORRECT_SCORE_TABLE.get(attempts, 1)
-        return await self._apply_delta(identity_key, display_name, earned)
+        return await self._apply_delta(identity_key, display_name, earned, "correct")
 
     async def add_penalty(self, identity_key: str, display_name: str) -> int:
         """오답 확정 시 호출. 이번 감점 값을 반환한다."""
-        return await self._apply_delta(identity_key, display_name, WRONG_PENALTY)
+        return await self._apply_delta(identity_key, display_name, WRONG_PENALTY, "wrong")
 
-    def leaderboard(self, identity_key: str, top_n: int = 3) -> LeaderboardSnapshot:
+    def record_quiz_started(self, identity_key: str | None) -> None:
+        if identity_key is None or not identity_key.strip():
+            return
+        self._quiz_starts += 1
+        self._quiz_players.add(identity_key.strip())
+
+    def leaderboard(
+        self,
+        identity_key: str,
+        top_n: int = 3,
+        display_name: str | None = None,
+    ) -> LeaderboardSnapshot:
         """TOP N + 본인 정확한 순위. identity_key가 아직 없으면 score=0인 엔트리로 취급."""
         top = [self._entries[key].model_copy() for _, _, key in self._ranking[:top_n]]
         entry = self._entries.get(identity_key)
         if entry is None:
             my_entry = ScoreEntry(
                 identity_key=identity_key,
-                display_name=identity_key,
+                display_name=self._clean_display_name(display_name or identity_key),
                 score=0,
                 updated_at=self._now(),
             )
@@ -152,6 +191,29 @@ class ScoreStore:
             return len(self._ranking) + 1
         return bisect_left(self._ranking, self._ranking_key(entry)) + 1
 
+    def stats(self, top_n: int = 3) -> dict[str, object]:
+        top = [
+            {
+                "rank": rank,
+                "display_name": entry.display_name,
+                "score": entry.score,
+            }
+            for rank, entry in enumerate(
+                (self._entries[key] for _, _, key in self._ranking[:top_n]),
+                start=1,
+            )
+        ]
+        return {
+            "participants": len(self._entries),
+            "quiz_players": len(self._quiz_players),
+            "quiz_starts": self._quiz_starts,
+            "submitted_answers": self._submitted_answers,
+            "correct_answers": self._correct_answers,
+            "wrong_answers": self._wrong_answers,
+            "top": top,
+            "week_started_at": self._week_started_at.isoformat(),
+        }
+
     async def snapshot_save(self) -> None:
         async with self._lock:
             payload = {
@@ -166,6 +228,13 @@ class ScoreStore:
                     self._entries[key].model_dump(mode="json")
                     for _, _, key in self._ranking
                 ],
+                "metrics": {
+                    "quiz_starts": self._quiz_starts,
+                    "submitted_answers": self._submitted_answers,
+                    "correct_answers": self._correct_answers,
+                    "wrong_answers": self._wrong_answers,
+                    "quiz_players": sorted(self._quiz_players),
+                },
             }
             self._snapshot_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._snapshot_path.with_suffix(self._snapshot_path.suffix + ".tmp")
@@ -188,6 +257,17 @@ class ScoreStore:
                     self._week_started_at = datetime.fromisoformat(payload["week_started_at"])
                 if payload.get("last_reset_at"):
                     self._last_reset_at = datetime.fromisoformat(payload["last_reset_at"])
+                metrics = payload.get("metrics", {})
+                if isinstance(metrics, dict):
+                    self._quiz_starts = int(metrics.get("quiz_starts", 0))
+                    self._submitted_answers = int(metrics.get("submitted_answers", 0))
+                    self._correct_answers = int(metrics.get("correct_answers", 0))
+                    self._wrong_answers = int(metrics.get("wrong_answers", 0))
+                    raw_players = metrics.get("quiz_players", [])
+                    if isinstance(raw_players, list):
+                        self._quiz_players = {
+                            str(item) for item in raw_players if str(item).strip()
+                        }
             entries = []
             for item in entries_payload:
                 entry = ScoreEntry.model_validate(item)
@@ -215,4 +295,9 @@ class ScoreStore:
             self._rebuild_ranking()
             self._last_reset_at = boundary
             self._week_started_at = boundary
+            self._quiz_starts = 0
+            self._submitted_answers = 0
+            self._correct_answers = 0
+            self._wrong_answers = 0
+            self._quiz_players.clear()
             return True
