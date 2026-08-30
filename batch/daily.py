@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 
@@ -85,7 +84,6 @@ class DailyBatch:
         top_n: int = 20,
         movers_n: int = 5,
         sector_top: int = 10,
-        reason_concurrency: int = 8,
     ) -> None:
         self._client = client
         self._dir = data_dir or _DATA_DIR
@@ -94,7 +92,6 @@ class DailyBatch:
         self._top_n = top_n
         self._movers_n = movers_n
         self._sector_top = sector_top
-        self._reason_concurrency = max(1, reason_concurrency)
         self._sector_map = _load_sector_map(self._dir)
         self._output_failures: list[str] = []
 
@@ -267,31 +264,17 @@ class DailyBatch:
 
     async def _build_reasons(self, all_snaps: list[StockSnapshot]) -> None:
         seen: set[str] = set()
-        unique_snaps: list[StockSnapshot] = []
+        reasons: dict[str, dict] = {}
         for snap in all_snaps:
             if snap.ticker in seen:
                 continue
             seen.add(snap.ticker)
-            unique_snaps.append(snap)
-
-        semaphore = asyncio.Semaphore(self._reason_concurrency)
-
-        async def fetch_one(snap: StockSnapshot) -> tuple[str, Reason | None]:
-            async with semaphore:
-                try:
-                    reason = await self._reasons.fetch(snap.ticker, snap.name, snap.market)
-                except Exception as exc:
-                    print(f"[batch] reason {snap.ticker}({snap.name}) 실패: {exc!r}")
-                    return snap.ticker, None
-                return snap.ticker, reason
-
-        results = await asyncio.gather(*(fetch_one(snap) for snap in unique_snaps))
-
-        reasons: dict[str, dict] = {}
-        for ticker, reason in results:
+            reason: Reason | None = await self._reasons.fetch(
+                snap.ticker, snap.name, snap.market
+            )
             if reason is None:
                 continue  # 근거 없으면 저장 안 함 → 런타임 "특별한 재료 확인 안 됨"
-            reasons[ticker] = reason.model_dump(mode="json")
+            reasons[snap.ticker] = reason.model_dump(mode="json")
         if not reasons:
             print("[batch] reasons 산출 0건 — 기존 파일 유지")
             if all_snaps:

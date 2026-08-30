@@ -1,4 +1,4 @@
-"""출제 3종 생성. 정답은 QuizState에만 담고 QuizQuestion에는 절대 넣지 않는다.
+"""출제 4종 생성. 정답은 QuizState에만 담고 QuizQuestion에는 절대 넣지 않는다.
 
 힌트는 출제 시점에 전 단계를 precompute해 QuizState.hints_precomputed에 저장한다
 (채점 경로의 문자열 연산 제거 — 루트 규칙 12).
@@ -9,8 +9,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import math
 import random
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -40,7 +38,6 @@ _PERIOD_LABEL = {
 }
 
 _MARKET_LABEL = {Market.KR: "코스피/코스닥", Market.US: "미국 증시"}
-_SPARK_BLOCKS = "▁▂▃▄▅▆▇"
 
 
 def _new_id() -> str:
@@ -59,73 +56,8 @@ def _fmt_pct(pct: float) -> str:
     return f"{sign}{pct:.2f}%"
 
 
-def _price_band(snap: StockSnapshot) -> str:
-    if snap.market == Market.US:
-        if snap.price < 20:
-            return "$20 미만"
-        if snap.price < 100:
-            return "$20~$100"
-        return "$100 이상"
-    if snap.price < 5_000:
-        return "5천원 미만"
-    if snap.price < 30_000:
-        return "5천~3만원"
-    if snap.price < 100_000:
-        return "3만~10만원"
-    return "10만원 이상"
-
-
-def _chart_direction_label(change_pct: float) -> str:
-    if change_pct >= 3:
-        return "강한 상승"
-    if change_pct > 0:
-        return "상승"
-    if change_pct <= -3:
-        return "강한 하락"
-    if change_pct < 0:
-        return "하락"
-    return "보합권"
-
-
-def chart_points_for_snapshot(snap: StockSnapshot, points: int = 35) -> list[float]:
-    """종목 스냅샷에서 익명화된 최근 1주 시간봉형 미니 차트를 만든다.
-
-    현재 데이터에는 분봉/일봉 시계열이 없으므로 등락 방향과 종목별 seed로
-    5영업일 x 7시간대 모양을 만든다. 종목명은 쓰지 않고 ticker 기반 미세
-    흔들림만 더한다.
-    """
-    points = max(7, points)
-    seed = hashlib.sha256(f"{snap.ticker}:{snap.change_pct:.4f}".encode("utf-8")).digest()
-    phase = seed[0] / 255 * math.tau
-    trend = max(-0.48, min(0.48, snap.change_pct / 70))
-    start = 0.5 - trend / 2
-
-    values: list[float] = []
-    for index in range(points):
-        progress = index / (points - 1)
-        day_slot = index % 7
-        noise = ((seed[index % len(seed)] - 127.5) / 127.5) * 0.035
-        wave = math.sin(progress * math.tau * 2.2 + phase) * 0.045
-        intraday = math.sin((day_slot / 6) * math.pi) * 0.025
-        value = start + trend * progress + wave + intraday + noise
-        values.append(min(0.95, max(0.05, value)))
-    return values
-
-
-def chart_shape_for_snapshot(snap: StockSnapshot) -> str:
-    points = chart_points_for_snapshot(snap)
-    bucket_count = 14
-    compressed: list[float] = []
-    for bucket in range(bucket_count):
-        start = bucket * len(points) // bucket_count
-        end = max(start + 1, (bucket + 1) * len(points) // bucket_count)
-        chunk = points[start:end]
-        compressed.append(sum(chunk) / len(chunk))
-    return "".join(_SPARK_BLOCKS[min(6, max(0, int(point * 7)))] for point in compressed)
-
-
 class QuizBank:
-    """출제 3종 팩토리. rng/clock 주입으로 테스트 결정론 확보."""
+    """출제 4종 팩토리. rng/clock 주입으로 테스트 결정론 확보."""
 
     def __init__(
         self,

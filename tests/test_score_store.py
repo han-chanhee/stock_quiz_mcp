@@ -34,29 +34,6 @@ async def test_wrong_answer_penalty_decrements_score(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_score_store_stats_track_play_counts(tmp_path):
-    store = ScoreStore(snapshot_path=tmp_path / "scores.json")
-    store.record_quiz_started("u1")
-    store.record_quiz_started("u1")
-    store.record_quiz_started("u2")
-    await store.add_penalty("u1", "주식러1")
-    await store.add_result("u1", "주식러1", 1)
-    await store.snapshot_save()
-
-    restored = ScoreStore(snapshot_path=tmp_path / "scores.json")
-    restored.snapshot_load()
-    stats = restored.stats()
-
-    assert stats["participants"] == 1
-    assert stats["quiz_players"] == 2
-    assert stats["quiz_starts"] == 3
-    assert stats["submitted_answers"] == 2
-    assert stats["correct_answers"] == 1
-    assert stats["wrong_answers"] == 1
-    assert stats["top"][0]["display_name"] == "주식러1"
-
-
-@pytest.mark.asyncio
 async def test_leaderboard_top_three_and_exact_rank(monkeypatch, tmp_path):
     store = ScoreStore(snapshot_path=tmp_path / "scores.json")
     reached = iter(

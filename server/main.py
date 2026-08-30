@@ -32,7 +32,7 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from contracts.schemas import Market, Period, Sector
@@ -47,17 +47,11 @@ from .auth import (
     register_auth_routes,
     register_oauth_protocol_routes,
 )
-from .chart_images import chart_png
 from .handlers import QuizHandlers, QuizMode
 from . import widgets
 
 _KST = timezone(_dt.timedelta(hours=9))
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_DATA_DIR = _PROJECT_ROOT / "batch" / "data"
-_ASSET_PATHS = {
-    "logo.png": _PROJECT_ROOT / "assets" / "logo.png",
-    "logo-banner.png": _PROJECT_ROOT / "assets" / "logo-banner.png",
-}
+_DATA_DIR = Path(__file__).resolve().parent.parent / "batch" / "data"
 
 # 장중에 한해 1분 간격으로 시세 캐시를 갱신한다.
 _REFRESH_INTERVAL_SEC: int = 60
@@ -299,9 +293,9 @@ def _build_app(
         name="help",
         description=(
             "Shows how to play 주식대결 (Stock Quiz Battle / 주식사전 퀴즈): the three "
-            "quiz modes (주가/시장/종목), automatic ranking nickname behavior, "
-            "and example phrases to start. Call this when the user asks how the quiz "
-            "works, what modes exist, or seems unsure how to start."
+            "quiz modes (주가/시장/종목), why a nickname is needed for the weekly "
+            "ranking, and example phrases to start. Call this when the user asks how "
+            "the quiz works, what modes exist, or seems unsure how to start."
         ),
         annotations=ToolAnnotations(title="How to Play", **_COMMON_ANN),
     )
@@ -313,15 +307,13 @@ def _build_app(
         name="quiz",
         description=(
             "Starts a stock quiz for 주식대결 (Stock Quiz Battle / 주식사전 퀴즈). "
-            "Requires mode; nickname is optional because the server assigns a stable "
-            "display nickname for authenticated users. If mode is missing, call this "
-            "tool anyway with what you have; it replies with a short guide instead of erroring. "
+            "Requires mode and nickname — if either is missing, call this tool anyway "
+            "with what you have; it replies with a short guide instead of erroring. "
             "Pick one of three modes: '주가' (guess a random stock's current price, "
             "±3% correct), '시장' (guess the biggest gainer or loser over a period; "
             "direction is random), '종목' (guess the company from sector/price/market-cap "
-            "hints). Every quiz includes a rendered one-week hourly-shape chart clue. "
-            "The reply includes a short mode intro, the quiz, a distinct 5-line "
-            "problem analysis, live ranking, and a quiz_id; grade answers with submit_answer. "
+            "hints). The reply includes a short mode intro plus the quiz and a quiz_id; "
+            "grade answers with submit_answer. nickname (닉네임) is required for scoring. "
             "Korean market only for now."
         ),
         annotations=ToolAnnotations(title="Stock Quiz", **_COMMON_ANN),
@@ -352,17 +344,16 @@ def _build_app(
         description=(
             "Grades an answer for a 주식대결 (Stock Quiz Battle / 주식사전 퀴즈) quiz. "
             "Give the quiz_id and your answer (stock name or price number). "
-            "nickname is optional; authenticated users keep their server-assigned display nickname. "
-            "Wrong answers return a staged hint and live ranking; a correct answer returns "
-            "a different fact-only 5-line answer analysis, score delta, live ranking, and "
-            "next actions. Never gives buy/sell advice."
+            "nickname (닉네임) is required for scoring and ranking. "
+            "Wrong answers return a staged hint; a correct answer returns a fact-only "
+            "mini-analysis. Never gives buy/sell advice."
         ),
         annotations=ToolAnnotations(title="Submit Answer", **_COMMON_ANN),
     )
     async def submit_answer(
         quiz_id: str,
         answer: str,
-        nickname: str | None = None,
+        nickname: str,
         ctx: Context | None = None,
     ) -> str:
         try:
@@ -391,62 +382,11 @@ def _build_app(
             }
         )
 
-    @mcp.custom_route("/ops/stats", methods=["GET"])
-    async def ops_stats(request: Request) -> JSONResponse:
-        score_store.snapshot_load()
-        return JSONResponse(
-            {
-                "status": "ok",
-                "linked_oauth_users": _linked_oauth_users(_OPTIONAL_AUTH_PROVIDER),
-                "scoreboard": score_store.stats(),
-            }
-        )
-
-    @mcp.custom_route("/quiz/chart/{quiz_id}.png", methods=["GET"])
-    async def chart_image_get(request: Request) -> Response:
-        quiz_id = request.path_params.get("quiz_id", "")
-        state = store.get(str(quiz_id))
-        if state is None:
-            return PlainTextResponse("chart not found", status_code=404)
-        return Response(
-            chart_png(state.answer),
-            media_type="image/png",
-            headers={"Cache-Control": "no-store"},
-        )
-
-    @mcp.custom_route("/assets/{asset_name}", methods=["GET"])
-    async def logo_asset_get(request: Request) -> Response:
-        asset_name = str(request.path_params.get("asset_name", ""))
-        asset_path = _ASSET_PATHS.get(asset_name)
-        if asset_path is None or not asset_path.exists():
-            return PlainTextResponse("asset not found", status_code=404)
-        return Response(
-            asset_path.read_bytes(),
-            media_type="image/png",
-            headers={"Cache-Control": "public, max-age=86400"},
-        )
-
     @mcp.custom_route("/mcp/", methods=["POST", "DELETE"], include_in_schema=False)
     async def mcp_trailing_slash(request: Request):
         return RedirectResponse(_public_https_url(request, "/mcp"), status_code=307)
 
     return mcp
-
-
-def _linked_oauth_users(provider: Any | None) -> int:
-    if provider is None:
-        return 0
-    snapshot_load = getattr(provider, "snapshot_load", None)
-    if callable(snapshot_load):
-        snapshot_load()
-    subjects = set()
-    for collection_name in ("access_tokens", "refresh_tokens"):
-        collection = getattr(provider, collection_name, {})
-        for token in collection.values():
-            subject = getattr(token, "subject", None)
-            if isinstance(subject, str) and subject.strip():
-                subjects.add(subject.strip())
-    return len(subjects)
 
 
 async def _refresh_today(cache: QuizCache, client: MarketClient) -> None:

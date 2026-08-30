@@ -18,7 +18,7 @@ from clients import MockMarketClient
 from batch import DailyBatch, MockReasonProvider
 from contracts.schemas import Market, Period, Verdict
 from server.cache import DataValidationError, QuizCache
-from server.handlers import DISCLAIMER, QuizHandlers, QuizMode
+from server.handlers import DISCLAIMER, QuizHandlers
 from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
 
@@ -131,30 +131,18 @@ async def test_quiz_modes_route_and_show_intro(cache):
     # 주가 모드
     p = handlers.quiz(QuizMode.PRICE, "테스터", Market.KR)
     assert "주가 퀴즈" in p.markdown and p.quiz_id
-    assert "문제 분석" in p.markdown
-    assert p.widget is not None
-    assert f"/quiz/chart/{p.quiz_id}.png" in json.dumps(p.widget, ensure_ascii=False)
     assert store.get(p.quiz_id).quiz_type.value == "price"
 
     # 종목 모드
     s = handlers.quiz(QuizMode.STOCK, "테스터", Market.KR)
     assert "종목 퀴즈" in s.markdown and s.quiz_id
-    assert "문제 분석" in s.markdown
-    assert "5." in s.markdown
-    assert s.widget is not None
-    assert f"/quiz/chart/{s.quiz_id}.png" in json.dumps(s.widget, ensure_ascii=False)
     assert store.get(s.quiz_id).quiz_type.value == "company"
     assert store.get(s.quiz_id).answer.name not in s.markdown  # 정답 미노출
 
     # 시장 모드 (방향 랜덤) — gainer/loser 중 하나
     m = handlers.quiz(QuizMode.MARKET, "테스터", Market.KR, Period.WEEK)
     assert "시장 퀴즈" in m.markdown and m.quiz_id
-    assert "문제 분석" in m.markdown
-    assert "5." in m.markdown
-    assert m.widget is not None
-    assert f"/quiz/chart/{m.quiz_id}.png" in json.dumps(m.widget, ensure_ascii=False)
     assert store.get(m.quiz_id).quiz_type.value in ("gainer", "loser")
-    assert store.get(m.quiz_id).answer.name not in m.markdown
 
     # US는 모드와 무관하게 차단
     from server.handlers import _US_BLOCKED_MD
@@ -194,13 +182,12 @@ async def test_full_scenario_price_quiz(cache):
     assert wrong.widget is not None
     assert wrong.widget["name"] == "wrong_answer"
 
-    # 정답 → 5줄 정답 분석 + 3택 + 면책 문구
+    # 정답 → 미니분석 + 2택 + 면책 문구
     correct = await handlers.submit_answer(out.quiz_id, str(state.answer.price), "테스터")
     assert correct.verdict == Verdict.CORRECT
     assert correct.analysis is not None
     assert DISCLAIMER in correct.markdown
-    assert "정답 분석" in correct.markdown
-    assert "5. 확인된 재료:" in correct.markdown
+    assert "미니분석" in correct.markdown          # 미니분석 자동 표시
     assert correct.next_actions == ["다음 퀴즈", "다른 퀴즈", "종료"]
     assert correct.widget is not None
     assert correct.widget["name"] == "correct_answer"
@@ -323,7 +310,7 @@ async def test_quiz_widget_shows_live_leaderboard(cache):
 
 @pytest.mark.asyncio
 async def test_oauth_identity_key_scores_under_stable_identity(cache):
-    """OAuth/플랫폼 식별자가 있으면 자동 닉네임을 표시명, subject를 점수 키로 쓴다."""
+    """OAuth/플랫폼 식별자가 있으면 닉네임은 표시명, 점수 키는 식별자로 쓴다."""
     store = QuizStore()
     score_store = ScoreStore()
     handlers = QuizHandlers(cache, store, score_store)
@@ -339,65 +326,9 @@ async def test_oauth_identity_key_scores_under_stable_identity(cache):
 
     assert correct.leaderboard is not None
     assert correct.leaderboard.my_entry.identity_key == "oauth-user-1"
-    assert correct.leaderboard.my_entry.display_name.startswith("주식러")
+    assert correct.leaderboard.my_entry.display_name == "화면닉"
     assert score_store.leaderboard("oauth-user-1").my_entry.score == 3
     assert score_store.leaderboard("화면닉").my_entry.score == 0
-
-
-@pytest.mark.asyncio
-async def test_oauth_identity_keeps_one_entry_when_nickname_changes(cache):
-    """같은 OAuth subject는 사용자가 다른 닉네임을 말해도 한 랭킹 엔트리로 합산된다."""
-    store = QuizStore()
-    score_store = ScoreStore()
-    handlers = QuizHandlers(cache, store, score_store)
-    first = handlers.price_quiz(Market.KR)
-    first_state = store.get(first.quiz_id)
-
-    wrong = await handlers.submit_answer(
-        first.quiz_id,
-        str(first_state.answer.price * 0.5),
-        "바보",
-        identity_key="oauth-user-same",
-    )
-    second = handlers.price_quiz(Market.KR)
-    second_state = store.get(second.quiz_id)
-    correct = await handlers.submit_answer(
-        second.quiz_id,
-        str(second_state.answer.price),
-        "보바",
-        identity_key="oauth-user-same",
-    )
-
-    assert wrong.leaderboard is not None
-    assert correct.leaderboard is not None
-    assert correct.leaderboard.my_entry.identity_key == "oauth-user-same"
-    assert correct.leaderboard.my_entry.score == 2
-    assert correct.leaderboard.my_entry.display_name == wrong.leaderboard.my_entry.display_name
-    assert score_store.leaderboard("바보").my_entry.score == 0
-    assert score_store.leaderboard("보바").my_entry.score == 0
-
-
-@pytest.mark.asyncio
-async def test_oauth_identity_can_score_without_nickname(cache):
-    """로그인 사용자는 닉네임을 입력하지 않아도 자동 닉네임으로 점수와 랭킹을 받는다."""
-    store = QuizStore()
-    score_store = ScoreStore()
-    handlers = QuizHandlers(cache, store, score_store)
-    out = handlers.quiz(None, None, identity_key="oauth-no-name")
-    assert out.widget is not None
-    assert "주식러" in out.widget["copy_text"]
-
-    quiz = handlers.quiz(QuizMode.PRICE, None, identity_key="oauth-no-name")
-    state = store.get(quiz.quiz_id)
-    correct = await handlers.submit_answer(
-        quiz.quiz_id,
-        str(state.answer.price),
-        identity_key="oauth-no-name",
-    )
-
-    assert correct.leaderboard is not None
-    assert correct.leaderboard.my_entry.score == 3
-    assert correct.leaderboard.my_entry.display_name.startswith("주식러")
 
 
 @pytest.mark.asyncio
@@ -624,7 +555,7 @@ async def test_tool_scoring_ignores_oauth_client_id_without_user_subject(cache):
 
 @pytest.mark.asyncio
 async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
-    """OAuth subject가 있으면 닉네임 없이도 subject 기준으로 점수를 적립한다."""
+    """OAuth subject가 있으면 닉네임이 아니라 subject 기준으로 점수를 적립한다."""
     import server.main as main
 
     class FakeAccessToken:
@@ -638,17 +569,18 @@ async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
 
     quiz_tool = await app.get_tool("quiz")
     submit_tool = await app.get_tool("submit_answer")
-    quiz_tool.fn(mode="주가")
+    quiz_tool.fn(mode="주가", nickname="같은닉네임")
 
     quiz_id = next(iter(store._data))
     state = store.get(quiz_id)
     await submit_tool.fn(
         quiz_id=quiz_id,
         answer=str(state.answer.price),
+        nickname="같은닉네임",
     )
 
     assert score_store.leaderboard("playmcp-user-subject-1").my_entry.score == 3
-    assert score_store.leaderboard("playmcp-user-subject-1").my_entry.display_name.startswith("주식러")
+    assert score_store.leaderboard("같은닉네임").my_entry.score == 0
 
 
 def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
@@ -677,117 +609,6 @@ def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
     assert response.headers["location"] == (
         "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/mcp"
     )
-
-
-def test_chart_image_route_renders_png(cache):
-    from server.main import _runtime_middleware, build_app
-
-    store = QuizStore()
-    app = build_app(
-        cache,
-        store,
-        ScoreStore(),
-        QuizBank(rng=random.Random(0)),
-    ).http_app(
-        transport="streamable-http",
-        stateless_http=True,
-        json_response=True,
-        middleware=_runtime_middleware(),
-    )
-    handlers = QuizHandlers(cache, store, ScoreStore(), QuizBank(rng=random.Random(0)))
-    outcome = handlers.price_quiz(Market.KR)
-
-    with TestClient(
-        app,
-        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
-    ) as client:
-        response = client.get(f"/quiz/chart/{outcome.quiz_id}.png")
-
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "image/png"
-    assert response.content.startswith(b"\x89PNG")
-
-
-def test_logo_asset_route_serves_png(cache):
-    from server.main import _runtime_middleware, build_app
-
-    app = build_app(
-        cache,
-        QuizStore(),
-        ScoreStore(),
-        QuizBank(rng=random.Random(0)),
-    ).http_app(
-        transport="streamable-http",
-        stateless_http=True,
-        json_response=True,
-        middleware=_runtime_middleware(),
-    )
-
-    with TestClient(
-        app,
-        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
-    ) as client:
-        responses = [
-            client.get("/assets/logo.png"),
-            client.get("/assets/logo-banner.png"),
-        ]
-
-    for response in responses:
-        assert response.status_code == 200
-        assert response.headers["content-type"] == "image/png"
-        assert response.content.startswith(b"\x89PNG")
-
-
-def test_runtime_requirements_include_chart_renderer():
-    requirements = Path("requirements.txt").read_text(encoding="utf-8")
-
-    assert "matplotlib" in requirements
-
-
-def test_ops_stats_reports_aggregate_counts(cache, monkeypatch, tmp_path):
-    from server.main import _runtime_middleware, build_app
-
-    path = tmp_path / "scores.json"
-    store = QuizStore()
-    score_store = ScoreStore(snapshot_path=path)
-    app = build_app(
-        cache,
-        store,
-        score_store,
-        QuizBank(rng=random.Random(0)),
-    ).http_app(
-        transport="streamable-http",
-        stateless_http=True,
-        json_response=True,
-        middleware=_runtime_middleware(),
-    )
-    handlers = QuizHandlers(cache, store, score_store, QuizBank(rng=random.Random(0)))
-    outcome = handlers.quiz(QuizMode.PRICE, None, identity_key="oauth-stats")
-    state = store.get(outcome.quiz_id)
-
-    async def answer():
-        await handlers.submit_answer(
-            outcome.quiz_id,
-            str(state.answer.price * 0.5),
-            identity_key="oauth-stats",
-        )
-        await score_store.snapshot_save()
-
-    asyncio.run(answer())
-
-    with TestClient(
-        app,
-        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
-    ) as client:
-        response = client.get("/ops/stats")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "ok"
-    assert payload["scoreboard"]["quiz_players"] == 1
-    assert payload["scoreboard"]["quiz_starts"] == 1
-    assert payload["scoreboard"]["submitted_answers"] == 1
-    assert payload["scoreboard"]["wrong_answers"] == 1
 
 
 def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, tmp_path):

@@ -1,4 +1,4 @@
-"""모듈 B 테스트: 출제 3종/초성/±3% property/별칭 정규화/reason 없음/Reason 검증."""
+"""모듈 B 테스트: 출제 4종/초성/±3% property/별칭 정규화/reason 없음/Reason 검증."""
 
 from __future__ import annotations
 
@@ -22,8 +22,6 @@ from services import (
     NO_REASON,
     QuizBank,
     build_analysis,
-    build_answer_analysis_lines,
-    build_question_analysis,
     chosung,
     first_letter_hint,
     is_correct,
@@ -31,7 +29,6 @@ from services import (
     normalize_name,
     resolve_alias,
 )
-from services.quiz_bank import chart_points_for_snapshot
 
 _KST = timezone(timedelta(hours=9))
 
@@ -44,7 +41,7 @@ def _snap(name="삼성전자", price=78500.0, market=Market.KR, sector=None, ran
     )
 
 
-# ── 출제 3종: 스키마 유효 + 정답 미포함 ──────────────────────
+# ── 출제 4종: 스키마 유효 + 정답 미포함 ──────────────────────
 
 def _pool():
     return [
@@ -75,14 +72,6 @@ def test_movers_quiz_hides_name():
         q, state = bank.movers_quiz(ranking, qtype, Market.KR)
         assert state.answer.name not in q.question_md  # 정답 미노출
         assert len(state.hints_precomputed) == 2       # 초성/첫글자 precompute
-
-
-def test_chart_points_use_one_week_hourly_shape():
-    snap = _pool()[0]
-    points = chart_points_for_snapshot(snap)
-
-    assert len(points) == 35
-    assert all(0.05 <= point <= 0.95 for point in points)
 
 
 def test_precomputed_hints_never_leak_full_name():
@@ -208,42 +197,6 @@ def test_analysis_uses_reason_when_present():
     )
     ana = build_analysis(_snap(), reason=r)
     assert ana.reason_line == "HBM 수요 강세 보도"
-
-
-def test_question_analysis_is_five_lines_and_hides_answer_for_name_quizzes():
-    snap = _snap("삼성전자", rank=1)
-    reason = Reason(
-        ticker="005930",
-        text="삼성전자 HBM 수요 강세 보도",
-        source_url="https://x.example/n",
-        published_at=datetime.now(_KST),
-    )
-    hidden = build_question_analysis(snap, "chart", reason)
-    public = build_question_analysis(snap, "price", reason)
-
-    assert len(hidden) == 5
-    assert len(public) == 5
-    assert all(snap.name not in line for line in hidden)
-    assert any(snap.name in line for line in public)
-    assert hidden[-1] == "검색 기반 특징: 해당 종목 HBM 수요 강세 보도"
-    assert public[-1] == "검색 기반 특징: 삼성전자 HBM 수요 강세 보도"
-
-
-def test_answer_analysis_is_five_lines_and_differs_from_question_analysis():
-    snap = _snap("삼성전자", rank=1)
-    reason = Reason(
-        ticker="005930",
-        text="HBM 수요 강세 보도",
-        source_url="https://x.example/n",
-        published_at=datetime.now(_KST),
-    )
-    question_lines = build_question_analysis(snap, "company")
-    answer_lines = build_answer_analysis_lines(snap, reason)
-
-    assert len(answer_lines) == 5
-    assert answer_lines != question_lines
-    assert any(snap.name in line for line in answer_lines)
-    assert answer_lines[-1] == "확인된 재료: HBM 수요 강세 보도"
 
 
 def test_reason_without_source_url_raises():
