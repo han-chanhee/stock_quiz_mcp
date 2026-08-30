@@ -33,7 +33,6 @@ import json
 import time
 import base64
 import binascii
-import hashlib
 import hmac
 from dataclasses import dataclass
 from html import escape
@@ -255,11 +254,6 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         self.allowed_redirect_uris = allowed_redirect_uris
         self._snapshot_path = snapshot_path or _DEFAULT_OAUTH_SNAPSHOT_PATH
         self.kakao_login_config = kakao_login_config
-        self._state_secret = (
-            os.environ.get("OAUTH_STATE_SECRET", "").strip()
-            or os.environ.get("OAUTH_PLAYMCP_CLIENT_SECRET", "").strip()
-            or _DEFAULT_PLAYMCP_CLIENT_SECRET
-        ).encode("utf-8")
         self._allowed_redirect_uri_set = set(allowed_redirect_uris)
         self._consented_clients: set[str] = set()
         self._static_client_ids: set[str] = set()
@@ -467,7 +461,7 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         _finish_authorize()가 실제 authorize()를 이어서 호출한다.
         """
         if self.kakao_login_config is not None:
-            login_state = self._encode_kakao_state(client, params)
+            login_state = secrets.token_urlsafe(24)
             self._pending_kakao_logins[login_state] = (client, params)
             return self._kakao_authorize_redirect(login_state)
         return self.begin_local_consent(client, params)
@@ -499,88 +493,11 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
     async def finish_kakao_login(self, login_state: str, code: str) -> str:
         pending = self._pending_kakao_logins.pop(login_state, None)
         if pending is None:
-            pending = await self._decode_kakao_state(login_state)
+            raise ValueError("만료되었거나 잘못된 카카오 로그인 요청입니다.")
         access_token = await self._exchange_kakao_code(code)
         subject = await self._fetch_kakao_subject(access_token)
         client, params = pending
         return self.begin_local_consent(client, params, subject)
-
-    def _encode_kakao_state(
-        self,
-        client: OAuthClientInformationFull,
-        params: AuthorizationParams,
-    ) -> str:
-        payload = {
-            "v": 1,
-            "iat": int(time.time()),
-            "nonce": secrets.token_urlsafe(8),
-            "client_id": client.client_id or "",
-            "redirect_uri": str(params.redirect_uri),
-            "state": params.state,
-            "scopes": params.scopes or [],
-            "code_challenge": params.code_challenge,
-            "redirect_uri_provided_explicitly": params.redirect_uri_provided_explicitly,
-        }
-        encoded = _base64url_json(payload)
-        signature = hmac.new(
-            self._state_secret,
-            encoded.encode("ascii"),
-            hashlib.sha256,
-        ).digest()
-        encoded_signature = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
-        return f"{encoded}.{encoded_signature}"
-
-    async def _decode_kakao_state(
-        self, login_state: str
-    ) -> tuple[OAuthClientInformationFull, AuthorizationParams]:
-        try:
-            encoded, encoded_signature = login_state.split(".", 1)
-        except ValueError as exc:
-            raise ValueError("카카오 로그인 state 형식이 올바르지 않습니다.") from exc
-        expected = hmac.new(
-            self._state_secret,
-            encoded.encode("ascii"),
-            hashlib.sha256,
-        ).digest()
-        padding = "=" * (-len(encoded_signature) % 4)
-        try:
-            actual = base64.urlsafe_b64decode(
-                (encoded_signature + padding).encode("ascii")
-            )
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError("카카오 로그인 state 서명이 올바르지 않습니다.") from exc
-        if not hmac.compare_digest(expected, actual):
-            raise ValueError("카카오 로그인 state 서명이 일치하지 않습니다.")
-
-        payload = _unbase64url_json(encoded)
-        issued_at = int(payload.get("iat", 0))
-        if issued_at < int(time.time()) - 600:
-            raise ValueError("카카오 로그인 state가 만료되었습니다.")
-        client_id = str(payload.get("client_id") or "")
-        redirect_uri = str(payload.get("redirect_uri") or "")
-        code_challenge = str(payload.get("code_challenge") or "")
-        if not client_id or not redirect_uri or not code_challenge:
-            raise ValueError("카카오 로그인 state에 필수 값이 없습니다.")
-        client = await self.get_client(client_id)
-        if client is None:
-            raise ValueError("카카오 로그인 state의 OAuth client를 찾을 수 없습니다.")
-        registered = [str(uri) for uri in client.redirect_uris or []]
-        if redirect_uri not in registered and not _is_trusted_playmcp_redirect_uri(
-            redirect_uri
-        ):
-            raise ValueError("카카오 로그인 state의 redirect_uri가 허용되지 않았습니다.")
-        raw_scopes = payload.get("scopes")
-        scopes = raw_scopes if isinstance(raw_scopes, list) else []
-        params = AuthorizationParams(
-            state=str(payload.get("state") or ""),
-            scopes=[str(scope) for scope in scopes],
-            code_challenge=code_challenge,
-            redirect_uri=redirect_uri,
-            redirect_uri_provided_explicitly=bool(
-                payload.get("redirect_uri_provided_explicitly", True)
-            ),
-        )
-        return client, params
 
     async def _exchange_kakao_code(self, code: str) -> str:
         config = self.kakao_login_config
@@ -800,34 +717,16 @@ def _with_query(url: str, values: dict[str, str | None]) -> str:
     return urlunsplit(parts._replace(query=urlencode(query)))
 
 
-def _authorization_error_redirect(
-    params: AuthorizationParams,
-    error: str,
-    description: str = "authorization failed",
-) -> str:
+def _authorization_error_redirect(params: AuthorizationParams, error: str) -> str:
     """동의 거부도 OAuth callback으로 돌려보내 linking UI가 닫히게 한다."""
     return _with_query(
         str(params.redirect_uri),
         {
             "error": error,
-            "error_description": description,
+            "error_description": "user denied third-party information sharing consent",
             "state": params.state,
         },
     )
-
-
-def _base64url_json(payload: dict[str, object]) -> str:
-    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-
-
-def _unbase64url_json(value: str) -> dict[str, object]:
-    padding = "=" * (-len(value) % 4)
-    raw = base64.urlsafe_b64decode((value + padding).encode("ascii"))
-    payload = json.loads(raw.decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("state payload must be an object")
-    return payload
 
 
 def _consent_page_html(consent_token: str) -> str:
@@ -924,25 +823,6 @@ def _disconnect_page_html(message: str | None = None) -> str:
 </html>"""
 
 
-def _kakao_login_error_html(message: str) -> str:
-    return f"""<!doctype html>
-<html lang="ko">
-<head><meta charset="utf-8"><title>주식대결 - 카카오 로그인 확인 필요</title></head>
-<body style="font-family:sans-serif;max-width:620px;margin:40px auto;line-height:1.55;">
-  <h2>카카오 로그인 설정을 확인해주세요</h2>
-  <p>{escape(message)}</p>
-  <ul>
-    <li>Kakao Developers Redirect URI:
-      <code>https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/oauth/kakao/callback</code>
-    </li>
-    <li>카카오 앱에서 Client Secret을 사용 중이면 PlayMCP 환경변수
-      <code>KAKAO_CLIENT_SECRET</code>도 같은 값으로 추가해야 합니다.</li>
-    <li>카카오 로그인 활성화 설정이 ON인지 확인해주세요.</li>
-  </ul>
-</body>
-</html>"""
-
-
 def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider) -> None:
     """동의 화면(/oauth/consent)과 연동 해제 화면(/oauth/disconnect)을 등록한다.
 
@@ -986,47 +866,26 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
         error = request.query_params.get("error", "")
         pending = provider._pending_kakao_logins.get(state)
         if pending is None:
-            try:
-                _, params = await provider._decode_kakao_state(state)
-            except ValueError:
-                return HTMLResponse(
-                    _kakao_login_error_html(
-                        "카카오 로그인 state가 만료되었거나 서명이 맞지 않습니다. PlayMCP 인증을 처음부터 다시 시작해주세요."
-                    ),
-                    status_code=400,
-                )
-        else:
-            _, params = pending
+            return HTMLResponse("만료되었거나 잘못된 카카오 로그인 요청입니다.", status_code=400)
+        _, params = pending
         if error:
             provider._pending_kakao_logins.pop(state, None)
             return RedirectResponse(
-                _authorization_error_redirect(
-                    params,
-                    "access_denied",
-                    "user denied or Kakao Login returned an authorization error",
-                ),
+                _authorization_error_redirect(params, "access_denied"),
                 status_code=302,
             )
         if not code:
             provider._pending_kakao_logins.pop(state, None)
-            return HTMLResponse(
-                _kakao_login_error_html("카카오 콜백에 code가 없습니다. 카카오 로그인 인증을 처음부터 다시 시작해주세요."),
-                status_code=400,
+            return RedirectResponse(
+                _authorization_error_redirect(params, "invalid_request"),
+                status_code=302,
             )
         try:
             consent_url = await provider.finish_kakao_login(state, code)
-        except httpx.HTTPStatusError as exc:
-            return HTMLResponse(
-                _kakao_login_error_html(
-                    f"카카오 토큰 교환이 실패했습니다. HTTP {exc.response.status_code}. "
-                    "Client Secret 사용 여부와 Redirect URI를 확인해주세요."
-                ),
-                status_code=502,
-            )
-        except (httpx.HTTPError, ValueError, RuntimeError) as exc:
-            return HTMLResponse(
-                _kakao_login_error_html(f"카카오 로그인 처리 중 오류가 발생했습니다: {exc}"),
-                status_code=502,
+        except (httpx.HTTPError, ValueError, RuntimeError):
+            return RedirectResponse(
+                _authorization_error_redirect(params, "server_error"),
+                status_code=302,
             )
         return RedirectResponse(consent_url, status_code=302)
 

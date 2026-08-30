@@ -314,48 +314,6 @@ async def test_kakao_login_callback_continues_to_local_consent(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_kakao_login_state_can_survive_memory_loss(monkeypatch):
-    async def exchange_stub(self, code):
-        assert code == "kakao-code"
-        return "kakao-access-token"
-
-    async def subject_stub(self, access_token):
-        assert access_token == "kakao-access-token"
-        return "kakao:12345"
-
-    monkeypatch.setenv("OAUTH_STATE_SECRET", "stable-state-secret")
-    monkeypatch.setattr(KakaoRestrictedOAuthProvider, "_exchange_kakao_code", exchange_stub)
-    monkeypatch.setattr(KakaoRestrictedOAuthProvider, "_fetch_kakao_subject", subject_stub)
-    config = KakaoLoginConfig(
-        rest_api_key="rest-api-key",
-        client_secret=None,
-        redirect_uri="https://issuer.example/oauth/kakao/callback",
-    )
-    first = KakaoRestrictedOAuthProvider(
-        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
-        kakao_login_config=config,
-    )
-    client = OAuthClientInformationFull(
-        client_id="c-kakao", redirect_uris=["https://allowed.example/oauth/callback"]
-    )
-    await first.register_client(client)
-    kakao_redirect = await first.authorize(client, _params())
-    state = parse_qs(urlsplit(kakao_redirect).query)["state"][0]
-
-    second = KakaoRestrictedOAuthProvider(
-        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
-        kakao_login_config=config,
-    )
-    await second.register_client(client)
-    consent_redirect = await second.finish_kakao_login(state, "kakao-code")
-
-    assert consent_redirect.startswith("/oauth/consent?token=")
-    consent_token = parse_qs(urlsplit(consent_redirect).query)["token"][0]
-    _, _, subject = second._pending_consents[consent_token]
-    assert subject == "kakao:12345"
-
-
-@pytest.mark.asyncio
 async def test_authorize_after_consent_issues_real_redirect():
     provider = KakaoRestrictedOAuthProvider(
         allowed_redirect_uris=("https://allowed.example/oauth/callback",)
