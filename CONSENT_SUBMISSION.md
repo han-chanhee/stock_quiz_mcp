@@ -29,14 +29,14 @@ Kakao Tools 답변에 노출하는 데 사용합니다.
 
 ## 제출 전 확인할 것
 
-- [x] `mcpId` 확정: **83185073570028966** (PlayMCP OAuth 안내 메일 기준 —
+- [x] `mcpId` 확정: **87440044842919710** (PlayMCP OAuth 안내 메일 기준 —
       Endpoint URL은 동일하게 유지됨)
 - [x] 제공 목적/항목을 실제 정보 흐름 방향(우리→카카오)에 맞게 재작성
       (2026-08-19, server/auth.py 반영 완료)
 - [x] mcpId를 코드 상수로 하드코딩(`server/auth.py`의 `_HARDCODED_MCP_ID`)해
       `OAUTH_MCP_ID` 환경변수 없이도 `OAUTH_ENABLED=1`만으로 활성화 가능하게 함
       (콘솔에서 등록 후 환경변수 수정 방법을 못 찾은 문제 우회)
-- [x] Redirect URI 2개 확정(아래 "함께 전달할 내용" 참고, mcpId=83185073570028966 반영됨)
+- [x] Redirect URI 2개 확정(아래 "함께 전달할 내용" 참고, mcpId=87440044842919710 반영됨)
 - [x] OAuth 식별값을 랭킹 점수 키에 연결 완료
 - [x] 동의/클라이언트/토큰 스냅샷 영속화 완료(`OAUTH_SNAPSHOT_PATH`로 경로 변경 가능)
 - [x] 원격 OAuth 흐름 검증 완료: DCR, authorize, 동의 화면, token, 인증된 `tools/list`
@@ -48,7 +48,7 @@ Kakao Tools 답변에 노출하는 데 사용합니다.
 ```
 [개인정보 제3자 제공 동의문 재검토 요청]
 
-서비스: 주식대결 (stock-quiz-mcp-kakaotools, mcpId: 83185073570028966)
+서비스: 주식대결 (stock-quiz-mcp-kakaotools, mcpId: 87440044842919710)
 
 ■ 개인정보 제3자 제공 동의문
 - 제공받는자: (주) 카카오
@@ -58,8 +58,8 @@ Kakao Tools 답변에 노출하는 데 사용합니다.
 - 제공받는 자의 보유 및 이용기간: 연동 해제 시 지체없이 파기
 
 ■ Redirect URI (2개 모두 등록 요청)
-- https://tools.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback
-- https://playmcp.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback
+- https://tools.kakao.com/api/v1/applied-mcps/87440044842919710/authorize/oauth:callback
+- https://playmcp.kakao.com/api/v1/applied-mcps/87440044842919710/authorize/oauth:callback
 
 ■ 연동 해제 화면
 https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/oauth/disconnect
@@ -89,16 +89,16 @@ OAuth 동의 화면 및 연동 해제 화면이 심사 기준에 맞는지 확�
    (토큰 없이 바로 접속 가능 — 지금 바로 스크린샷 가능)
 2. **동의 화면**: 실제 OAuth 흐름에서만 접근 가능
    (`/oauth/consent?token=...`). 토큰 없이 접근하면 400을 반환한다.
-3. **Redirect URI 2개** (mcpId=83185073570028966 확정):
-   - `https://tools.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback`
-   - `https://playmcp.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback`
+3. **Redirect URI 2개** (mcpId=87440044842919710 확정):
+   - `https://tools.kakao.com/api/v1/applied-mcps/87440044842919710/authorize/oauth:callback`
+   - `https://playmcp.kakao.com/api/v1/applied-mcps/87440044842919710/authorize/oauth:callback`
 
 ## 현재 상태 (2026-08-27 기준)
 
-- 코드: Redirect URI 경로 수정(mcpId=83185073570028966 하드코딩), 동의 화면, 연동 해제 화면,
+- 코드: Redirect URI 경로 수정(mcpId=87440044842919710 하드코딩), 동의 화면, 연동 해제 화면,
   정보 흐름 방향에 맞춘 제공목적/제공항목 재작성 완료 (server/auth.py)
 - 서버: `stock-quiz-mcp-kakaotools`를 Git 소스 방식으로 재생성(구 mcpId 3556 →
-  신규 83185073570028966). Endpoint URL은 동일하게 유지됨(디스코드 제출 URL 안 바뀜)
+  신규 87440044842919710). Endpoint URL은 동일하게 유지됨(디스코드 제출 URL 안 바뀜)
 - 배포: 원격에서 OAuth challenge, DCR, authorize, 동의 화면, token,
   인증된 `tools/list`까지 검증 완료
 - 랭킹: OAuth/플랫폼 식별값을 점수 키로 우선 사용하고, 없으면 닉네임 fallback

@@ -32,7 +32,7 @@ DEFAULT_REMOTE = "origin"
 DEFAULT_OWNER_REPO = "han-chanhee/stock_quiz_mcp"
 DEFAULT_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
 DEFAULT_PREVIEW_URL = "https://preview-chatgpt.kakao.com"
-DEFAULT_MCP_ID = "83185073570028966"
+DEFAULT_MCP_ID = "87440044842919710"
 DEFAULT_OAUTH_REDIRECT_URI = (
     f"https://playmcp.kakao.com/api/v1/applied-mcps/{DEFAULT_MCP_ID}/"
     "authorize/oauth:callback"

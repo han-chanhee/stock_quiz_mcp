@@ -529,7 +529,7 @@ async def test_tool_scoring_ignores_oauth_client_id_without_user_subject(cache):
     from server.main import build_app
 
     class FakeContext:
-        client_id = "stockquiz-playmcp-83185073570028966"
+        client_id = "stockquiz-playmcp-87440044842919710"
         request_context = None
 
     store = QuizStore()
@@ -550,7 +550,7 @@ async def test_tool_scoring_ignores_oauth_client_id_without_user_subject(cache):
     )
 
     assert score_store.leaderboard("개인A").my_entry.score == 3
-    assert score_store.leaderboard("stockquiz-playmcp-83185073570028966").my_entry.score == 0
+    assert score_store.leaderboard("stockquiz-playmcp-87440044842919710").my_entry.score == 0
 
 
 @pytest.mark.asyncio
@@ -622,10 +622,10 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
 
     monkeypatch.setenv("OAUTH_ENABLED", "1")
     monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
-    client_id = "stockquiz-playmcp-83185073570028966"
+    client_id = "stockquiz-playmcp-87440044842919710"
     redirect_uri = (
         "https://playmcp.kakao.com/api/v1/applied-mcps/"
-        "83185073570028966/authorize/oauth:callback"
+        "87440044842919710/authorize/oauth:callback"
     )
     app = create_server().http_app(
         transport="streamable-http",
@@ -764,10 +764,10 @@ def test_static_oauth_client_accepts_kakaocloud_console_redirect(
 
     monkeypatch.setenv("OAUTH_ENABLED", "1")
     monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
-    client_id = "stockquiz-playmcp-83185073570028966"
+    client_id = "stockquiz-playmcp-87440044842919710"
     redirect_uri = (
         "https://playmcp.kakaocloud.io/api/v1/applied-mcps/"
-        "83185073570028966/authorize/oauth:callback"
+        "87440044842919710/authorize/oauth:callback"
     )
     app = create_server().http_app(
         transport="streamable-http",

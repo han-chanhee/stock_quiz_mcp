@@ -17,7 +17,7 @@
 예선  https://stock-quiz-mcp.playmcp-endpoint.kakaocloud.io/mcp   (규정상 유지 중)
 ```
 
-- **PlayMCP OAuth 안내 메일 기준 최종 mcpId** (2026-08-30): **83185073570028966**.
+- **PlayMCP OAuth 안내 메일 기준 최종 mcpId** (2026-08-30): **87440044842919710**.
   Endpoint URL은 동일하게 유지됨(디스코드 제출 URL 안 깨짐).
 - 툴 3개: `help`, `quiz`, `submit_answer`
 - 테스트 112개 통과
