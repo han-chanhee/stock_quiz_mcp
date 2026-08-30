@@ -53,6 +53,9 @@ def test_oauth_provider_uses_injected_mcp_id(monkeypatch):
         "https://tools.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
         "https://playmcp.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
         "https://playmcp.kakaocloud.io/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
+        "https://tools.kakao.com/api/v1/applied-mcps/3606/authorize/oauth:callback",
+        "https://playmcp.kakao.com/api/v1/applied-mcps/3606/authorize/oauth:callback",
+        "https://playmcp.kakaocloud.io/api/v1/applied-mcps/3606/authorize/oauth:callback",
     )
     static = provider.clients["stockquiz-playmcp-test-id"]
     assert static.client_secret == _DEFAULT_PLAYMCP_CLIENT_SECRET

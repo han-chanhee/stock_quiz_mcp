@@ -73,7 +73,7 @@ _REDIRECT_URI_TEMPLATES = (
 # 값이 바뀌면(재생성 등) 이 상수만 고쳐서 재배포하면 된다.
 # 2026-08-30: PlayMCP OAuth 안내 메일 기준 최종 mcpId.
 _HARDCODED_MCP_ID = "87440044842919710"
-_LEGACY_MCP_IDS = ("83185073570028966",)
+_LEGACY_MCP_IDS = ("83185073570028966", "3606")
 
 # OAuth issuer/base URL. MCP SDK가 HTTPS를 강제하므로 실제 배포 도메인을 쓴다.
 # (OAUTH_BASE_URL 환경변수로 덮어쓸 수 있음)
