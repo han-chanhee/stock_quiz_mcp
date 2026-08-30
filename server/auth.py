@@ -67,6 +67,7 @@ _HARDCODED_MCP_ID = "3606"
 # (OAUTH_BASE_URL 환경변수로 덮어쓸 수 있음)
 _DEFAULT_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
 _DEFAULT_OAUTH_SNAPSHOT_PATH = Path(__file__).parent.parent / "store" / "data" / "oauth.json"
+_DEFAULT_PLAYMCP_CLIENT_SECRET = "stockquiz_3221c246c3f3f4e0b9cd0235c2699c0f772165438b273780"
 
 CONSENT_TEXT = {
     "제공받는 자": "(주) 카카오",
@@ -97,10 +98,19 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         self._snapshot_path = snapshot_path or _DEFAULT_OAUTH_SNAPSHOT_PATH
         self._allowed_redirect_uri_set = set(allowed_redirect_uris)
         self._consented_clients: set[str] = set()
+        self._static_client_ids: set[str] = set()
         # 동의 대기 중인 요청: consent_token -> (client, params)
         self._pending_consents: dict[
             str, tuple[OAuthClientInformationFull, AuthorizationParams]
         ] = {}
+
+    def install_static_client(self, client_info: OAuthClientInformationFull) -> None:
+        """콘솔 필수 입력형 OAuth client를 부팅 시 항상 등록한다."""
+        client_id = client_info.client_id or ""
+        if not client_id:
+            raise ValueError("static client_id is required")
+        self.clients[client_id] = client_info
+        self._static_client_ids.add(client_id)
 
     async def register_client(
         self, client_info: OAuthClientInformationFull
@@ -161,7 +171,8 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
     async def revoke_client_consent(self, client_id: str) -> None:
         """연동 해제: 동의 기록과 발급된 토큰/등록 정보를 모두 지운다."""
         self._consented_clients.discard(client_id)
-        self.clients.pop(client_id, None)
+        if client_id not in self._static_client_ids:
+            self.clients.pop(client_id, None)
         stale_access = [
             token
             for token, info in self.access_tokens.items()
@@ -252,6 +263,29 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             }
         except (json.JSONDecodeError, ValueError, TypeError):
             self._quarantine_snapshot()
+
+
+def _static_playmcp_client(
+    *, mcp_id: str, allowed_redirect_uris: tuple[str, ...]
+) -> OAuthClientInformationFull:
+    client_id = (
+        os.environ.get("OAUTH_PLAYMCP_CLIENT_ID", "").strip()
+        or f"stockquiz-playmcp-{mcp_id}"
+    )
+    client_secret = (
+        os.environ.get("OAUTH_PLAYMCP_CLIENT_SECRET", "").strip()
+        or _DEFAULT_PLAYMCP_CLIENT_SECRET
+    )
+    return OAuthClientInformationFull(
+        client_id=client_id,
+        client_secret=client_secret,
+        client_secret_expires_at=None,
+        redirect_uris=list(allowed_redirect_uris),
+        token_endpoint_auth_method="client_secret_post",
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+        client_name="주식대결 PlayMCP",
+    )
 
 
 def _with_query(url: str, values: dict[str, str | None]) -> str:
@@ -450,4 +484,10 @@ def build_auth_provider() -> "AuthProvider | None":
         client_registration_options=ClientRegistrationOptions(enabled=True),
     )
     provider.snapshot_load()
+    provider.install_static_client(
+        _static_playmcp_client(
+            mcp_id=mcp_id,
+            allowed_redirect_uris=allowed_redirect_uris,
+        )
+    )
     return provider

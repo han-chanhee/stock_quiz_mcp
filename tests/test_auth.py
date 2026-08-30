@@ -11,6 +11,7 @@ from server.auth import (
     _authorization_error_redirect,
     _consent_page_html,
     _disconnect_page_html,
+    _DEFAULT_PLAYMCP_CLIENT_SECRET,
     build_auth_provider,
 )
 
@@ -34,6 +35,7 @@ def test_oauth_falls_back_to_hardcoded_mcp_id_when_env_missing(monkeypatch):
 
     assert provider is not None
     assert all(f"/{_HARDCODED_MCP_ID}/" in uri for uri in provider.allowed_redirect_uris)
+    assert f"stockquiz-playmcp-{_HARDCODED_MCP_ID}" in provider.clients
 
 
 def test_oauth_provider_uses_injected_mcp_id(monkeypatch):
@@ -47,6 +49,24 @@ def test_oauth_provider_uses_injected_mcp_id(monkeypatch):
         "https://tools.kakao.com/api/v1/applied-mcps/test-id/authorize/oauth:callback",
         "https://playmcp.kakao.com/api/v1/applied-mcps/test-id/authorize/oauth:callback",
     )
+    static = provider.clients["stockquiz-playmcp-test-id"]
+    assert static.client_secret == _DEFAULT_PLAYMCP_CLIENT_SECRET
+    assert static.token_endpoint_auth_method == "client_secret_post"
+    assert static.grant_types == ["authorization_code", "refresh_token"]
+    assert static.response_types == ["code"]
+
+
+def test_oauth_static_client_can_be_overridden_by_env(monkeypatch):
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("OAUTH_MCP_ID", "test-id")
+    monkeypatch.setenv("OAUTH_PLAYMCP_CLIENT_ID", "custom-client")
+    monkeypatch.setenv("OAUTH_PLAYMCP_CLIENT_SECRET", "custom-secret")
+
+    provider = build_auth_provider()
+
+    static = provider.clients["custom-client"]
+    assert static.client_secret == "custom-secret"
+    assert "stockquiz-playmcp-test-id" not in provider.clients
 
 
 @pytest.mark.asyncio
@@ -267,3 +287,24 @@ async def test_revoke_client_consent_clears_tokens_and_consent():
     assert "c3" not in provider._consented_clients
     assert "c3" not in provider.clients
     assert "tok1" not in provider.access_tokens
+
+
+@pytest.mark.asyncio
+async def test_revoke_static_client_consent_keeps_client_registration():
+    """PlayMCP 고정 client는 연동 해제 후에도 재연동할 수 있어야 한다."""
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+    )
+    client = OAuthClientInformationFull(
+        client_id="static-client",
+        client_secret="static-secret",
+        redirect_uris=["https://allowed.example/oauth/callback"],
+        token_endpoint_auth_method="client_secret_post",
+    )
+    provider.install_static_client(client)
+    provider._consented_clients.add("static-client")
+
+    await provider.revoke_client_consent("static-client")
+
+    assert "static-client" not in provider._consented_clients
+    assert await provider.get_client("static-client") == client
