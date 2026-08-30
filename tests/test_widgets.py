@@ -114,6 +114,27 @@ def test_quiz_widget_keeps_analysis_in_simple_card() -> None:
     assert "Image" not in serialized
 
 
+def test_quiz_widget_stays_compact_for_preview_density() -> None:
+    payload = price_quiz_widget(
+        "QZ-DENSE",
+        "📈 주가 퀴즈 — 가격 맞히기",
+        "**삼성전자**의 현재 주가는 얼마일까요?",
+        analysis_lines=[f"분석 {index}" for index in range(1, 6)],
+    )
+    components = list(_walk_components(payload["widget"]))
+    divider_spacings = [
+        component["spacing"]
+        for component in components
+        if component.get("type") == "Divider"
+    ]
+
+    assert payload["widget"]["padding"] <= 10
+    assert divider_spacings
+    assert max(divider_spacings) <= 8
+    assert all(component.get("type") != "Spacer" for component in components)
+    assert "최근 1주 시간봉 형태입니다." not in json.dumps(payload, ensure_ascii=False)
+
+
 def test_market_quiz_widget_direction_badge_color() -> None:
     up = market_quiz_widget("QZ-2", "📊 시장 퀴즈", "가장 오른 종목은?", 5.2)
     down = market_quiz_widget("QZ-3", "📊 시장 퀴즈", "가장 떨어진 종목은?", -3.1)

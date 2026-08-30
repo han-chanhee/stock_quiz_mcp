@@ -13,6 +13,10 @@ if TYPE_CHECKING:
 _DEFAULT_PUBLIC_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
 _LOGO_ASSET_PATH = "/assets/logo-banner.png"
 _CARD_BACKGROUND = "#f8fafc"
+_CARD_PADDING = 10
+_DIVIDER_SPACING = 6
+_SECTION_SPACING = 8
+_COMPACT_GAP = 4
 
 
 def _public_base_url() -> str:
@@ -56,11 +60,11 @@ def _card_payload(
         "widget": {
             "type": "Card",
             "size": "full",
-            "padding": 16,
+            "padding": _CARD_PADDING,
             "background": _CARD_BACKGROUND,
             "children": [
                 _brand_header(),
-                {"type": "Divider", "spacing": 10},
+                {"type": "Divider", "spacing": _DIVIDER_SPACING},
                 *children,
             ],
         },
@@ -82,21 +86,16 @@ def _quiz_frame(
     expires_in_min = expires_in_sec // 60
     image_url = f"{_public_base_url()}/quiz/chart/{quiz_id}.png"
     chart_children = [
-        {"type": "Divider", "spacing": 12},
-        {"type": "Title", "value": "차트 힌트", "size": "md", "weight": "bold"},
+        {"type": "Divider", "spacing": _SECTION_SPACING},
+        {"type": "Text", "value": "차트 힌트", "weight": "bold", "size": "sm"},
         {"type": "Markdown", "value": f"![차트 힌트]({image_url})"},
-        {
-            "type": "Caption",
-            "value": "최근 1주 시간봉 형태입니다.",
-            "size": "sm",
-        },
     ]
     analysis_copy = ""
     analysis_children: list[dict] = []
     if analysis_lines:
         analysis_children = [
-            {"type": "Divider", "spacing": 12},
-            {"type": "Title", "value": "문제 분석", "size": "md", "weight": "bold"},
+            {"type": "Divider", "spacing": _SECTION_SPACING},
+            {"type": "Text", "value": "문제 분석", "weight": "bold", "size": "sm"},
             _analysis_list(analysis_lines),
         ]
         analysis_copy = "\n\n**문제 분석**\n" + "\n".join(
@@ -106,13 +105,13 @@ def _quiz_frame(
         {
             "type": "Row",
             "align": "center",
-            "gap": 6,
+            "gap": _COMPACT_GAP,
             "children": [
                 {
                     "type": "Icon",
                     "name": "circle-question",
                     "color": "info",
-                    "size": "md",
+                    "size": "sm",
                 },
                 {
                     "type": "Badge",
@@ -123,23 +122,22 @@ def _quiz_frame(
                 },
             ],
         },
-        {"type": "Spacer", "minSize": 8},
         {
             "type": "Title",
             "value": "주식대결 퀴즈",
-            "size": "lg",
+            "size": "md",
             "weight": "bold",
         },
-        _text_lines(mode_intro, size="md", maxLines=3),
-        {"type": "Divider", "spacing": 12},
+        _text_lines(mode_intro, size="sm", maxLines=2),
+        {"type": "Divider", "spacing": _SECTION_SPACING},
         *body_children,
         *chart_children,
         *analysis_children,
-        {"type": "Divider", "spacing": 12},
+        {"type": "Divider", "spacing": _SECTION_SPACING},
         {"type": "Markdown", "value": f"정답 제출용 ID: `{quiz_id}`"},
         {
             "type": "Caption",
-            "value": f"위 ID와 정답을 {expires_in_min}분 안에 함께 말해주세요",
+            "value": f"{expires_in_min}분 안에 ID와 정답을 함께 말해주세요",
             "size": "sm",
         },
     ]
@@ -154,12 +152,12 @@ def _quiz_frame(
 def _analysis_list(lines: list[str]) -> dict:
     return {
         "type": "Col",
-        "gap": 6,
+        "gap": _COMPACT_GAP,
         "children": [
             {
                 "type": "Row",
                 "align": "start",
-                "gap": 8,
+                "gap": 6,
                 "children": [
                     {
                         "type": "Badge",
@@ -292,9 +290,9 @@ def correct_answer_widget(
     detail_lines = analysis_lines or [price_line, rank_line, reason_line]
     children: list[dict] = [
         {"type": "Title", "value": f"정답! {answer_name}", "size": "lg", "weight": "bold"},
-        {"type": "Title", "value": "정답 분석", "size": "md", "weight": "bold"},
+        {"type": "Text", "value": "정답 분석", "weight": "bold", "size": "sm"},
         _analysis_list(detail_lines),
-        {"type": "Divider", "spacing": 12},
+        {"type": "Divider", "spacing": _SECTION_SPACING},
     ]
     copy_lines = [
         f"✅ 정답! **{answer_name}**",
@@ -313,6 +311,7 @@ def correct_answer_widget(
                     "type": "Badge",
                     "label": f"이번 정답으로 {earned_score}점 획득!",
                     "color": "success",
+                    "size": "sm",
                 }
             )
             copy_lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!"])
@@ -327,6 +326,7 @@ def correct_answer_widget(
                         f"· 닉네임 {leaderboard.my_entry.display_name}"
                     ),
                     "weight": "bold",
+                    "size": "sm",
                 },
             ]
         )
@@ -341,7 +341,7 @@ def correct_answer_widget(
         )
 
     if next_actions:
-        children.append({"type": "Divider", "spacing": 12})
+        children.append({"type": "Divider", "spacing": _SECTION_SPACING})
         children.extend({"type": "Button", "label": action} for action in next_actions)
         copy_lines.extend(
             ["", "다음 중 선택: " + " / ".join(f"`{action}`" for action in next_actions)]
@@ -378,9 +378,10 @@ def with_leaderboard(
                 f"· 닉네임 {leaderboard.my_entry.display_name}"
             ),
             "weight": "bold",
+            "size": "sm",
         },
     ]
-    children.extend([{"type": "Divider", "spacing": 12}, *ranking_children])
+    children.extend([{"type": "Divider", "spacing": _SECTION_SPACING}, *ranking_children])
     widget["children"] = children
 
     copy_text = payload["copy_text"]
@@ -459,7 +460,7 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
         return {
             "type": "Row",
             "align": "center",
-            "gap": 8,
+            "gap": 6,
             "children": [
                 {
                     "type": "Badge",
@@ -475,6 +476,7 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
                     "weight": "semibold",
                     "flex": 1,
                     "truncate": True,
+                    "size": "sm",
                 },
                 {
                     "type": "Text",
@@ -482,6 +484,7 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
                     "weight": "bold",
                     "textAlign": "end",
                     "color": "success",
+                    "size": "sm",
                 },
             ],
         }
@@ -490,7 +493,7 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
         row(rank, entry.display_name, entry.score)
         for rank, entry in enumerate(leaderboard.top[:3], start=1)
     ]
-    return {"type": "Col", "gap": 6, "children": rows}
+    return {"type": "Col", "gap": _COMPACT_GAP, "children": rows}
 
 
 # ── 웰컴 / 모드 선택 안내 ─────────────────────────────────────
@@ -502,41 +505,41 @@ def welcome_widget() -> dict:
         {
             "type": "Row",
             "align": "center",
-            "gap": 8,
+            "gap": 6,
             "children": [
                 {"type": "Icon", "name": "chart", "color": "info", "size": "sm"},
-                {"type": "Text", "value": "주가 — 현재가를 1만원 단위로 맞히기", "flex": 1},
+                {"type": "Text", "value": "주가 — 현재가를 1만원 단위로 맞히기", "flex": 1, "size": "sm"},
             ],
         },
         {
             "type": "Row",
             "align": "center",
-            "gap": 8,
+            "gap": 6,
             "children": [
                 {"type": "Icon", "name": "analytics", "color": "info", "size": "sm"},
-                {"type": "Text", "value": "시장 — 가장 오르거나 떨어진 종목 맞히기", "flex": 1},
+                {"type": "Text", "value": "시장 — 가장 오르거나 떨어진 종목 맞히기", "flex": 1, "size": "sm"},
             ],
         },
         {
             "type": "Row",
             "align": "center",
-            "gap": 8,
+            "gap": 6,
             "children": [
                 {"type": "Icon", "name": "sparkle", "color": "info", "size": "sm"},
-                {"type": "Text", "value": "종목 — 섹터·가격·시총 힌트로 회사 맞히기", "flex": 1},
+                {"type": "Text", "value": "종목 — 섹터·가격·시총 힌트로 회사 맞히기", "flex": 1, "size": "sm"},
             ],
         },
     ]
     children = [
-        {"type": "Title", "value": "주식대결에 오신 걸 환영해요!", "size": "lg", "weight": "bold"},
+        {"type": "Title", "value": "주식대결에 오신 걸 환영해요!", "size": "md", "weight": "bold"},
         {
             "type": "Text",
             "value": "코스피/코스닥 종목으로 즐기는 주식 퀴즈예요. 모든 문제에 차트 힌트가 함께 나와요.",
-            "size": "md",
+            "size": "sm",
         },
-        {"type": "Divider", "spacing": 12},
-        {"type": "Col", "gap": 8, "children": mode_rows},
-        {"type": "Divider", "spacing": 12},
+        {"type": "Divider", "spacing": _SECTION_SPACING},
+        {"type": "Col", "gap": _COMPACT_GAP, "children": mode_rows},
+        {"type": "Divider", "spacing": _SECTION_SPACING},
         {
             "type": "Text",
             "value": "로그인한 사용자는 자동 닉네임으로 주간 랭킹(매주 초기화)에 참여해요.",
