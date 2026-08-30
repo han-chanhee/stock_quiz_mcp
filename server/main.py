@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import datetime as _dt
 import functools
+import hashlib
 import json
 import os
 from collections.abc import AsyncIterator
@@ -43,6 +44,7 @@ from store import QuizStore, ScoreStore
 
 from .cache import QuizCache
 from .auth import (
+    _DEFAULT_PLAYMCP_BEARER_TOKEN,
     build_auth_provider,
     register_auth_routes,
     register_oauth_protocol_routes,
@@ -220,6 +222,36 @@ class MCPSelectiveAuthMiddleware:
         await send({"type": "http.response.body", "body": b""})
 
 
+def _access_token_identity_key(access_token: Any | None) -> str | None:
+    """OAuth 토큰에서 사용자 랭킹 키를 뽑는다. 원본 토큰 문자열은 노출하지 않는다."""
+    if access_token is None:
+        return None
+
+    subject = getattr(access_token, "subject", None)
+    if isinstance(subject, str) and subject.strip():
+        return subject.strip()
+
+    claims = getattr(access_token, "claims", None)
+    if isinstance(claims, dict):
+        for name in ("sub", "subject", "user_id"):
+            value = claims.get(name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    raw_token = getattr(access_token, "token", None)
+    static_preview_token = os.environ.get(
+        "OAUTH_PLAYMCP_BEARER_TOKEN", _DEFAULT_PLAYMCP_BEARER_TOKEN
+    )
+    if (
+        isinstance(raw_token, str)
+        and raw_token.strip()
+        and raw_token != static_preview_token
+    ):
+        digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()[:24]
+        return f"oauth-token:{digest}"
+    return None
+
+
 def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
     """툴 호출 컨텍스트에서 점수용 식별자를 뽑는다.
 
@@ -228,8 +260,9 @@ def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
     핸들러가 닉네임 fallback을 쓴다.
     """
     access_token = get_access_token()
-    if access_token and access_token.subject:
-        return access_token.subject
+    identity_key = _access_token_identity_key(access_token)
+    if identity_key is not None:
+        return identity_key
 
     if ctx is None:
         return None

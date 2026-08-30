@@ -643,6 +643,31 @@ def test_tool_identity_ignores_oauth_client_id_meta():
     assert _tool_identity_key(None, SubjectContext()) == "kakao:real-user"
 
 
+def test_tool_identity_uses_hashed_oauth_token_without_subject(monkeypatch):
+    """subject가 없는 OAuth 토큰도 토큰 해시 기반 자동 닉네임 경로를 탄다."""
+    import server.main as main
+    from server.auth import _DEFAULT_PLAYMCP_BEARER_TOKEN
+
+    class UserAccessToken:
+        subject = None
+        claims = None
+        token = "issued-user-access-token"
+
+    class StaticPreviewToken:
+        subject = None
+        claims = None
+        token = _DEFAULT_PLAYMCP_BEARER_TOKEN
+
+    monkeypatch.setattr(main, "get_access_token", lambda: UserAccessToken())
+    identity_key = main._tool_identity_key(None, None)
+    assert identity_key is not None
+    assert identity_key.startswith("oauth-token:")
+    assert "issued-user-access-token" not in identity_key
+
+    monkeypatch.setattr(main, "get_access_token", lambda: StaticPreviewToken())
+    assert main._tool_identity_key(None, None) is None
+
+
 @pytest.mark.asyncio
 async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
     """OAuth subject가 있으면 닉네임 없이도 subject 기준으로 점수를 적립한다."""
@@ -670,6 +695,40 @@ async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
 
     assert score_store.leaderboard("playmcp-user-subject-1").my_entry.score == 3
     assert score_store.leaderboard("playmcp-user-subject-1").my_entry.display_name.startswith("주식러")
+
+
+@pytest.mark.asyncio
+async def test_tool_scoring_uses_automatic_nickname_for_subjectless_oauth_token(
+    cache, monkeypatch
+):
+    """subject가 없어도 OAuth 토큰별 자동 닉네임으로 점수와 순위를 보여준다."""
+    import server.main as main
+
+    class FakeAccessToken:
+        subject = None
+        claims = None
+        token = "issued-user-access-token"
+
+    monkeypatch.setattr(main, "get_access_token", lambda: FakeAccessToken())
+
+    store = QuizStore()
+    score_store = ScoreStore()
+    app = main.build_app(cache, store, score_store, QuizBank(rng=random.Random(0)))
+
+    quiz_tool = await app.get_tool("quiz")
+    submit_tool = await app.get_tool("submit_answer")
+    quiz_text = quiz_tool.fn(mode="주가")
+
+    quiz_id = next(iter(store._data))
+    state = store.get(quiz_id)
+    answer_text = await submit_tool.fn(
+        quiz_id=quiz_id,
+        answer=str(state.answer.price),
+    )
+
+    assert "내 순위 1위 · 내 점수 0점" in quiz_text
+    assert "내 순위 1위 · 내 점수 3점" in answer_text
+    assert "주식러" in answer_text
 
 
 def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
