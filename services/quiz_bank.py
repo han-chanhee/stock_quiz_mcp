@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -86,26 +87,41 @@ def _chart_direction_label(change_pct: float) -> str:
     return "보합권"
 
 
-def chart_points_for_snapshot(snap: StockSnapshot) -> list[float]:
-    """종목 스냅샷에서 익명화된 7포인트 미니 차트를 만든다.
+def chart_points_for_snapshot(snap: StockSnapshot, points: int = 35) -> list[float]:
+    """종목 스냅샷에서 익명화된 최근 1주 시간봉형 미니 차트를 만든다.
 
     현재 데이터에는 분봉/일봉 시계열이 없으므로 등락 방향과 종목별 seed로
-    모양을 만든다. 종목명은 쓰지 않고 ticker 기반 미세 흔들림만 더한다.
+    5영업일 x 7시간대 모양을 만든다. 종목명은 쓰지 않고 ticker 기반 미세
+    흔들림만 더한다.
     """
-    seed = hashlib.sha256(snap.ticker.encode("utf-8")).digest()
-    wobble = [((byte % 9) - 4) / 100 for byte in seed[:7]]
-    if snap.change_pct >= 1:
-        base = [0.16, 0.22, 0.30, 0.42, 0.52, 0.70, 0.88]
-    elif snap.change_pct <= -1:
-        base = [0.88, 0.72, 0.60, 0.48, 0.36, 0.24, 0.16]
-    else:
-        base = [0.48, 0.51, 0.49, 0.52, 0.50, 0.53, 0.51]
-    return [min(0.95, max(0.05, value + bump)) for value, bump in zip(base, wobble)]
+    points = max(7, points)
+    seed = hashlib.sha256(f"{snap.ticker}:{snap.change_pct:.4f}".encode("utf-8")).digest()
+    phase = seed[0] / 255 * math.tau
+    trend = max(-0.48, min(0.48, snap.change_pct / 70))
+    start = 0.5 - trend / 2
+
+    values: list[float] = []
+    for index in range(points):
+        progress = index / (points - 1)
+        day_slot = index % 7
+        noise = ((seed[index % len(seed)] - 127.5) / 127.5) * 0.035
+        wave = math.sin(progress * math.tau * 2.2 + phase) * 0.045
+        intraday = math.sin((day_slot / 6) * math.pi) * 0.025
+        value = start + trend * progress + wave + intraday + noise
+        values.append(min(0.95, max(0.05, value)))
+    return values
 
 
 def chart_shape_for_snapshot(snap: StockSnapshot) -> str:
     points = chart_points_for_snapshot(snap)
-    return "".join(_SPARK_BLOCKS[min(6, max(0, int(point * 7)))] for point in points)
+    bucket_count = 14
+    compressed: list[float] = []
+    for bucket in range(bucket_count):
+        start = bucket * len(points) // bucket_count
+        end = max(start + 1, (bucket + 1) * len(points) // bucket_count)
+        chunk = points[start:end]
+        compressed.append(sum(chunk) / len(chunk))
+    return "".join(_SPARK_BLOCKS[min(6, max(0, int(point * 7)))] for point in compressed)
 
 
 class QuizBank:
@@ -247,7 +263,7 @@ class QuizBank:
         chart = chart_shape_for_snapshot(answer)
         sector_txt = answer.sector.value if answer.sector else "미분류"
         lines = [
-            "아래 차트 모양과 힌트로 종목명을 맞혀보세요.",
+            "아래 최근 1주 시간봉 형태와 힌트로 종목명을 맞혀보세요.",
             f"`{chart}`",
             f"- 흐름: **{_chart_direction_label(answer.change_pct)}**",
             f"- 가격대: {_price_band(answer)}",

@@ -32,6 +32,7 @@ from services import (
     normalize_name,
     resolve_alias,
 )
+from services.quiz_bank import chart_points_for_snapshot
 
 _KST = timezone(timedelta(hours=9))
 
@@ -84,8 +85,18 @@ def test_chart_quiz_renders_shape_without_answer_name():
     assert state.quiz_type == QuizType.COMPANY
     assert state.answer.name not in q.question_md
     assert chart_shape_for_snapshot(state.answer) in q.question_md
-    assert "차트 모양" in q.question_md
+    assert "최근 1주 시간봉" in q.question_md
     assert len(state.hints_precomputed) == 2
+
+
+def test_chart_points_use_one_week_hourly_shape():
+    snap = _pool()[0]
+    points = chart_points_for_snapshot(snap)
+    shape = chart_shape_for_snapshot(snap)
+
+    assert len(points) == 35
+    assert all(0.05 <= point <= 0.95 for point in points)
+    assert len(shape) == 14
 
 
 def test_precomputed_hints_never_leak_full_name():
