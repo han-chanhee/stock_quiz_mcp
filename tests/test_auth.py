@@ -476,6 +476,7 @@ def test_oauth_runtime_diagnostics_do_not_expose_secrets():
         "external_key_suffix": "pi-key",
         "external_secret_present": True,
         "external_redirect_uri": "https://issuer.example/oauth/kakao/callback",
+        "authorization_code_format": "short_opaque_snapshot",
         "recent_events": [],
     }
     assert "secret-value" not in str(diagnostics)

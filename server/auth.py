@@ -1161,6 +1161,7 @@ def _oauth_runtime_diagnostics(provider: KakaoRestrictedOAuthProvider) -> dict[s
         "external_key_suffix": rest_key[-6:] if rest_key else None,
         "external_secret_present": bool(config and config.client_secret),
         "external_redirect_uri": config.redirect_uri if config else None,
+        "authorization_code_format": "short_opaque_snapshot",
         "recent_events": provider._oauth_events[-10:],
     }
 
