@@ -20,7 +20,13 @@ from contracts.schemas import (
     Sector,
     Verdict,
 )
-from services import build_analysis, is_correct, pick_hint
+from services import (
+    build_analysis,
+    build_answer_analysis_lines,
+    build_question_analysis,
+    is_correct,
+    pick_hint,
+)
 from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
 
@@ -174,9 +180,20 @@ class QuizHandlers:
             QuizType.COMPANY: QuizMode.STOCK,
         }[state.quiz_type]
         mode_intro = _MODE_INTRO[mode]
+        analysis_context = {
+            QuizMode.PRICE: "price",
+            QuizMode.MARKET: "market",
+            QuizMode.STOCK: "company",
+            QuizMode.CHART: "chart",
+        }[mode]
+        question_analysis = build_question_analysis(state.answer, analysis_context)
         if mode == QuizMode.PRICE:
             widget = widgets.price_quiz_widget(
-                question.quiz_id, mode_intro, question.question_md, _EXPIRES_SEC
+                question.quiz_id,
+                mode_intro,
+                question.question_md,
+                _EXPIRES_SEC,
+                question_analysis,
             )
         elif mode == QuizMode.MARKET:
             widget = widgets.market_quiz_widget(
@@ -185,18 +202,30 @@ class QuizHandlers:
                 question.question_md,
                 state.answer.change_pct,
                 _EXPIRES_SEC,
+                question_analysis,
             )
         elif mode == QuizMode.CHART:
             widget = widgets.chart_quiz_widget(
-                question.quiz_id, mode_intro, question.question_md, _EXPIRES_SEC
+                question.quiz_id,
+                mode_intro,
+                question.question_md,
+                _EXPIRES_SEC,
+                question_analysis,
             )
         else:  # QuizMode.STOCK
             widget = widgets.company_quiz_widget(
-                question.quiz_id, mode_intro, question.question_md, _EXPIRES_SEC
+                question.quiz_id,
+                mode_intro,
+                question.question_md,
+                _EXPIRES_SEC,
+                question_analysis,
             )
+        question_analysis_md = "\n".join(
+            f"{index}. {line}" for index, line in enumerate(question_analysis, start=1)
+        )
         return QuizOutcome(
             question.quiz_id,
-            md + _as_of_footer(self._cache),
+            f"{md}\n\n**문제 분석**\n{question_analysis_md}" + _as_of_footer(self._cache),
             widget,
         )
 
@@ -297,6 +326,7 @@ class QuizHandlers:
                 ), score_identity, display_name)
             reason = self._cache.reason(state.answer.ticker)
             analysis = build_analysis(state.answer, reason)
+            answer_analysis = build_answer_analysis_lines(state.answer, reason)
             attempts = (solved_state.attempts if solved_state else 0) + 1
             result = GradingResult(
                 verdict=Verdict.CORRECT,
@@ -313,7 +343,7 @@ class QuizHandlers:
                 )
                 leaderboard = self._score_store.leaderboard(score_identity)
             md = self._render_correct(
-                state.answer.name, result, earned_score, leaderboard
+                state.answer.name, result, earned_score, leaderboard, answer_analysis
             )
             return SubmitOutcome(
                 Verdict.CORRECT,
@@ -330,6 +360,7 @@ class QuizHandlers:
                     earned_score,
                     leaderboard,
                     result.next_actions,
+                    answer_analysis,
                 ),
             )
 
@@ -460,16 +491,16 @@ class QuizHandlers:
         result: GradingResult,
         earned_score: int | None,
         leaderboard: LeaderboardSnapshot | None,
+        answer_analysis: list[str],
     ) -> str:
-        a = result.analysis
         lines = [
             f"✅ 정답! **{name}**",
             "",
-            "**미니분석**",
-            f"- {a.price_line}",
-            f"- {a.rank_line}",
-            f"- {a.reason_line}",
+            "**정답 분석**",
         ]
+        lines.extend(
+            f"{index}. {line}" for index, line in enumerate(answer_analysis[:5], start=1)
+        )
         if leaderboard is not None and earned_score is not None:
             lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!", "", "**주간 TOP3**"])
             lines.extend(

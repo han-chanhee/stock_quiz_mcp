@@ -51,16 +51,41 @@ def sample_leaderboard() -> LeaderboardSnapshot:
 
 def collect_widget_payloads() -> dict[str, dict]:
     leaderboard = sample_leaderboard()
+    question_analysis = [
+        "정답 종목명은 아직 공개하지 않습니다.",
+        "등락 흐름과 가격대를 함께 봅니다.",
+        "섹터 단서는 문제 난도를 낮춥니다.",
+        "데이터 랭킹 단서는 보조 정보입니다.",
+        "공개된 단서만 조합해 정답을 좁힙니다.",
+    ]
+    answer_analysis = [
+        "삼성전자 현재가는 80,000원이고 등락률은 +1.20%입니다.",
+        "출제 시점 기준 흐름은 상승으로 분류됩니다.",
+        "섹터는 반도체, 가격대는 3만~10만원입니다.",
+        "데이터 랭킹 단서는 1위권입니다.",
+        "확인된 재료: 특별한 재료 확인 안 됨",
+    ]
     payloads = {
         "welcome": widgets.welcome_widget(),
         "mode_selection": widgets.mode_selection_widget(),
-        "price_quiz": widgets.price_quiz_widget("QZ-TEST", "주가 퀴즈", "현재가는?"),
-        "market_quiz": widgets.market_quiz_widget("QZ-MARKET", "시장 퀴즈", "가장 오른 종목은?", 5.2),
-        "company_quiz": widgets.company_quiz_widget("QZ-COMPANY", "종목 퀴즈", "이 회사는?"),
+        "price_quiz": widgets.price_quiz_widget(
+            "QZ-TEST", "주가 퀴즈", "현재가는?", analysis_lines=question_analysis
+        ),
+        "market_quiz": widgets.market_quiz_widget(
+            "QZ-MARKET",
+            "시장 퀴즈",
+            "가장 오른 종목은?",
+            5.2,
+            analysis_lines=question_analysis,
+        ),
+        "company_quiz": widgets.company_quiz_widget(
+            "QZ-COMPANY", "종목 퀴즈", "이 회사는?", analysis_lines=question_analysis
+        ),
         "chart_quiz": widgets.chart_quiz_widget(
             "QZ-CHART",
             "차트 퀴즈",
             "아래 차트 모양과 힌트로 종목명을 맞혀보세요.\n`▁▂▃▄▅▆▇`\n- 흐름: **상승**",
+            analysis_lines=question_analysis,
         ),
         "wrong_answer": widgets.wrong_answer_widget("UP", 1),
         "correct_answer": widgets.correct_answer_widget(
@@ -71,6 +96,7 @@ def collect_widget_payloads() -> dict[str, dict]:
             3,
             leaderboard,
             ["다음 퀴즈", "종료"],
+            answer_analysis,
         ),
         "already_solved": widgets.already_solved_widget(),
         "expired_quiz": widgets.expired_quiz_widget(),

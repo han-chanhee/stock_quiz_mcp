@@ -298,10 +298,10 @@ def _build_app(
     @mcp.tool(
         name="help",
         description=(
-            "Shows how to play 주식대결 (Stock Quiz Battle / 주식사전 퀴즈): the three "
-            "quiz modes (주가/시장/종목), why a nickname is needed for the weekly "
-            "ranking, and example phrases to start. Call this when the user asks how "
-            "the quiz works, what modes exist, or seems unsure how to start."
+            "Shows how to play 주식대결 (Stock Quiz Battle / 주식사전 퀴즈): the four "
+            "quiz modes (주가/시장/종목/차트), automatic ranking nickname behavior, "
+            "and example phrases to start. Call this when the user asks how the quiz "
+            "works, what modes exist, or seems unsure how to start."
         ),
         annotations=ToolAnnotations(title="How to Play", **_COMMON_ANN),
     )
@@ -320,8 +320,8 @@ def _build_app(
             "±3% correct), '시장' (guess the biggest gainer or loser over a period; "
             "direction is random), '종목' (guess the company from sector/price/market-cap "
             "hints), '차트' (guess the company from a rendered mini chart and clues). "
-            "The reply includes a short mode intro plus the quiz and a quiz_id; grade "
-            "answers with submit_answer. "
+            "The reply includes a short mode intro, the quiz, a distinct 5-line "
+            "problem analysis, live ranking, and a quiz_id; grade answers with submit_answer. "
             "Korean market only for now."
         ),
         annotations=ToolAnnotations(title="Stock Quiz", **_COMMON_ANN),
@@ -353,8 +353,9 @@ def _build_app(
             "Grades an answer for a 주식대결 (Stock Quiz Battle / 주식사전 퀴즈) quiz. "
             "Give the quiz_id and your answer (stock name or price number). "
             "nickname is optional; authenticated users keep their server-assigned display nickname. "
-            "Wrong answers return a staged hint; a correct answer returns a fact-only "
-            "mini-analysis. Never gives buy/sell advice."
+            "Wrong answers return a staged hint and live ranking; a correct answer returns "
+            "a different fact-only 5-line answer analysis, score delta, live ranking, and "
+            "next actions. Never gives buy/sell advice."
         ),
         annotations=ToolAnnotations(title="Submit Answer", **_COMMON_ANN),
     )

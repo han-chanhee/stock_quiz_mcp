@@ -254,7 +254,7 @@ class QuizBank:
             f"- 섹터: **{sector_txt}**",
         ]
         if answer.market_cap_rank is not None:
-            lines.append(f"- 시총 {answer.market_cap_rank}위권")
+            lines.append(f"- 랭킹 단서: {answer.market_cap_rank}위권")
         question = QuizQuestion(
             quiz_id=quiz_id,
             quiz_type=QuizType.COMPANY,

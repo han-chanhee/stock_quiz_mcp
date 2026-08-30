@@ -81,9 +81,21 @@ def _quiz_frame(
     expires_in_sec: int,
     name: str,
     copy_body: str,
+    analysis_lines: list[str] | None = None,
 ) -> dict:
     """출제 모드가 공유하는 공통 틀. 바디만 모드별 함수가 채워 넣는다."""
     expires_in_min = expires_in_sec // 60
+    analysis_children: list[dict] = []
+    analysis_copy = ""
+    if analysis_lines:
+        analysis_children = [
+            {"type": "Divider", "spacing": 12},
+            {"type": "Title", "value": "문제 분석", "size": "md", "weight": "bold"},
+            _analysis_list(analysis_lines),
+        ]
+        analysis_copy = "\n\n**문제 분석**\n" + "\n".join(
+            f"{index}. {line}" for index, line in enumerate(analysis_lines, start=1)
+        )
     children = [
         {
             "type": "Row",
@@ -115,6 +127,7 @@ def _quiz_frame(
         _text_lines(mode_intro, size="md", maxLines=3),
         {"type": "Divider", "spacing": 12},
         *body_children,
+        *analysis_children,
         {"type": "Divider", "spacing": 12},
         {"type": "Markdown", "value": f"정답 제출용 ID: `{quiz_id}`"},
         {
@@ -124,10 +137,36 @@ def _quiz_frame(
         },
     ]
     copy_text = (
-        f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}\n\n"
+        f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}{analysis_copy}\n\n"
         f"제출 ID: `{quiz_id}`"
     )
     return _stock_battle_card(children=children, copy_text=copy_text, name=name)
+
+
+def _analysis_list(lines: list[str]) -> dict:
+    return {
+        "type": "Col",
+        "gap": 6,
+        "children": [
+            {
+                "type": "Row",
+                "align": "start",
+                "gap": 8,
+                "children": [
+                    {
+                        "type": "Badge",
+                        "label": str(index),
+                        "color": "info",
+                        "variant": "soft",
+                        "pill": True,
+                        "size": "sm",
+                    },
+                    {"type": "Text", "value": line, "flex": 1, "size": "sm"},
+                ],
+            }
+            for index, line in enumerate(lines[:5], start=1)
+        ],
+    }
 
 
 def price_quiz_widget(
@@ -135,6 +174,7 @@ def price_quiz_widget(
     mode_intro: str,
     question_md: str,
     expires_in_sec: int = 1800,
+    analysis_lines: list[str] | None = None,
 ) -> dict:
     """주가 퀴즈 출제 위젯. 숫자 입력을 강조하는 바디."""
     body = [
@@ -148,7 +188,7 @@ def price_quiz_widget(
         },
     ]
     return _quiz_frame(
-        quiz_id, mode_intro, body, expires_in_sec, "price_quiz", question_md
+        quiz_id, mode_intro, body, expires_in_sec, "price_quiz", question_md, analysis_lines
     )
 
 
@@ -158,6 +198,7 @@ def market_quiz_widget(
     question_md: str,
     change_pct: float,
     expires_in_sec: int = 1800,
+    analysis_lines: list[str] | None = None,
 ) -> dict:
     """시장 퀴즈 출제 위젯. 등락률 방향에 따라 배지 색과 차트형 힌트를 다르게 준다."""
     direction_color = "success" if change_pct >= 0 else "danger"
@@ -184,6 +225,7 @@ def market_quiz_widget(
         expires_in_sec,
         "market_quiz",
         f"{question_md}\n\n차트형 힌트: `{sparkline}`",
+        analysis_lines,
     )
 
 
@@ -204,11 +246,12 @@ def company_quiz_widget(
     mode_intro: str,
     question_md: str,
     expires_in_sec: int = 1800,
+    analysis_lines: list[str] | None = None,
 ) -> dict:
     """종목 퀴즈 출제 위젯. 힌트 목록(섹터/현재가/시총순위)을 그대로 표시."""
     body = [{"type": "Markdown", "value": question_md}]
     return _quiz_frame(
-        quiz_id, mode_intro, body, expires_in_sec, "company_quiz", question_md
+        quiz_id, mode_intro, body, expires_in_sec, "company_quiz", question_md, analysis_lines
     )
 
 
@@ -217,6 +260,7 @@ def chart_quiz_widget(
     mode_intro: str,
     question_md: str,
     expires_in_sec: int = 1800,
+    analysis_lines: list[str] | None = None,
 ) -> dict:
     """차트 모양 종목 맞히기 위젯. 안전한 Text/Row 조합으로 막대 차트를 렌더링한다."""
     chart = _extract_chart_shape(question_md)
@@ -255,6 +299,7 @@ def chart_quiz_widget(
         expires_in_sec,
         "chart_quiz",
         f"{question_md}\n\n차트 이미지: {image_url}",
+        analysis_lines,
     )
 
 
@@ -285,23 +330,25 @@ def correct_answer_widget(
     earned_score: int | None,
     leaderboard: "LeaderboardSnapshot | None",
     next_actions: list[str],
+    analysis_lines: list[str] | None = None,
 ) -> dict:
     """정답 응답 위젯. 미니분석 + (있으면) 점수·TOP3 랭킹 + 다음 액션.
     {"widget": {...}, "copy_text": "...", "name": "correct_answer"}"""
+    detail_lines = analysis_lines or [price_line, rank_line, reason_line]
     children: list[dict] = [
         {"type": "Title", "value": f"정답! {answer_name}", "size": "lg", "weight": "bold"},
-        {"type": "Text", "value": price_line},
-        {"type": "Text", "value": rank_line},
-        {"type": "Text", "value": reason_line},
+        {"type": "Title", "value": "정답 분석", "size": "md", "weight": "bold"},
+        _analysis_list(detail_lines),
         {"type": "Divider", "spacing": 12},
     ]
     copy_lines = [
         f"✅ 정답! **{answer_name}**",
         "",
-        "**미니분석**",
-        f"- {price_line}",
-        f"- {rank_line}",
-        f"- {reason_line}",
+        "**정답 분석**",
+        *(
+            f"{index}. {line}"
+            for index, line in enumerate(detail_lines[:5], start=1)
+        ),
     ]
 
     if leaderboard is not None:

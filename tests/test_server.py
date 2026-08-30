@@ -131,25 +131,34 @@ async def test_quiz_modes_route_and_show_intro(cache):
     # 주가 모드
     p = handlers.quiz(QuizMode.PRICE, "테스터", Market.KR)
     assert "주가 퀴즈" in p.markdown and p.quiz_id
+    assert "문제 분석" in p.markdown
     assert store.get(p.quiz_id).quiz_type.value == "price"
 
     # 종목 모드
     s = handlers.quiz(QuizMode.STOCK, "테스터", Market.KR)
     assert "종목 퀴즈" in s.markdown and s.quiz_id
+    assert "문제 분석" in s.markdown
+    assert "5." in s.markdown
     assert store.get(s.quiz_id).quiz_type.value == "company"
     assert store.get(s.quiz_id).answer.name not in s.markdown  # 정답 미노출
 
     # 시장 모드 (방향 랜덤) — gainer/loser 중 하나
     m = handlers.quiz(QuizMode.MARKET, "테스터", Market.KR, Period.WEEK)
     assert "시장 퀴즈" in m.markdown and m.quiz_id
+    assert "문제 분석" in m.markdown
+    assert "5." in m.markdown
     assert store.get(m.quiz_id).quiz_type.value in ("gainer", "loser")
+    assert store.get(m.quiz_id).answer.name not in m.markdown
 
     # 차트 모드 — 렌더링용 차트 힌트 + 이름 맞히기
     c = handlers.quiz(QuizMode.CHART, "테스터", Market.KR)
     assert "차트 퀴즈" in c.markdown and c.quiz_id
+    assert "문제 분석" in c.markdown
+    assert "5." in c.markdown
     assert c.widget is not None
     assert c.widget["name"] == "chart_quiz"
     assert store.get(c.quiz_id).quiz_type.value == "company"
+    assert store.get(c.quiz_id).answer.name not in c.markdown
 
     # US는 모드와 무관하게 차단
     from server.handlers import _US_BLOCKED_MD
@@ -189,12 +198,13 @@ async def test_full_scenario_price_quiz(cache):
     assert wrong.widget is not None
     assert wrong.widget["name"] == "wrong_answer"
 
-    # 정답 → 미니분석 + 2택 + 면책 문구
+    # 정답 → 5줄 정답 분석 + 3택 + 면책 문구
     correct = await handlers.submit_answer(out.quiz_id, str(state.answer.price), "테스터")
     assert correct.verdict == Verdict.CORRECT
     assert correct.analysis is not None
     assert DISCLAIMER in correct.markdown
-    assert "미니분석" in correct.markdown          # 미니분석 자동 표시
+    assert "정답 분석" in correct.markdown
+    assert "5. 확인된 재료:" in correct.markdown
     assert correct.next_actions == ["다음 퀴즈", "다른 퀴즈", "종료"]
     assert correct.widget is not None
     assert correct.widget["name"] == "correct_answer"

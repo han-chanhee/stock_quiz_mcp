@@ -1,6 +1,11 @@
 """모듈 B: 퀴즈 출제/채점/힌트/미니분석 로직."""
 
-from .analysis import NO_REASON, build_analysis
+from .analysis import (
+    NO_REASON,
+    build_analysis,
+    build_answer_analysis_lines,
+    build_question_analysis,
+)
 from .grading import (
     PRICE_TOLERANCE,
     is_correct,
@@ -26,6 +31,8 @@ __all__ = [
     "pick_hint",
     "PRICE_TOLERANCE",
     "build_analysis",
+    "build_answer_analysis_lines",
+    "build_question_analysis",
     "NO_REASON",
     "chosung",
     "chosung_hint",

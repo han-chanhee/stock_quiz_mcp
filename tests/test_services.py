@@ -22,6 +22,8 @@ from services import (
     NO_REASON,
     QuizBank,
     build_analysis,
+    build_answer_analysis_lines,
+    build_question_analysis,
     chart_shape_for_snapshot,
     chosung,
     first_letter_hint,
@@ -209,6 +211,34 @@ def test_analysis_uses_reason_when_present():
     )
     ana = build_analysis(_snap(), reason=r)
     assert ana.reason_line == "HBM 수요 강세 보도"
+
+
+def test_question_analysis_is_five_lines_and_hides_answer_for_name_quizzes():
+    snap = _snap("삼성전자", rank=1)
+    hidden = build_question_analysis(snap, "chart")
+    public = build_question_analysis(snap, "price")
+
+    assert len(hidden) == 5
+    assert len(public) == 5
+    assert all(snap.name not in line for line in hidden)
+    assert any(snap.name in line for line in public)
+
+
+def test_answer_analysis_is_five_lines_and_differs_from_question_analysis():
+    snap = _snap("삼성전자", rank=1)
+    reason = Reason(
+        ticker="005930",
+        text="HBM 수요 강세 보도",
+        source_url="https://x.example/n",
+        published_at=datetime.now(_KST),
+    )
+    question_lines = build_question_analysis(snap, "company")
+    answer_lines = build_answer_analysis_lines(snap, reason)
+
+    assert len(answer_lines) == 5
+    assert answer_lines != question_lines
+    assert any(snap.name in line for line in answer_lines)
+    assert answer_lines[-1] == "확인된 재료: HBM 수요 강세 보도"
 
 
 def test_reason_without_source_url_raises():
