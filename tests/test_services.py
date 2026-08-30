@@ -22,6 +22,7 @@ from services import (
     NO_REASON,
     QuizBank,
     build_analysis,
+    chart_shape_for_snapshot,
     chosung,
     first_letter_hint,
     is_correct,
@@ -72,6 +73,17 @@ def test_movers_quiz_hides_name():
         q, state = bank.movers_quiz(ranking, qtype, Market.KR)
         assert state.answer.name not in q.question_md  # 정답 미노출
         assert len(state.hints_precomputed) == 2       # 초성/첫글자 precompute
+
+
+def test_chart_quiz_renders_shape_without_answer_name():
+    bank = QuizBank(rng=random.Random(0))
+    q, state = bank.chart_quiz(_pool())
+
+    assert state.quiz_type == QuizType.COMPANY
+    assert state.answer.name not in q.question_md
+    assert chart_shape_for_snapshot(state.answer) in q.question_md
+    assert "차트 모양" in q.question_md
+    assert len(state.hints_precomputed) == 2
 
 
 def test_precomputed_hints_never_leak_full_name():

@@ -144,6 +144,13 @@ async def test_quiz_modes_route_and_show_intro(cache):
     assert "시장 퀴즈" in m.markdown and m.quiz_id
     assert store.get(m.quiz_id).quiz_type.value in ("gainer", "loser")
 
+    # 차트 모드 — 렌더링용 차트 힌트 + 이름 맞히기
+    c = handlers.quiz(QuizMode.CHART, "테스터", Market.KR)
+    assert "차트 퀴즈" in c.markdown and c.quiz_id
+    assert c.widget is not None
+    assert c.widget["name"] == "chart_quiz"
+    assert store.get(c.quiz_id).quiz_type.value == "company"
+
     # US는 모드와 무관하게 차단
     from server.handlers import _US_BLOCKED_MD
     assert handlers.quiz(QuizMode.PRICE, "테스터", Market.US).markdown == _US_BLOCKED_MD
@@ -664,6 +671,35 @@ def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
     assert response.headers["location"] == (
         "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/mcp"
     )
+
+
+def test_chart_image_route_renders_png(cache):
+    from server.main import _runtime_middleware, build_app
+
+    store = QuizStore()
+    app = build_app(
+        cache,
+        store,
+        ScoreStore(),
+        QuizBank(rng=random.Random(0)),
+    ).http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+    handlers = QuizHandlers(cache, store, ScoreStore(), QuizBank(rng=random.Random(0)))
+    outcome = handlers.chart_quiz(Market.KR)
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.get(f"/quiz/chart/{outcome.quiz_id}.png")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG")
 
 
 def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, tmp_path):

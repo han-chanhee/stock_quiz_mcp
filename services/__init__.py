@@ -12,10 +12,11 @@ from .grading import (
     resolve_alias,
 )
 from .hangul import chosung, chosung_hint, first_letter_hint, first_two_hint
-from .quiz_bank import QuizBank
+from .quiz_bank import QuizBank, chart_shape_for_snapshot
 
 __all__ = [
     "QuizBank",
+    "chart_shape_for_snapshot",
     "is_correct",
     "judge_name",
     "judge_price",

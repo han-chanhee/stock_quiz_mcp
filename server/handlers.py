@@ -42,6 +42,7 @@ class QuizMode(str, Enum):
     PRICE = "주가"      # 주가 퀴즈: 현재가 맞히기
     MARKET = "시장"     # 시장 퀴즈: 많이 오른/떨어진 종목 맞히기(방향 랜덤)
     STOCK = "종목"      # 종목 퀴즈: 섹터·가격·시총 힌트로 회사 맞히기
+    CHART = "차트"      # 차트 모양+힌트로 종목 맞히기
 
 
 # 모드 선택 시 문제 앞에 붙는 설명 1줄 (팩트만, 권유 문구 없음)
@@ -49,6 +50,7 @@ _MODE_INTRO = {
     QuizMode.PRICE: "📈 **주가 퀴즈** — 종목의 현재 주가를 맞혀보세요. 정답가 ±3% 이내면 정답!",
     QuizMode.MARKET: "📊 **시장 퀴즈** — 기간 내 가장 많이 오르거나 떨어진 종목을 맞혀보세요.",
     QuizMode.STOCK: "🏢 **종목 퀴즈** — 섹터·현재가·시총순위 힌트로 어떤 회사인지 맞혀보세요.",
+    QuizMode.CHART: "📉 **차트 퀴즈** — 차트 모양과 단서로 어떤 종목인지 맞혀보세요.",
 }
 
 
@@ -113,7 +115,7 @@ class QuizHandlers:
         if mode is None:
             return self._with_live_leaderboard(QuizOutcome(
                 quiz_id="",
-                markdown="모드를 골라주세요. 주가 / 시장 / 종목 중에서 선택하면 바로 시작합니다.",
+                markdown="모드를 골라주세요. 주가 / 시장 / 종목 / 차트 중에서 선택하면 바로 시작합니다.",
                 widget=widgets.mode_selection_widget(),
             ), nickname, identity_key)
 
@@ -130,10 +132,12 @@ class QuizHandlers:
                 outcome = self.top_gainers_quiz(market, period)
             else:
                 outcome = self.top_losers_quiz(market, period)
+        elif mode == QuizMode.CHART:
+            outcome = self.chart_quiz(market)
         else:  # 방어적: 알 수 없는 모드
             return QuizOutcome(
                 quiz_id="",
-                markdown="주가 / 시장 / 종목 중에서 골라주세요.",
+                markdown="주가 / 시장 / 종목 / 차트 중에서 골라주세요.",
                 widget=widgets.mode_unknown_widget(),
             )
 
@@ -156,14 +160,14 @@ class QuizHandlers:
             )
         return None
 
-    def _register(self, question, state) -> QuizOutcome:
+    def _register(self, question, state, mode_override: QuizMode | None = None) -> QuizOutcome:
         self._store.put(state)
         md = (
             f"{question.question_md}\n\n"
             f"`quiz_id`: **{question.quiz_id}** (제한시간 30분)\n"
             f"→ `submit_answer(quiz_id, answer)`로 정답을 제출하세요."
         )
-        mode = {
+        mode = mode_override or {
             QuizType.PRICE: QuizMode.PRICE,
             QuizType.GAINER: QuizMode.MARKET,
             QuizType.LOSER: QuizMode.MARKET,
@@ -181,6 +185,10 @@ class QuizHandlers:
                 question.question_md,
                 state.answer.change_pct,
                 _EXPIRES_SEC,
+            )
+        elif mode == QuizMode.CHART:
+            widget = widgets.chart_quiz_widget(
+                question.quiz_id, mode_intro, question.question_md, _EXPIRES_SEC
             )
         else:  # QuizMode.STOCK
             widget = widgets.company_quiz_widget(
@@ -239,6 +247,18 @@ class QuizHandlers:
             )
         question, state = self._bank.company_quiz(pool, sector)
         return self._register(question, state)
+
+    def chart_quiz(self, market: Market = Market.KR) -> QuizOutcome:
+        if (blocked := self._us_guard(market)) is not None:
+            return blocked
+        movers = [
+            item.snapshot
+            for direction in ("up", "down")
+            for item in self._cache.movers(market, Period.TODAY, direction)
+        ]
+        pool = movers or self._cache.sector_pool() or self._cache.top20(market)
+        question, state = self._bank.chart_quiz(pool)
+        return self._register(question, state, QuizMode.CHART)
 
     # ── 채점 ─────────────────────────────────────────────────
 

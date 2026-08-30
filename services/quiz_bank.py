@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import random
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -38,6 +39,7 @@ _PERIOD_LABEL = {
 }
 
 _MARKET_LABEL = {Market.KR: "코스피/코스닥", Market.US: "미국 증시"}
+_SPARK_BLOCKS = "▁▂▃▄▅▆▇"
 
 
 def _new_id() -> str:
@@ -54,6 +56,56 @@ def _fmt_price(snap: StockSnapshot) -> str:
 def _fmt_pct(pct: float) -> str:
     sign = "+" if pct > 0 else ""
     return f"{sign}{pct:.2f}%"
+
+
+def _price_band(snap: StockSnapshot) -> str:
+    if snap.market == Market.US:
+        if snap.price < 20:
+            return "$20 미만"
+        if snap.price < 100:
+            return "$20~$100"
+        return "$100 이상"
+    if snap.price < 5_000:
+        return "5천원 미만"
+    if snap.price < 30_000:
+        return "5천~3만원"
+    if snap.price < 100_000:
+        return "3만~10만원"
+    return "10만원 이상"
+
+
+def _chart_direction_label(change_pct: float) -> str:
+    if change_pct >= 3:
+        return "강한 상승"
+    if change_pct > 0:
+        return "상승"
+    if change_pct <= -3:
+        return "강한 하락"
+    if change_pct < 0:
+        return "하락"
+    return "보합권"
+
+
+def chart_points_for_snapshot(snap: StockSnapshot) -> list[float]:
+    """종목 스냅샷에서 익명화된 7포인트 미니 차트를 만든다.
+
+    현재 데이터에는 분봉/일봉 시계열이 없으므로 등락 방향과 종목별 seed로
+    모양을 만든다. 종목명은 쓰지 않고 ticker 기반 미세 흔들림만 더한다.
+    """
+    seed = hashlib.sha256(snap.ticker.encode("utf-8")).digest()
+    wobble = [((byte % 9) - 4) / 100 for byte in seed[:7]]
+    if snap.change_pct >= 1:
+        base = [0.16, 0.22, 0.30, 0.42, 0.52, 0.70, 0.88]
+    elif snap.change_pct <= -1:
+        base = [0.88, 0.72, 0.60, 0.48, 0.36, 0.24, 0.16]
+    else:
+        base = [0.48, 0.51, 0.49, 0.52, 0.50, 0.53, 0.51]
+    return [min(0.95, max(0.05, value + bump)) for value, bump in zip(base, wobble)]
+
+
+def chart_shape_for_snapshot(snap: StockSnapshot) -> str:
+    points = chart_points_for_snapshot(snap)
+    return "".join(_SPARK_BLOCKS[min(6, max(0, int(point * 7)))] for point in points)
 
 
 class QuizBank:
@@ -175,6 +227,39 @@ class QuizBank:
             quiz_type=QuizType.COMPANY,
             question_md=question_md,
             hint_policy=hint_policy,
+        )
+        state = QuizState(
+            quiz_id=quiz_id,
+            quiz_type=QuizType.COMPANY,
+            answer=answer,
+            hints_precomputed=self._name_hints(answer),
+            created_at=self._clock(),
+        )
+        return question, state
+
+    # ── 5. chart_quiz ───────────────────────────────────────
+
+    def chart_quiz(self, pool: list[StockSnapshot]) -> tuple[QuizQuestion, QuizState]:
+        if not pool:
+            raise ValueError("chart_quiz 풀이 비어 있음")
+        answer = self._rng.choice(pool)
+        quiz_id = _new_id()
+        chart = chart_shape_for_snapshot(answer)
+        sector_txt = answer.sector.value if answer.sector else "미분류"
+        lines = [
+            "아래 차트 모양과 힌트로 종목명을 맞혀보세요.",
+            f"`{chart}`",
+            f"- 흐름: **{_chart_direction_label(answer.change_pct)}**",
+            f"- 가격대: {_price_band(answer)}",
+            f"- 섹터: **{sector_txt}**",
+        ]
+        if answer.market_cap_rank is not None:
+            lines.append(f"- 시총 {answer.market_cap_rank}위권")
+        question = QuizQuestion(
+            quiz_id=quiz_id,
+            quiz_type=QuizType.COMPANY,
+            question_md="\n".join(lines),
+            hint_policy="chosung" if answer.market == Market.KR else "first_letter",
         )
         state = QuizState(
             quiz_id=quiz_id,

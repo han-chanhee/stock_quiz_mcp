@@ -3,10 +3,23 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from contracts.schemas import LeaderboardSnapshot
+
+
+_DEFAULT_PUBLIC_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
+
+
+def _public_base_url() -> str:
+    return (
+        os.environ.get("PUBLIC_BASE_URL", "").strip()
+        or os.environ.get("OAUTH_BASE_URL", "").strip()
+        or _DEFAULT_PUBLIC_BASE_URL
+    ).rstrip("/")
 
 
 def _text_lines(value: str, **properties: object) -> dict:
@@ -165,6 +178,57 @@ def company_quiz_widget(
     return _quiz_frame(
         quiz_id, mode_intro, body, expires_in_sec, "company_quiz", question_md
     )
+
+
+def chart_quiz_widget(
+    quiz_id: str,
+    mode_intro: str,
+    question_md: str,
+    expires_in_sec: int = 1800,
+) -> dict:
+    """차트 모양 종목 맞히기 위젯. 안전한 Text/Row 조합으로 막대 차트를 렌더링한다."""
+    chart = _extract_chart_shape(question_md)
+    image_url = f"{_public_base_url()}/quiz/chart/{quiz_id}.png"
+    chart_row = {
+        "type": "Row",
+        "align": "end",
+        "gap": 4,
+        "children": [
+            {
+                "type": "Text",
+                "value": char,
+                "size": "lg",
+                "weight": "bold",
+            }
+            for char in chart
+        ],
+    }
+    body = [
+        {"type": "Title", "value": "차트 모양", "size": "md", "weight": "bold"},
+        {"type": "Markdown", "value": f"![차트 힌트]({image_url})"},
+        chart_row,
+        {"type": "Markdown", "value": question_md},
+        {
+            "type": "Badge",
+            "label": "종목명을 입력하세요",
+            "color": "info",
+            "variant": "soft",
+            "size": "sm",
+        },
+    ]
+    return _quiz_frame(
+        quiz_id,
+        mode_intro,
+        body,
+        expires_in_sec,
+        "chart_quiz",
+        f"{question_md}\n\n차트 이미지: {image_url}",
+    )
+
+
+def _extract_chart_shape(question_md: str) -> str:
+    match = re.search(r"`([▁▂▃▄▅▆▇]+)`", question_md)
+    return match.group(1) if match else "▃▄▅▄▆▅▇"
 
 
 def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
@@ -430,6 +494,15 @@ def welcome_widget() -> dict:
                 {"type": "Text", "value": "종목 — 섹터·가격·시총 힌트로 회사 맞히기", "flex": 1},
             ],
         },
+        {
+            "type": "Row",
+            "align": "center",
+            "gap": 8,
+            "children": [
+                {"type": "Icon", "name": "activity", "color": "info", "size": "sm"},
+                {"type": "Text", "value": "차트 — 미니 차트와 단서로 종목 맞히기", "flex": 1},
+            ],
+        },
     ]
     children = [
         {"type": "Title", "value": "주식대결에 오신 걸 환영해요!", "size": "lg", "weight": "bold"},
@@ -457,7 +530,8 @@ def welcome_widget() -> dict:
         "코스피/코스닥 종목으로 즐기는 주식 퀴즈입니다.\n\n"
         "- 📈 주가 — 종목 현재가 맞히기(±3%)\n"
         "- 📊 시장 — 가장 오르거나 떨어진 종목 맞히기\n"
-        "- 🏢 종목 — 섹터·가격·시총 힌트로 회사 맞히기\n\n"
+        "- 🏢 종목 — 섹터·가격·시총 힌트로 회사 맞히기\n"
+        "- 📉 차트 — 미니 차트와 단서로 종목 맞히기\n\n"
         "로그인한 사용자는 자동 닉네임으로 주간 랭킹(매주 초기화)에 참여합니다.\n\n"
         '예: "주가 모드로 퀴즈 내줘."'
     )
@@ -479,6 +553,7 @@ def mode_selection_widget() -> dict:
                 {"type": "Badge", "label": "주가", "color": "info", "variant": "soft"},
                 {"type": "Badge", "label": "시장", "color": "info", "variant": "soft"},
                 {"type": "Badge", "label": "종목", "color": "info", "variant": "soft"},
+                {"type": "Badge", "label": "차트", "color": "info", "variant": "soft"},
             ],
         },
         {
@@ -489,7 +564,7 @@ def mode_selection_widget() -> dict:
     ]
     copy_text = (
         "모드를 골라주세요.\n\n"
-        "주가 / 시장 / 종목 중 하나를 골라주세요.\n\n"
+        "주가 / 시장 / 종목 / 차트 중 하나를 골라주세요.\n\n"
         '예: "종목 모드로 퀴즈 내줘."'
     )
     return {

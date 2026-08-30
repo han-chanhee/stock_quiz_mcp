@@ -32,7 +32,7 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from contracts.schemas import Market, Period, Sector
@@ -47,6 +47,7 @@ from .auth import (
     register_auth_routes,
     register_oauth_protocol_routes,
 )
+from .chart_images import chart_png
 from .handlers import QuizHandlers, QuizMode
 from . import widgets
 
@@ -310,11 +311,12 @@ def _build_app(
             "Requires mode; nickname is optional because the server assigns a stable "
             "display nickname for authenticated users. If mode is missing, call this "
             "tool anyway with what you have; it replies with a short guide instead of erroring. "
-            "Pick one of three modes: '주가' (guess a random stock's current price, "
+            "Pick one of four modes: '주가' (guess a random stock's current price, "
             "±3% correct), '시장' (guess the biggest gainer or loser over a period; "
             "direction is random), '종목' (guess the company from sector/price/market-cap "
-            "hints). The reply includes a short mode intro plus the quiz and a quiz_id; "
-            "grade answers with submit_answer. "
+            "hints), '차트' (guess the company from a rendered mini chart and clues). "
+            "The reply includes a short mode intro plus the quiz and a quiz_id; grade "
+            "answers with submit_answer. "
             "Korean market only for now."
         ),
         annotations=ToolAnnotations(title="Stock Quiz", **_COMMON_ANN),
@@ -381,6 +383,18 @@ def _build_app(
                     cache.data_as_of.isoformat() if cache.data_as_of else None
                 ),
             }
+        )
+
+    @mcp.custom_route("/quiz/chart/{quiz_id}.png", methods=["GET"])
+    async def chart_image_get(request: Request) -> Response:
+        quiz_id = request.path_params.get("quiz_id", "")
+        state = store.get(str(quiz_id))
+        if state is None:
+            return PlainTextResponse("chart not found", status_code=404)
+        return Response(
+            chart_png(state.answer),
+            media_type="image/png",
+            headers={"Cache-Control": "no-store"},
         )
 
     @mcp.custom_route("/mcp/", methods=["POST", "DELETE"], include_in_schema=False)
