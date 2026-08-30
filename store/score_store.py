@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
 from bisect import bisect_left, insort
@@ -28,6 +29,7 @@ _MARKDOWN_UNSAFE = str.maketrans({
     "<": "(",
     ">": ")",
 })
+_AUTO_NICKNAME_PREFIX = "주식러"
 
 
 class ScoreStore:
@@ -78,6 +80,16 @@ class ScoreStore:
             return text[:MAX_DISPLAY_NAME_LEN - 1] + "…"
         return text
 
+    def generated_display_name(self, identity_key: str) -> str:
+        """OAuth identity별로 안정적인 자동 닉네임을 만든다."""
+        digest = hashlib.sha256(identity_key.encode("utf-8")).hexdigest()
+        suffix = int(digest[:8], 16) % 10000
+        return f"{_AUTO_NICKNAME_PREFIX}{suffix:04d}"
+
+    def display_name_for(self, identity_key: str) -> str | None:
+        entry = self._entries.get(identity_key)
+        return entry.display_name if entry is not None else None
+
     def _quarantine_snapshot(self) -> None:
         if not self._snapshot_path.exists():
             return
@@ -125,14 +137,19 @@ class ScoreStore:
         """오답 확정 시 호출. 이번 감점 값을 반환한다."""
         return await self._apply_delta(identity_key, display_name, WRONG_PENALTY)
 
-    def leaderboard(self, identity_key: str, top_n: int = 3) -> LeaderboardSnapshot:
+    def leaderboard(
+        self,
+        identity_key: str,
+        top_n: int = 3,
+        display_name: str | None = None,
+    ) -> LeaderboardSnapshot:
         """TOP N + 본인 정확한 순위. identity_key가 아직 없으면 score=0인 엔트리로 취급."""
         top = [self._entries[key].model_copy() for _, _, key in self._ranking[:top_n]]
         entry = self._entries.get(identity_key)
         if entry is None:
             my_entry = ScoreEntry(
                 identity_key=identity_key,
-                display_name=identity_key,
+                display_name=self._clean_display_name(display_name or identity_key),
                 score=0,
                 updated_at=self._now(),
             )

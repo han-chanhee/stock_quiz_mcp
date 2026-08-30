@@ -105,7 +105,7 @@ def test_welcome_widget_payload() -> None:
 def test_mode_selection_widget_payload() -> None:
     payload = mode_selection_widget()
     _assert_payload(payload, "mode_selection")
-    assert "닉네임" in payload["copy_text"]
+    assert "모드" in payload["copy_text"]
 
 
 def test_notice_widgets_payload() -> None:

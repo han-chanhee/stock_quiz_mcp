@@ -307,13 +307,14 @@ def _build_app(
         name="quiz",
         description=(
             "Starts a stock quiz for 주식대결 (Stock Quiz Battle / 주식사전 퀴즈). "
-            "Requires mode and nickname — if either is missing, call this tool anyway "
-            "with what you have; it replies with a short guide instead of erroring. "
+            "Requires mode; nickname is optional because the server assigns a stable "
+            "display nickname for authenticated users. If mode is missing, call this "
+            "tool anyway with what you have; it replies with a short guide instead of erroring. "
             "Pick one of three modes: '주가' (guess a random stock's current price, "
             "±3% correct), '시장' (guess the biggest gainer or loser over a period; "
             "direction is random), '종목' (guess the company from sector/price/market-cap "
             "hints). The reply includes a short mode intro plus the quiz and a quiz_id; "
-            "grade answers with submit_answer. nickname (닉네임) is required for scoring. "
+            "grade answers with submit_answer. "
             "Korean market only for now."
         ),
         annotations=ToolAnnotations(title="Stock Quiz", **_COMMON_ANN),
@@ -344,7 +345,7 @@ def _build_app(
         description=(
             "Grades an answer for a 주식대결 (Stock Quiz Battle / 주식사전 퀴즈) quiz. "
             "Give the quiz_id and your answer (stock name or price number). "
-            "nickname (닉네임) is required for scoring and ranking. "
+            "nickname is optional; authenticated users keep their server-assigned display nickname. "
             "Wrong answers return a staged hint; a correct answer returns a fact-only "
             "mini-analysis. Never gives buy/sell advice."
         ),
@@ -353,7 +354,7 @@ def _build_app(
     async def submit_answer(
         quiz_id: str,
         answer: str,
-        nickname: str,
+        nickname: str | None = None,
         ctx: Context | None = None,
     ) -> str:
         try:

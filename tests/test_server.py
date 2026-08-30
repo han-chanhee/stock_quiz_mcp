@@ -18,7 +18,7 @@ from clients import MockMarketClient
 from batch import DailyBatch, MockReasonProvider
 from contracts.schemas import Market, Period, Verdict
 from server.cache import DataValidationError, QuizCache
-from server.handlers import DISCLAIMER, QuizHandlers
+from server.handlers import DISCLAIMER, QuizHandlers, QuizMode
 from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
 
@@ -310,7 +310,7 @@ async def test_quiz_widget_shows_live_leaderboard(cache):
 
 @pytest.mark.asyncio
 async def test_oauth_identity_key_scores_under_stable_identity(cache):
-    """OAuth/플랫폼 식별자가 있으면 닉네임은 표시명, 점수 키는 식별자로 쓴다."""
+    """OAuth/플랫폼 식별자가 있으면 자동 닉네임을 표시명, subject를 점수 키로 쓴다."""
     store = QuizStore()
     score_store = ScoreStore()
     handlers = QuizHandlers(cache, store, score_store)
@@ -326,9 +326,65 @@ async def test_oauth_identity_key_scores_under_stable_identity(cache):
 
     assert correct.leaderboard is not None
     assert correct.leaderboard.my_entry.identity_key == "oauth-user-1"
-    assert correct.leaderboard.my_entry.display_name == "화면닉"
+    assert correct.leaderboard.my_entry.display_name.startswith("주식러")
     assert score_store.leaderboard("oauth-user-1").my_entry.score == 3
     assert score_store.leaderboard("화면닉").my_entry.score == 0
+
+
+@pytest.mark.asyncio
+async def test_oauth_identity_keeps_one_entry_when_nickname_changes(cache):
+    """같은 OAuth subject는 사용자가 다른 닉네임을 말해도 한 랭킹 엔트리로 합산된다."""
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store)
+    first = handlers.price_quiz(Market.KR)
+    first_state = store.get(first.quiz_id)
+
+    wrong = await handlers.submit_answer(
+        first.quiz_id,
+        str(first_state.answer.price * 0.5),
+        "바보",
+        identity_key="oauth-user-same",
+    )
+    second = handlers.price_quiz(Market.KR)
+    second_state = store.get(second.quiz_id)
+    correct = await handlers.submit_answer(
+        second.quiz_id,
+        str(second_state.answer.price),
+        "보바",
+        identity_key="oauth-user-same",
+    )
+
+    assert wrong.leaderboard is not None
+    assert correct.leaderboard is not None
+    assert correct.leaderboard.my_entry.identity_key == "oauth-user-same"
+    assert correct.leaderboard.my_entry.score == 2
+    assert correct.leaderboard.my_entry.display_name == wrong.leaderboard.my_entry.display_name
+    assert score_store.leaderboard("바보").my_entry.score == 0
+    assert score_store.leaderboard("보바").my_entry.score == 0
+
+
+@pytest.mark.asyncio
+async def test_oauth_identity_can_score_without_nickname(cache):
+    """로그인 사용자는 닉네임을 입력하지 않아도 자동 닉네임으로 점수와 랭킹을 받는다."""
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store)
+    out = handlers.quiz(None, None, identity_key="oauth-no-name")
+    assert out.widget is not None
+    assert "주식러" in out.widget["copy_text"]
+
+    quiz = handlers.quiz(QuizMode.PRICE, None, identity_key="oauth-no-name")
+    state = store.get(quiz.quiz_id)
+    correct = await handlers.submit_answer(
+        quiz.quiz_id,
+        str(state.answer.price),
+        identity_key="oauth-no-name",
+    )
+
+    assert correct.leaderboard is not None
+    assert correct.leaderboard.my_entry.score == 3
+    assert correct.leaderboard.my_entry.display_name.startswith("주식러")
 
 
 @pytest.mark.asyncio
@@ -555,7 +611,7 @@ async def test_tool_scoring_ignores_oauth_client_id_without_user_subject(cache):
 
 @pytest.mark.asyncio
 async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
-    """OAuth subject가 있으면 닉네임이 아니라 subject 기준으로 점수를 적립한다."""
+    """OAuth subject가 있으면 닉네임 없이도 subject 기준으로 점수를 적립한다."""
     import server.main as main
 
     class FakeAccessToken:
@@ -569,18 +625,17 @@ async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
 
     quiz_tool = await app.get_tool("quiz")
     submit_tool = await app.get_tool("submit_answer")
-    quiz_tool.fn(mode="주가", nickname="같은닉네임")
+    quiz_tool.fn(mode="주가")
 
     quiz_id = next(iter(store._data))
     state = store.get(quiz_id)
     await submit_tool.fn(
         quiz_id=quiz_id,
         answer=str(state.answer.price),
-        nickname="같은닉네임",
     )
 
     assert score_store.leaderboard("playmcp-user-subject-1").my_entry.score == 3
-    assert score_store.leaderboard("같은닉네임").my_entry.score == 0
+    assert score_store.leaderboard("playmcp-user-subject-1").my_entry.display_name.startswith("주식러")
 
 
 def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):

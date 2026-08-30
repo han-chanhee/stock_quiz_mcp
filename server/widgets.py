@@ -225,7 +225,10 @@ def correct_answer_widget(
         children.append(
             {
                 "type": "Text",
-                "value": f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위",
+                "value": (
+                    f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+                    f"· 닉네임 {leaderboard.my_entry.display_name}"
+                ),
                 "weight": "bold",
             }
         )
@@ -235,7 +238,8 @@ def correct_answer_widget(
             for rank, entry in enumerate(leaderboard.top[:3], start=1)
         )
         copy_lines.append(
-            f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+            f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+            f"· 닉네임 {leaderboard.my_entry.display_name}"
         )
 
     if next_actions:
@@ -273,7 +277,10 @@ def with_leaderboard(
             leaderboard_listview_rows(leaderboard),
             {
                 "type": "Text",
-                "value": f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위",
+                "value": (
+                    f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+                    f"· 닉네임 {leaderboard.my_entry.display_name}"
+                ),
                 "weight": "bold",
             },
         ]
@@ -292,7 +299,8 @@ def with_leaderboard(
         for rank, entry in enumerate(leaderboard.top[:3], start=1)
     )
     ranking_lines.append(
-        f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+        f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+        f"· 닉네임 {leaderboard.my_entry.display_name}"
     )
     return {
         "widget": widget,
@@ -393,7 +401,7 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
 
 
 def welcome_widget() -> dict:
-    """help 툴 응답 위젯. 서비스 소개 + 3모드 + 닉네임 필요성 + 발화 예시."""
+    """help 툴 응답 위젯. 서비스 소개 + 3모드 + 자동 닉네임 안내 + 발화 예시."""
     mode_rows = [
         {
             "type": "Row",
@@ -435,12 +443,12 @@ def welcome_widget() -> dict:
         {"type": "Divider", "spacing": 12},
         {
             "type": "Text",
-            "value": "닉네임을 알려주면 정답 시 주간 랭킹(매주 초기화)에 참여할 수 있어요.",
+            "value": "로그인한 사용자는 자동 닉네임으로 주간 랭킹(매주 초기화)에 참여해요.",
             "size": "sm",
         },
         {
             "type": "Caption",
-            "value": '예: "주가 모드로 퀴즈 내줘. 닉네임은 찬희야."',
+            "value": '예: "주가 모드로 퀴즈 내줘."',
             "size": "sm",
         },
     ]
@@ -450,8 +458,8 @@ def welcome_widget() -> dict:
         "- 📈 주가 — 종목 현재가 맞히기(±3%)\n"
         "- 📊 시장 — 가장 오르거나 떨어진 종목 맞히기\n"
         "- 🏢 종목 — 섹터·가격·시총 힌트로 회사 맞히기\n\n"
-        "닉네임을 알려주면 정답 시 주간 랭킹(매주 초기화)에 참여할 수 있어요.\n\n"
-        '예: "주가 모드로 퀴즈 내줘. 닉네임은 찬희야."'
+        "로그인한 사용자는 자동 닉네임으로 주간 랭킹(매주 초기화)에 참여합니다.\n\n"
+        '예: "주가 모드로 퀴즈 내줘."'
     )
     return {
         "widget": {"type": "Card", "size": "full", "padding": 16, "children": children},
@@ -461,9 +469,9 @@ def welcome_widget() -> dict:
 
 
 def mode_selection_widget() -> dict:
-    """quiz가 mode/nickname 없이 호출됐을 때 반환하는 안내 위젯."""
+    """quiz가 mode 없이 호출됐을 때 반환하는 안내 위젯."""
     children = [
-        {"type": "Text", "value": "모드와 닉네임을 알려주세요.", "weight": "semibold"},
+        {"type": "Text", "value": "모드를 골라주세요.", "weight": "semibold"},
         {
             "type": "Row",
             "gap": 6,
@@ -475,14 +483,14 @@ def mode_selection_widget() -> dict:
         },
         {
             "type": "Caption",
-            "value": '예: "종목 모드로 퀴즈 내줘. 닉네임은 찬희야."',
+            "value": '예: "종목 모드로 퀴즈 내줘."',
             "size": "sm",
         },
     ]
     copy_text = (
-        "모드와 닉네임을 알려주세요.\n\n"
+        "모드를 골라주세요.\n\n"
         "주가 / 시장 / 종목 중 하나를 골라주세요.\n\n"
-        '예: "종목 모드로 퀴즈 내줘. 닉네임은 찬희야."'
+        '예: "종목 모드로 퀴즈 내줘."'
     )
     return {
         "widget": {"type": "Card", "children": children},

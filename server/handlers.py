@@ -108,12 +108,12 @@ class QuizHandlers:
     ) -> QuizOutcome:
         """모드 하나를 받아 [모드 설명 + 퀴즈]를 반환한다. 입력은 3모드로 강제된다.
 
-        mode 또는 nickname이 없으면(생략 호출) 안내 위젯을 quiz_id 없이 반환한다.
+        mode가 없으면 안내 위젯을 반환한다. 닉네임은 OAuth 계정 기준 자동 생성된다.
         """
-        if mode is None or nickname is None or not nickname.strip():
+        if mode is None:
             return self._with_live_leaderboard(QuizOutcome(
                 quiz_id="",
-                markdown="모드와 닉네임을 알려주세요. 주가 / 시장 / 종목 중에서 골라주세요.",
+                markdown="모드를 골라주세요. 주가 / 시장 / 종목 중에서 선택하면 바로 시작합니다.",
                 widget=widgets.mode_selection_widget(),
             ), nickname, identity_key)
 
@@ -246,10 +246,11 @@ class QuizHandlers:
         self,
         quiz_id: str,
         answer: str,
-        nickname: str,
+        nickname: str | None = None,
         identity_key: str | None = None,
     ) -> SubmitOutcome:
         score_identity = self._score_identity(nickname, identity_key)
+        display_name = self._score_display_name(nickname, identity_key, score_identity)
         state, miss = self._store.get_state_or_verdict(quiz_id)
         if state is None:
             if miss == Verdict.EXPIRED:
@@ -257,12 +258,12 @@ class QuizHandlers:
                     Verdict.EXPIRED,
                     "⏰ 만료된 퀴즈입니다. 새 퀴즈를 출제해주세요.",
                     widget=widgets.expired_quiz_widget(),
-                ), score_identity)
+                ), score_identity, display_name)
             return self._with_submit_leaderboard(SubmitOutcome(
                 Verdict.NOT_FOUND,
                 "❓ 존재하지 않는 quiz_id 입니다.",
                 widget=widgets.quiz_not_found_widget(),
-            ), score_identity)
+            ), score_identity, display_name)
 
         aliases = self._cache.aliases()
         if is_correct(state, answer, aliases):
@@ -273,7 +274,7 @@ class QuizHandlers:
                     "🏁 이미 정답 처리된 퀴즈입니다.",
                     attempts=(solved_state.attempts if solved_state else 0),
                     widget=widgets.already_solved_widget(),
-                ), score_identity)
+                ), score_identity, display_name)
             reason = self._cache.reason(state.answer.ticker)
             analysis = build_analysis(state.answer, reason)
             attempts = (solved_state.attempts if solved_state else 0) + 1
@@ -287,9 +288,8 @@ class QuizHandlers:
             leaderboard = None
             earned_score = None
             if score_identity is not None:
-                display_name = nickname.strip() or score_identity
                 earned_score = await self._score_store.add_result(
-                    score_identity, display_name, result.attempts
+                    score_identity, display_name or score_identity, result.attempts
                 )
                 leaderboard = self._score_store.leaderboard(score_identity)
             md = self._render_correct(
@@ -320,7 +320,6 @@ class QuizHandlers:
         leaderboard = None
         penalty = None
         if score_identity is not None:
-            display_name = nickname.strip() or score_identity
             penalty = await self._score_store.add_penalty(score_identity, display_name)
             leaderboard = self._score_store.leaderboard(score_identity)
         md = (
@@ -349,6 +348,23 @@ class QuizHandlers:
             return nickname.strip()
         return None
 
+    def _score_display_name(
+        self,
+        nickname: str | None,
+        identity_key: str | None,
+        score_identity: str | None,
+    ) -> str | None:
+        if score_identity is None:
+            return None
+        if identity_key is not None and identity_key.strip():
+            return (
+                self._score_store.display_name_for(score_identity)
+                or self._score_store.generated_display_name(score_identity)
+            )
+        if nickname is not None and nickname.strip():
+            return nickname.strip()
+        return None
+
     def _with_live_leaderboard(
         self,
         outcome: QuizOutcome,
@@ -356,9 +372,10 @@ class QuizHandlers:
         identity_key: str | None,
     ) -> QuizOutcome:
         score_identity = self._score_identity(nickname, identity_key)
+        display_name = self._score_display_name(nickname, identity_key, score_identity)
         if score_identity is None or outcome.widget is None:
             return outcome
-        leaderboard = self._score_store.leaderboard(score_identity)
+        leaderboard = self._score_store.leaderboard(score_identity, display_name=display_name)
         return QuizOutcome(
             outcome.quiz_id,
             outcome.markdown,
@@ -369,10 +386,11 @@ class QuizHandlers:
         self,
         outcome: SubmitOutcome,
         identity_key: str | None,
+        display_name: str | None = None,
     ) -> SubmitOutcome:
         if identity_key is None or outcome.widget is None or outcome.leaderboard is not None:
             return outcome
-        leaderboard = self._score_store.leaderboard(identity_key)
+        leaderboard = self._score_store.leaderboard(identity_key, display_name=display_name)
         outcome.leaderboard = leaderboard
         outcome.markdown += self._render_score_delta(None, leaderboard)
         outcome.widget = widgets.with_leaderboard(outcome.widget, leaderboard)
@@ -392,7 +410,8 @@ class QuizHandlers:
                 for rank, entry in enumerate(leaderboard.top[:3], start=1)
             )
             lines.append(
-                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+                f"· 닉네임 {leaderboard.my_entry.display_name}"
             )
             return "\n".join(lines)
         action = "획득" if delta > 0 else "감점"
@@ -408,7 +427,8 @@ class QuizHandlers:
             for rank, entry in enumerate(leaderboard.top[:3], start=1)
         )
         lines.append(
-            f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+            f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+            f"· 닉네임 {leaderboard.my_entry.display_name}"
         )
         return "\n".join(lines)
 
@@ -435,7 +455,8 @@ class QuizHandlers:
                 for rank, entry in enumerate(leaderboard.top[:3], start=1)
             )
             lines.append(
-                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
+                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+                f"· 닉네임 {leaderboard.my_entry.display_name}"
             )
         else:
             lines.extend(["", "닉네임이 없어 점수와 랭킹은 반영하지 않았습니다."])
