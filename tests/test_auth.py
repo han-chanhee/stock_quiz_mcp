@@ -394,6 +394,31 @@ async def test_consent_token_can_survive_memory_loss(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_authorization_code_can_survive_memory_loss(monkeypatch):
+    monkeypatch.setenv("OAUTH_STATE_SECRET", "stable-state-secret")
+    first = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+    )
+    client = OAuthClientInformationFull(
+        client_id="c-token", redirect_uris=["https://allowed.example/oauth/callback"]
+    )
+    await first.register_client(client)
+    redirect = await first.finish_authorize(client, _params(), "kakao:12345")
+    code = parse_qs(urlsplit(redirect).query)["code"][0]
+
+    second = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+    )
+    await second.register_client(client)
+    auth_code = await second.load_authorization_code(client, code)
+
+    assert auth_code is not None
+    assert auth_code.code == code
+    assert auth_code.subject == "kakao:12345"
+    assert second._oauth_events[-1]["event"] == "auth_code_restored"
+
+
+@pytest.mark.asyncio
 async def test_kakao_token_exchange_retries_without_stale_client_secret():
     provider = KakaoRestrictedOAuthProvider(
         allowed_redirect_uris=("https://allowed.example/oauth/callback",),
@@ -448,6 +473,7 @@ def test_oauth_runtime_diagnostics_do_not_expose_secrets():
         "external_key_suffix": "pi-key",
         "external_secret_present": True,
         "external_redirect_uri": "https://issuer.example/oauth/kakao/callback",
+        "recent_events": [],
     }
     assert "secret-value" not in str(diagnostics)
 
