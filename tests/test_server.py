@@ -221,7 +221,7 @@ async def test_first_try_correct_adds_three_points_and_ranking(cache):
 
     assert "3점" in correct.markdown
     assert "주간 TOP3" in correct.markdown
-    assert "내 점수 3점 · 1위" in correct.markdown
+    assert "내 순위 1위 · 내 점수 3점" in correct.markdown
     assert correct.leaderboard is not None
     assert correct.leaderboard.my_rank == 1
 
@@ -622,6 +622,27 @@ async def test_tool_does_not_score_without_user_subject(cache):
     assert score_store.leaderboard("stockquiz-playmcp-87440044842919710").my_entry.score == 0
 
 
+def test_tool_identity_ignores_oauth_client_id_meta():
+    """PlayMCP client_id는 앱 식별자라 사용자 랭킹 키로 쓰지 않는다."""
+    from server.main import _tool_identity_key
+
+    class RequestContext:
+        meta = {"client_id": "stockquiz-playmcp-87440044842919710"}
+
+    class ClientOnlyContext:
+        request_context = RequestContext()
+
+    class SubjectContext:
+        request_context = type(
+            "RequestContext",
+            (),
+            {"meta": {"subject": "kakao:real-user", "client_id": "stockquiz-playmcp-1"}},
+        )()
+
+    assert _tool_identity_key(None, ClientOnlyContext()) is None
+    assert _tool_identity_key(None, SubjectContext()) == "kakao:real-user"
+
+
 @pytest.mark.asyncio
 async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
     """OAuth subject가 있으면 닉네임 없이도 subject 기준으로 점수를 적립한다."""
@@ -671,12 +692,73 @@ def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
             "/mcp/",
             json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
             follow_redirects=False,
+            headers={"Accept": "application/json, text/event-stream"},
         )
 
     assert response.status_code == 307
     assert response.headers["location"] == (
         "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/mcp"
     )
+
+
+@pytest.mark.asyncio
+async def test_mcp_trailing_slash_bearer_preserves_auth_subject():
+    """`/mcp/` tools/call에서도 OAuth subject가 툴 컨텍스트까지 유지된다."""
+    from mcp.server.auth.middleware.auth_context import get_access_token
+    from mcp.server.auth.provider import AccessToken
+    from server.main import MCPSelectiveAuthMiddleware
+
+    token = AccessToken(
+        token="tok",
+        client_id="stockquiz-playmcp-87440044842919710",
+        scopes=[],
+        subject="kakao:rank-user",
+    )
+
+    class Provider:
+        async def verify_token(self, raw: str):
+            assert raw == "tok"
+            return token
+
+    seen = {}
+
+    async def app(scope, receive, send):
+        access_token = get_access_token()
+        seen["path"] = scope["path"]
+        seen["subject"] = access_token.subject if access_token else None
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = MCPSelectiveAuthMiddleware(app, Provider())
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call"}).encode()
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    messages = []
+
+    async def send(message):
+        messages.append(message)
+
+    await middleware(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp/",
+            "raw_path": b"/mcp/",
+            "headers": [(b"authorization", b"Bearer tok")],
+        },
+        receive,
+        send,
+    )
+
+    assert messages[0]["status"] == 204
+    assert seen == {"path": "/mcp", "subject": "kakao:rank-user"}
 
 
 def test_chart_image_route_renders_png(cache):

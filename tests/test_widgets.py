@@ -223,7 +223,7 @@ def test_correct_answer_widget_payload_and_top_three() -> None:
     )
     assert len(leaderboard_col["children"]) == 3
     assert "주간 TOP3" in payload["copy_text"]
-    assert "내 점수 54점 · 6위" in payload["copy_text"]
+    assert "내 순위 6위 · 내 점수 54점" in payload["copy_text"]
 
 
 def test_correct_answer_widget_without_leaderboard() -> None:

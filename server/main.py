@@ -105,13 +105,15 @@ class MCPSelectiveAuthMiddleware:
         self.provider = provider
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        path = scope.get("path")
         if (
             scope["type"] != "http"
-            or scope.get("path") != "/mcp"
+            or path not in {"/mcp", "/mcp/"}
             or scope.get("method") != "POST"
         ):
             await self.app(scope, receive, send)
             return
+        app_scope = self._canonical_mcp_scope(scope) if path == "/mcp/" else scope
 
         body = await self._read_body(receive)
         methods = self._jsonrpc_methods(body)
@@ -126,14 +128,22 @@ class MCPSelectiveAuthMiddleware:
 
         replay = self._replay_body(body)
         if token is None:
-            await self.app(scope, replay, send)
+            await self.app(app_scope, replay, send)
             return
 
         context_token = auth_context_var.set(AuthenticatedUser(token))
         try:
-            await self.app(scope, replay, send)
+            await self.app(app_scope, replay, send)
         finally:
             auth_context_var.reset(context_token)
+
+    def _canonical_mcp_scope(self, scope: Scope) -> Scope:
+        """`/mcp/` 요청을 내부에서 `/mcp`로 처리해 인증 컨텍스트를 보존한다."""
+        result = dict(scope)
+        result["path"] = "/mcp"
+        if result.get("raw_path") == b"/mcp/":
+            result["raw_path"] = b"/mcp"
+        return result
 
     async def _read_body(self, receive: Receive) -> bytes:
         chunks: list[bytes] = []
@@ -224,7 +234,7 @@ def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
     if ctx is None:
         return None
     meta = getattr(ctx.request_context, "meta", None) if ctx.request_context else None
-    for name in ("subject", "user_id", "client_id"):
+    for name in ("subject", "user_id"):
         value = getattr(meta, name, None) if meta is not None else None
         if value is None and isinstance(meta, dict):
             value = meta.get(name)

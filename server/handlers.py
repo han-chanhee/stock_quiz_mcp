@@ -443,7 +443,7 @@ class QuizHandlers:
                 for rank, entry in enumerate(leaderboard.top[:3], start=1)
             )
             lines.append(
-                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+                f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
                 f"· 닉네임 {leaderboard.my_entry.display_name}"
             )
             return "\n".join(lines)
@@ -460,7 +460,7 @@ class QuizHandlers:
             for rank, entry in enumerate(leaderboard.top[:3], start=1)
         )
         lines.append(
-            f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+            f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
             f"· 닉네임 {leaderboard.my_entry.display_name}"
         )
         return "\n".join(lines)
@@ -488,7 +488,7 @@ class QuizHandlers:
                 for rank, entry in enumerate(leaderboard.top[:3], start=1)
             )
             lines.append(
-                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+                f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
                 f"· 닉네임 {leaderboard.my_entry.display_name}"
             )
         else:
