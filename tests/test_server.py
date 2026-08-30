@@ -796,6 +796,77 @@ def test_mcp_tools_list_does_not_require_verification_header(
     assert "www-authenticate" in call_response.headers
 
 
+def test_static_oauth_accepts_future_playmcp_id_without_code_change(
+    cache, monkeypatch, tmp_path
+):
+    """메일로 새 applied MCP ID가 와도 서버 코드 수정 없이 OAuth를 진행한다."""
+    import base64
+    import hashlib
+    import urllib.parse
+
+    from server.main import _runtime_middleware, create_server
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+    future_id = "99999999999999999"
+    client_id = f"stockquiz-playmcp-{future_id}"
+    redirect_uri = (
+        "https://playmcp.kakao.com/api/v1/applied-mcps/"
+        f"{future_id}/authorize/oauth:callback"
+    )
+    verifier = "codex-future-id-verifier-012345678901234567890123456789"
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).decode().rstrip("=")
+    app = create_server().http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": "future-id",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        location = response.headers["location"]
+        token = urllib.parse.parse_qs(
+            urllib.parse.urlsplit(location).query
+        )["token"][0]
+        response = client.post(
+            "/oauth/consent",
+            data={"token": token, "decision": "allow"},
+            follow_redirects=False,
+        )
+        callback = response.headers["location"]
+        code = urllib.parse.parse_qs(urllib.parse.urlsplit(callback).query)["code"][0]
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "AUTHORIZATION_CODE",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": verifier,
+            },
+        )
+
+    assert callback.startswith(redirect_uri)
+    assert token_response.status_code == 200
+
+
 def test_static_oauth_client_accepts_kakaocloud_console_redirect(
     cache, monkeypatch, tmp_path
 ):

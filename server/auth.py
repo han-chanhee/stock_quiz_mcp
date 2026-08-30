@@ -27,6 +27,7 @@ FastMCP의 custom_route로 등록한다. 카카오 요구사항(개발 가이드
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import json
 import time
@@ -40,6 +41,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qs, parse_qsl, u
 
 from fastmcp.server.auth.auth import TokenHandler
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
+from mcp.server.auth.handlers.authorize import AuthorizationHandler
 from mcp.server.auth.handlers.revoke import RevocationHandler
 from mcp.server.auth.middleware.client_auth import AuthenticationError, ClientAuthenticator
 from mcp.server.auth.provider import (
@@ -81,6 +83,15 @@ _DEFAULT_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaoclo
 _DEFAULT_OAUTH_SNAPSHOT_PATH = Path(__file__).parent.parent / "store" / "data" / "oauth.json"
 _DEFAULT_PLAYMCP_CLIENT_SECRET = "stockquiz_3221c246c3f3f4e0b9cd0235c2699c0f772165438b273780"
 _DEFAULT_PLAYMCP_BEARER_TOKEN = "stockquiz_preview_0c28879f772d4f17eb9dfa5f9b4c76de28a278720c57cdeb"
+_PLAYMCP_CLIENT_ID_RE = re.compile(r"^stockquiz-playmcp-[0-9]+$")
+_PLAYMCP_CALLBACK_PATH_RE = re.compile(
+    r"^/api/v1/applied-mcps/[0-9]+/authorize/oauth:callback$"
+)
+_PLAYMCP_CALLBACK_HOSTS = {
+    "tools.kakao.com",
+    "playmcp.kakao.com",
+    "playmcp.kakaocloud.io",
+}
 
 CONSENT_TEXT = {
     "제공받는 자": "(주) 카카오",
@@ -177,6 +188,40 @@ class KakaoTokenHandler(TokenHandler):
         return await super().handle(await _normalize_token_grant_type(request))
 
 
+def _is_playmcp_client_id(client_id: str) -> bool:
+    return bool(_PLAYMCP_CLIENT_ID_RE.fullmatch(client_id))
+
+
+def _is_trusted_playmcp_redirect_uri(uri: str) -> bool:
+    parts = urlsplit(uri)
+    return (
+        parts.scheme == "https"
+        and parts.netloc in _PLAYMCP_CALLBACK_HOSTS
+        and bool(_PLAYMCP_CALLBACK_PATH_RE.fullmatch(parts.path))
+        and not parts.fragment
+    )
+
+
+def _copy_client_with_redirects(
+    client: OAuthClientInformationFull, redirect_uris: list[str]
+) -> OAuthClientInformationFull:
+    data = client.model_dump(mode="json")
+    data["redirect_uris"] = redirect_uris
+    return OAuthClientInformationFull.model_validate(data)
+
+
+class PlayMCPAuthorizationHandler(AuthorizationHandler):
+    """새로 발급되는 PlayMCP callback URI를 authorize 직전에 client에 반영한다."""
+
+    async def handle(self, request: Request):
+        params = request.query_params if request.method == "GET" else await request.form()
+        client_id = str(params.get("client_id") or "")
+        redirect_uri = str(params.get("redirect_uri") or "")
+        if client_id and _is_trusted_playmcp_redirect_uri(redirect_uri):
+            await self.provider.ensure_redirect_uri_for_client(client_id, redirect_uri)
+        return await super().handle(request)
+
+
 class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
     """카카오가 사전 등록한 Redirect URI만 허용하고, 명시적 동의를 거친 뒤에만
     인가 코드를 발급하는 OAuth 프로바이더.
@@ -222,16 +267,51 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             expires_at=None,
         )
 
+    def _static_client_for_id(self, client_id: str) -> OAuthClientInformationFull | None:
+        if not _is_playmcp_client_id(client_id):
+            return None
+        return OAuthClientInformationFull(
+            client_id=client_id,
+            client_secret=(
+                os.environ.get("OAUTH_PLAYMCP_CLIENT_SECRET", "").strip()
+                or _DEFAULT_PLAYMCP_CLIENT_SECRET
+            ),
+            client_secret_expires_at=None,
+            redirect_uris=list(self.allowed_redirect_uris),
+            token_endpoint_auth_method="client_secret_post",
+            grant_types=["authorization_code", "refresh_token"],
+            response_types=["code"],
+            client_name="주식대결 PlayMCP",
+        )
+
+    async def ensure_redirect_uri_for_client(
+        self, client_id: str, redirect_uri: str
+    ) -> None:
+        if not _is_trusted_playmcp_redirect_uri(redirect_uri):
+            return
+        client = await self.get_client(client_id)
+        if client is None:
+            return
+        registered = [str(uri) for uri in client.redirect_uris or []]
+        merged_redirects = list(dict.fromkeys([*registered, redirect_uri]))
+        if merged_redirects != registered:
+            self.clients[client_id] = _copy_client_with_redirects(
+                client, merged_redirects
+            )
+
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         """저장된 DCR client도 현재 운영 callback allowlist를 따라가게 보정한다."""
         client = await super().get_client(client_id)
         if client is None:
-            return None
+            client = self._static_client_for_id(client_id)
+            if client is None:
+                return None
+            self.install_static_client(client)
         registered = [str(uri) for uri in client.redirect_uris or []]
         merged_redirects = list(dict.fromkeys([*registered, *self.allowed_redirect_uris]))
         if merged_redirects == registered:
             return client
-        updated = client.model_copy(update={"redirect_uris": merged_redirects})
+        updated = _copy_client_with_redirects(client, merged_redirects)
         self.clients[client_id] = updated
         return updated
 
@@ -241,7 +321,10 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         """요청된 모든 Redirect URI가 화이트리스트에 있을 때만 등록한다."""
         for uri in client_info.redirect_uris or ():
             uri_text = str(uri)
-            if uri_text not in self._allowed_redirect_uri_set:
+            if (
+                uri_text not in self._allowed_redirect_uri_set
+                and not _is_trusted_playmcp_redirect_uri(uri_text)
+            ):
                 raise RegistrationError(
                     "invalid_redirect_uri",
                     f"허용되지 않은 redirect_uri: {uri_text}",
@@ -255,6 +338,19 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         result: list[Route] = []
         for route in routes:
             if (
+                isinstance(route, Route)
+                and route.path == "/authorize"
+                and route.methods is not None
+                and ("GET" in route.methods or "POST" in route.methods)
+            ):
+                result.append(
+                    Route(
+                        path="/authorize",
+                        endpoint=PlayMCPAuthorizationHandler(self).handle,
+                        methods=["GET", "POST"],
+                    )
+                )
+            elif (
                 isinstance(route, Route)
                 and route.path == "/token"
                 and route.methods is not None

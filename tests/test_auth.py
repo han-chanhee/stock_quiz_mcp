@@ -132,11 +132,52 @@ async def test_oauth_get_client_refreshes_cached_redirect_allowlist():
     client = await provider.get_client("cached-client")
 
     assert client is not None
-    assert client.redirect_uris == [
+    assert [str(uri) for uri in client.redirect_uris] == [
         "https://old.example/oauth/callback",
         "https://new.example/oauth/callback",
     ]
     assert provider.clients["cached-client"].redirect_uris == client.redirect_uris
+
+
+@pytest.mark.asyncio
+async def test_oauth_accepts_future_playmcp_redirect_and_client_id():
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+    )
+    redirect_uri = (
+        "https://playmcp.kakao.com/api/v1/applied-mcps/"
+        "99999999999999999/authorize/oauth:callback"
+    )
+    client = OAuthClientInformationFull(
+        client_id="future-client",
+        redirect_uris=[redirect_uri],
+    )
+
+    await provider.register_client(client)
+    static = await provider.get_client("stockquiz-playmcp-99999999999999999")
+
+    registered = await provider.get_client("future-client")
+    assert registered is not None
+    assert redirect_uri in [str(uri) for uri in registered.redirect_uris]
+    assert static is not None
+    assert static.client_secret == _DEFAULT_PLAYMCP_CLIENT_SECRET
+
+
+@pytest.mark.asyncio
+async def test_oauth_rejects_future_untrusted_redirect():
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+    )
+    client = OAuthClientInformationFull(
+        client_id="bad-future",
+        redirect_uris=[
+            "https://attacker.example/api/v1/applied-mcps/"
+            "99999999999999999/authorize/oauth:callback"
+        ],
+    )
+
+    with pytest.raises(RegistrationError):
+        await provider.register_client(client)
 
 
 def test_oauth_provider_loads_configured_snapshot(monkeypatch, tmp_path):
