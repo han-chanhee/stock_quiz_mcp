@@ -28,12 +28,17 @@ import os
 import secrets
 import json
 import time
+import base64
+import binascii
+import hmac
 from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl, unquote
 
+from fastmcp.server.auth.auth import TokenHandler
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
+from mcp.server.auth.middleware.client_auth import AuthenticationError, ClientAuthenticator
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -41,10 +46,12 @@ from mcp.server.auth.provider import (
     RegistrationError,
     RefreshToken,
 )
+from mcp.server.auth.routes import cors_middleware
 from mcp.server.auth.settings import ClientRegistrationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.routing import Route
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -77,6 +84,44 @@ CONSENT_TEXT = {
     "제공 항목": "이용자 식별값 및 그에 연결된 점수·랭킹 정보",
     "보유 및 이용 기간": "연동 해제 시 지체없이 파기",
 }
+
+
+class FlexibleStaticClientAuthenticator(ClientAuthenticator):
+    """Static PlayMCP client는 secret post/basic 둘 다 허용한다."""
+
+    async def authenticate_request(self, request: Request) -> OAuthClientInformationFull:
+        try:
+            return await super().authenticate_request(request)
+        except AuthenticationError:
+            form_data = await request.form()
+            client_id = str(form_data.get("client_id") or "")
+            basic_secret: str | None = None
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Basic "):
+                try:
+                    decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+                    basic_client_id, basic_secret = decoded.split(":", 1)
+                    client_id = client_id or unquote(basic_client_id)
+                    basic_secret = unquote(basic_secret)
+                except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
+                    raise AuthenticationError("Invalid Basic authentication header") from exc
+
+            client = await self.provider.get_client(client_id) if client_id else None
+            static_client_ids = getattr(self.provider, "_static_client_ids", set())
+            if client is None or client_id not in static_client_ids:
+                raise
+
+            request_secret = form_data.get("client_secret")
+            if not isinstance(request_secret, str):
+                request_secret = basic_secret
+            if not request_secret or not client.client_secret:
+                raise AuthenticationError("Client secret is required")
+            if not hmac.compare_digest(
+                client.client_secret.encode(),
+                request_secret.encode(),
+            ):
+                raise AuthenticationError("Invalid client_secret")
+            return client
 
 
 class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
@@ -138,6 +183,33 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
 
         await super().register_client(client_info)
         self.snapshot_save()
+
+    def get_routes(self, mcp_path: str | None = None) -> list[Route]:
+        routes = super().get_routes(mcp_path)
+        result: list[Route] = []
+        for route in routes:
+            if (
+                isinstance(route, Route)
+                and route.path == "/token"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                token_handler = TokenHandler(
+                    provider=self,
+                    client_authenticator=FlexibleStaticClientAuthenticator(self),
+                )
+                result.append(
+                    Route(
+                        path="/token",
+                        endpoint=cors_middleware(
+                            token_handler.handle, ["POST", "OPTIONS"]
+                        ),
+                        methods=["POST", "OPTIONS"],
+                    )
+                )
+            else:
+                result.append(route)
+        return result
 
     async def exchange_authorization_code(
         self,

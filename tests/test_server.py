@@ -581,6 +581,101 @@ def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
     )
 
 
+def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, tmp_path):
+    """PlayMCP가 /token에서 secret을 body나 Basic header로 보내도 둘 다 받는다."""
+    import base64
+    import hashlib
+    import urllib.parse
+
+    from server.auth import _DEFAULT_PLAYMCP_CLIENT_SECRET
+    from server.main import _runtime_middleware, create_server
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+    client_id = "stockquiz-playmcp-83185073570028966"
+    redirect_uri = (
+        "https://playmcp.kakao.com/api/v1/applied-mcps/"
+        "83185073570028966/authorize/oauth:callback"
+    )
+    app = create_server().http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    def issue_code(client: TestClient, label: str) -> tuple[str, str]:
+        verifier = f"codex-{label}-verifier-012345678901234567890123456789"
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode()).digest()
+        ).decode().rstrip("=")
+        response = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": label,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        location = response.headers["location"]
+        if location.startswith("/oauth/consent?token="):
+            token = urllib.parse.parse_qs(
+                urllib.parse.urlsplit(location).query
+            )["token"][0]
+            response = client.post(
+                "/oauth/consent",
+                data={"token": token, "decision": "allow"},
+                follow_redirects=False,
+            )
+            location = response.headers["location"]
+        code = urllib.parse.parse_qs(urllib.parse.urlsplit(location).query)["code"][0]
+        return verifier, code
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        verifier, code = issue_code(client, "post")
+        post_response = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "client_secret": _DEFAULT_PLAYMCP_CLIENT_SECRET,
+                "code_verifier": verifier,
+            },
+        )
+
+        verifier, code = issue_code(client, "basic")
+        basic = base64.b64encode(
+            (
+                urllib.parse.quote(client_id, safe="")
+                + ":"
+                + urllib.parse.quote(_DEFAULT_PLAYMCP_CLIENT_SECRET, safe="")
+            ).encode()
+        ).decode()
+        basic_response = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": verifier,
+            },
+            headers={"Authorization": "Basic " + basic},
+        )
+
+    assert post_response.status_code == 200
+    assert basic_response.status_code == 200
+
+
 @pytest.mark.asyncio
 async def test_weekly_reset_loop_checks_every_minute(monkeypatch):
     """주간 리셋 루프는 현재 KST 시각을 1분마다 확인한다."""
