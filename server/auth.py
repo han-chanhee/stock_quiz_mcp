@@ -668,6 +668,16 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
         return HTMLResponse(_disconnect_page_html("연동이 해제되었습니다."))
 
 
+def register_oauth_protocol_routes(
+    mcp: "FastMCP",
+    provider: KakaoRestrictedOAuthProvider,
+    *,
+    mcp_path: str = "/mcp",
+) -> None:
+    """OAuth protocol routes만 등록하고 MCP transport 자체는 공개로 둔다."""
+    mcp._additional_http_routes.extend(provider.get_routes(mcp_path=mcp_path))
+
+
 def build_auth_provider() -> "AuthProvider | None":
     """OAUTH_ENABLED=1 환경변수가 설정된 경우에만 인증 프로바이더를 구성해 반환한다.
     미설정 시 None(비활성 — 지금 배포 기본값).

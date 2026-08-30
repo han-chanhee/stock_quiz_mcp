@@ -17,19 +17,23 @@ import asyncio
 import contextlib
 import datetime as _dt
 import functools
+import json
 import os
 from collections.abc import AsyncIterator
 from datetime import timezone
 from pathlib import Path
+from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp import Context
 from fastmcp.tools.tool import ToolAnnotations
-from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.server.auth.middleware.auth_context import auth_context_var, get_access_token
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from contracts.schemas import Market, Period, Sector
 
@@ -38,7 +42,11 @@ from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
 
 from .cache import QuizCache
-from .auth import build_auth_provider, register_auth_routes
+from .auth import (
+    build_auth_provider,
+    register_auth_routes,
+    register_oauth_protocol_routes,
+)
 from .handlers import QuizHandlers, QuizMode
 from . import widgets
 
@@ -60,6 +68,7 @@ _COMMON_ANN = dict(
 )
 
 _SAFE_ERROR = "잠시 후 다시 시도해주세요."
+_OPTIONAL_AUTH_PROVIDER: Any | None = None
 
 
 def _public_https_url(request: Request, path: str) -> str:
@@ -78,6 +87,121 @@ class ForwardedHttpsRedirectMiddleware(BaseHTTPMiddleware):
         if is_forwarded_https and location.startswith("http://"):
             response.headers["location"] = "https://" + location.removeprefix("http://")
         return response
+
+
+class MCPSelectiveAuthMiddleware:
+    """도구 목록은 공개하고 실제 tools/call만 OAuth Bearer를 요구한다."""
+
+    _PUBLIC_METHODS = {"initialize", "tools/list", "ping"}
+
+    def __init__(self, app: ASGIApp, provider: Any) -> None:
+        self.app = app
+        self.provider = provider
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] != "http"
+            or scope.get("path") != "/mcp"
+            or scope.get("method") != "POST"
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        body = await self._read_body(receive)
+        methods = self._jsonrpc_methods(body)
+        needs_auth = bool(methods) and any(
+            method not in self._PUBLIC_METHODS for method in methods
+        )
+        token = await self._access_token(scope)
+
+        if needs_auth and token is None:
+            await self._unauthorized(scope, send)
+            return
+
+        replay = self._replay_body(body)
+        if token is None:
+            await self.app(scope, replay, send)
+            return
+
+        context_token = auth_context_var.set(AuthenticatedUser(token))
+        try:
+            await self.app(scope, replay, send)
+        finally:
+            auth_context_var.reset(context_token)
+
+    async def _read_body(self, receive: Receive) -> bytes:
+        chunks: list[bytes] = []
+        more_body = True
+        while more_body:
+            message = await receive()
+            chunks.append(message.get("body", b""))
+            more_body = bool(message.get("more_body", False))
+        return b"".join(chunks)
+
+    def _replay_body(self, body: bytes) -> Receive:
+        sent = False
+
+        async def receive() -> dict[str, object]:
+            nonlocal sent
+            if sent:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            sent = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        return receive
+
+    def _jsonrpc_methods(self, body: bytes) -> list[str]:
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return []
+        if isinstance(payload, dict):
+            method = payload.get("method")
+            return [method] if isinstance(method, str) else []
+        if isinstance(payload, list):
+            return [
+                item.get("method")
+                for item in payload
+                if isinstance(item, dict) and isinstance(item.get("method"), str)
+            ]
+        return []
+
+    async def _access_token(self, scope: Scope):
+        headers = {
+            key.decode("latin1").lower(): value.decode("latin1")
+            for key, value in scope.get("headers", [])
+        }
+        auth_header = headers.get("authorization", "")
+        if not auth_header.lower().startswith("bearer "):
+            return None
+        token = await self.provider.verify_token(auth_header[7:])
+        if token is None:
+            return None
+        if token.expires_at and token.expires_at < int(_dt.datetime.now().timestamp()):
+            return None
+        return token
+
+    async def _unauthorized(self, scope: Scope, send: Send) -> None:
+        headers = {
+            key.decode("latin1").lower(): value.decode("latin1")
+            for key, value in scope.get("headers", [])
+        }
+        host = headers.get("host", "localhost")
+        challenge = (
+            'Bearer resource_metadata="'
+            f'https://{host}/.well-known/oauth-protected-resource/mcp"'
+        )
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"www-authenticate", challenge.encode("latin1")),
+                    (b"content-length", b"0"),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": b""})
 
 
 def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
@@ -326,24 +450,21 @@ def create_server() -> FastMCP:
     score_store.snapshot_load()
     client = KISClient()
     auth = build_auth_provider()
+    global _OPTIONAL_AUTH_PROVIDER
+    _OPTIONAL_AUTH_PROVIDER = auth
 
-    # OAuth 활성화 시 auth를 주입한다. 이때 인증 없는 요청은 401을 받게 되는데,
-    # 이는 MCP 인증 스펙(2025-03-26 Authorization)이 명시적으로 요구하는 동작이다:
-    #   "When authorization is required and not yet proven by the client, servers
-    #    MUST respond with HTTP 401 Unauthorized. Clients initiate the OAuth 2.1
-    #    authorization flow after receiving the HTTP 401 Unauthorized."
-    # 즉 401은 장애가 아니라 클라이언트에게 인증 흐름 시작을 알리는 신호이며,
-    # 이 신호가 있어야 플랫폼이 사용자에게 동의 화면을 띄운다.
+    # PlayMCP의 "정보 불러오기"는 검증용 인증헤더 없이 tools/list를 호출한다.
+    # 따라서 MCP transport는 공개로 두고, OAuth 라우트와 선택 Bearer 검증만 붙인다.
     mcp = _build_app(
         cache,
         store,
         score_store,
         refresh_client=client,
-        auth=auth,
     )
 
-    # OAuth 활성화 시(OAUTH_ENABLED=1)만 동의/연동해제 화면을 등록한다.
+    # OAuth 활성화 시(OAUTH_ENABLED=1)만 표준 OAuth 라우트와 동의/연동해제 화면을 등록한다.
     if auth is not None:
+        register_oauth_protocol_routes(mcp, auth)
         register_auth_routes(mcp, auth)
 
     @mcp.custom_route("/", methods=["GET"])
@@ -354,7 +475,12 @@ def create_server() -> FastMCP:
 
 
 def _runtime_middleware() -> list[Middleware]:
-    return [Middleware(ForwardedHttpsRedirectMiddleware)]
+    middleware = [Middleware(ForwardedHttpsRedirectMiddleware)]
+    if _OPTIONAL_AUTH_PROVIDER is not None:
+        middleware.append(
+            Middleware(MCPSelectiveAuthMiddleware, provider=_OPTIONAL_AUTH_PROVIDER)
+        )
+    return middleware
 
 
 if __name__ == "__main__":

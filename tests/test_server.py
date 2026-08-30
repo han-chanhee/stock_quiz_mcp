@@ -703,7 +703,12 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
         )
         revoked_tools_response = client.post(
             "/mcp",
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "help", "arguments": {}},
+            },
             headers={
                 "Accept": "application/json, text/event-stream",
                 "Authorization": f"Bearer {post_access_token}",
@@ -749,6 +754,46 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
     assert revoked_tools_response.status_code == 401
     assert basic_response.status_code == 200
     assert upper_basic_response.status_code == 200
+
+
+def test_mcp_tools_list_does_not_require_verification_header(
+    cache, monkeypatch, tmp_path
+):
+    """PlayMCP 정보 불러오기는 Header Name/Value 없이 tools/list를 조회할 수 있다."""
+    from server.main import _runtime_middleware, create_server
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+    app = create_server().http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        tools_response = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            headers={"Accept": "application/json, text/event-stream"},
+        )
+        call_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "help", "arguments": {}},
+            },
+            headers={"Accept": "application/json, text/event-stream"},
+        )
+
+    assert tools_response.status_code == 200
+    assert call_response.status_code == 401
+    assert "www-authenticate" in call_response.headers
 
 
 def test_static_oauth_client_accepts_kakaocloud_console_redirect(
