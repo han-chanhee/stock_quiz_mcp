@@ -113,6 +113,29 @@ async def test_oauth_registers_allowed_redirect_uri():
     assert await provider.get_client("allowed-client") == client
 
 
+@pytest.mark.asyncio
+async def test_oauth_get_client_refreshes_cached_redirect_allowlist():
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=(
+            "https://old.example/oauth/callback",
+            "https://new.example/oauth/callback",
+        )
+    )
+    provider.clients["cached-client"] = OAuthClientInformationFull(
+        client_id="cached-client",
+        redirect_uris=["https://old.example/oauth/callback"],
+    )
+
+    client = await provider.get_client("cached-client")
+
+    assert client is not None
+    assert client.redirect_uris == [
+        "https://old.example/oauth/callback",
+        "https://new.example/oauth/callback",
+    ]
+    assert provider.clients["cached-client"].redirect_uris == client.redirect_uris
+
+
 def test_oauth_provider_loads_configured_snapshot(monkeypatch, tmp_path):
     path = tmp_path / "oauth.json"
     original = KakaoRestrictedOAuthProvider(

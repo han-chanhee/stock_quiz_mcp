@@ -222,6 +222,19 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             expires_at=None,
         )
 
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        """저장된 DCR client도 현재 운영 callback allowlist를 따라가게 보정한다."""
+        client = await super().get_client(client_id)
+        if client is None:
+            return None
+        registered = [str(uri) for uri in client.redirect_uris or []]
+        merged_redirects = list(dict.fromkeys([*registered, *self.allowed_redirect_uris]))
+        if merged_redirects == registered:
+            return client
+        updated = client.model_copy(update={"redirect_uris": merged_redirects})
+        self.clients[client_id] = updated
+        return updated
+
     async def register_client(
         self, client_info: OAuthClientInformationFull
     ) -> None:
