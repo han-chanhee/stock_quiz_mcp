@@ -394,12 +394,10 @@ async def test_consent_token_can_survive_memory_loss(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_authorization_code_can_survive_memory_loss(monkeypatch, tmp_path):
+async def test_authorization_code_can_survive_memory_loss(monkeypatch):
     monkeypatch.setenv("OAUTH_STATE_SECRET", "stable-state-secret")
-    path = tmp_path / "oauth.json"
     first = KakaoRestrictedOAuthProvider(
-        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
-        snapshot_path=path,
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
     )
     client = OAuthClientInformationFull(
         client_id="c-token", redirect_uris=["https://allowed.example/oauth/callback"]
@@ -409,16 +407,16 @@ async def test_authorization_code_can_survive_memory_loss(monkeypatch, tmp_path)
     code = parse_qs(urlsplit(redirect).query)["code"][0]
 
     second = KakaoRestrictedOAuthProvider(
-        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
-        snapshot_path=path,
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
     )
+    await second.register_client(client)
     auth_code = await second.load_authorization_code(client, code)
 
     assert auth_code is not None
-    assert code.startswith("test_auth_code_")
+    assert code.startswith("sq1_")
     assert auth_code.code == code
     assert auth_code.subject == "kakao:12345"
-    assert second._oauth_events[-1]["event"] == "auth_code_loaded_from_memory"
+    assert second._oauth_events[-1]["event"] == "auth_code_restored"
 
 
 @pytest.mark.asyncio
@@ -476,7 +474,7 @@ def test_oauth_runtime_diagnostics_do_not_expose_secrets():
         "external_key_suffix": "pi-key",
         "external_secret_present": True,
         "external_redirect_uri": "https://issuer.example/oauth/kakao/callback",
-        "authorization_code_format": "short_opaque_snapshot",
+        "authorization_code_format": "compact_signed_snapshot",
         "recent_events": [],
     }
     assert "secret-value" not in str(diagnostics)
@@ -497,7 +495,7 @@ async def test_authorize_after_consent_issues_real_redirect():
     assert result.startswith("https://allowed.example/oauth/callback")
     assert "code=" in result
     code = parse_qs(urlsplit(result).query)["code"][0]
-    assert code.startswith("test_auth_code_")
+    assert code.startswith("sq1_")
     assert provider.auth_codes[code].subject == "subject-c2"
 
 

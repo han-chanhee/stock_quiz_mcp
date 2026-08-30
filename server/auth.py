@@ -35,6 +35,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import zlib
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
@@ -97,6 +98,14 @@ _PLAYMCP_CALLBACK_HOSTS = {
     "tools.kakao.com",
     "playmcp.kakao.com",
     "playmcp.kakaocloud.io",
+}
+_PLAYMCP_CALLBACK_HOST_CODES = {
+    "t": "tools.kakao.com",
+    "p": "playmcp.kakao.com",
+    "c": "playmcp.kakaocloud.io",
+}
+_PLAYMCP_CALLBACK_CODES_BY_HOST = {
+    host: code for code, host in _PLAYMCP_CALLBACK_HOST_CODES.items()
 }
 
 CONSENT_TEXT = {
@@ -198,6 +207,22 @@ class KakaoTokenHandler(TokenHandler):
     """Token endpoint wrapper for PlayMCP/Kakao console compatibility."""
 
     async def handle(self, request: Request):
+        provider = getattr(self, "provider", None)
+        record = getattr(provider, "_record_oauth_event", None)
+        if callable(record):
+            body = await request.body()
+            form_items = parse_qsl(body.decode("utf-8"), keep_blank_values=True)
+            form = dict(form_items)
+            redirect_uri = form.get("redirect_uri", "")
+            redirect_parts = urlsplit(redirect_uri)
+            record(
+                "token_request_received",
+                client_id=form.get("client_id", ""),
+                grant_type=form.get("grant_type", ""),
+                code_present=bool(form.get("code")),
+                redirect_host=redirect_parts.netloc,
+                redirect_path=redirect_parts.path,
+            )
         return await super().handle(await _normalize_token_grant_type(request))
 
 
@@ -643,32 +668,105 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         subject: str,
     ) -> str:
         payload = {
-            "v": 1,
-            "iat": int(time.time()),
+            "v": 2,
             "exp": int(time.time()) + 300,
-            "nonce": secrets.token_urlsafe(8),
-            "client_id": client.client_id or "",
-            "redirect_uri": str(params.redirect_uri),
-            "state": params.state,
-            "scopes": params.scopes or [],
-            "code_challenge": params.code_challenge,
-            "redirect_uri_provided_explicitly": params.redirect_uri_provided_explicitly,
-            "subject": subject,
+            "c": client.client_id or "",
+            "cc": params.code_challenge,
+            "sub": subject,
+            "e": bool(params.redirect_uri_provided_explicitly),
         }
-        encoded = _base64url_json(payload)
-        signature = hmac.new(
-            self._state_secret,
-            encoded.encode("ascii"),
-            hashlib.sha256,
-        ).digest()
-        encoded_signature = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
-        return f"sqc.{encoded}.{encoded_signature}"
+        scopes = params.scopes or []
+        if scopes:
+            payload["s"] = scopes
+        redirect_compact = _compact_playmcp_redirect_uri(str(params.redirect_uri))
+        if redirect_compact is None:
+            payload["r"] = str(params.redirect_uri)
+        else:
+            payload["pr"] = redirect_compact
+        raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
+        encoded = (
+            base64.urlsafe_b64encode(zlib.compress(raw, 9))
+            .decode("ascii")
+            .rstrip("=")
+        )
+        signature = (
+            base64.urlsafe_b64encode(
+                hmac.new(
+                    self._state_secret,
+                    encoded.encode("ascii"),
+                    hashlib.sha256,
+                ).digest()[:16]
+            )
+            .decode("ascii")
+            .rstrip("=")
+        )
+        return f"sq1_{encoded}{signature}"
 
     async def _decode_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: str
     ) -> AuthorizationCode:
-        if not authorization_code.startswith("sqc."):
+        if not authorization_code.startswith("sq1_"):
+            if authorization_code.startswith("sqc."):
+                return await self._decode_legacy_authorization_code(
+                    client, authorization_code
+                )
             raise ValueError("인가 code 형식이 올바르지 않습니다.")
+        raw_code = authorization_code[4:]
+        if len(raw_code) <= 22:
+            raise ValueError("인가 code 길이가 올바르지 않습니다.")
+        encoded, actual_signature = raw_code[:-22], raw_code[-22:]
+        expected_signature = (
+            base64.urlsafe_b64encode(
+                hmac.new(
+                    self._state_secret,
+                    encoded.encode("ascii"),
+                    hashlib.sha256,
+                ).digest()[:16]
+            )
+            .decode("ascii")
+            .rstrip("=")
+        )
+        if not hmac.compare_digest(expected_signature, actual_signature):
+            raise ValueError("인가 code 서명이 일치하지 않습니다.")
+        padding = "=" * (-len(encoded) % 4)
+        try:
+            raw = zlib.decompress(
+                base64.urlsafe_b64decode((encoded + padding).encode("ascii"))
+            )
+            payload = json.loads(raw.decode("utf-8"))
+        except (binascii.Error, ValueError, zlib.error, json.JSONDecodeError) as exc:
+            raise ValueError("인가 code payload를 복원할 수 없습니다.") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("인가 code payload가 올바르지 않습니다.")
+        if str(payload.get("c") or "") != client.client_id:
+            raise ValueError("인가 code의 client_id가 일치하지 않습니다.")
+        expires_at = float(payload.get("exp", 0))
+        if expires_at < time.time():
+            raise ValueError("인가 code가 만료되었습니다.")
+        redirect_uri = _expand_playmcp_redirect_uri(payload.get("pr"))
+        if redirect_uri is None:
+            redirect_uri = str(payload.get("r") or "")
+        if not redirect_uri:
+            raise ValueError("인가 code에 redirect_uri가 없습니다.")
+        raw_scopes = payload.get("s")
+        scopes = raw_scopes if isinstance(raw_scopes, list) else []
+        subject = str(payload.get("sub") or "")
+        return AuthorizationCode(
+            code=authorization_code,
+            scopes=[str(scope) for scope in scopes],
+            expires_at=expires_at,
+            client_id=client.client_id or "",
+            code_challenge=str(payload.get("cc") or ""),
+            redirect_uri=redirect_uri,
+            redirect_uri_provided_explicitly=bool(payload.get("e", True)),
+            subject=subject or None,
+        )
+
+    async def _decode_legacy_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: str
+    ) -> AuthorizationCode:
         signed_value = authorization_code[4:]
         recovered_client, params, payload = await self._decode_signed_oauth_payload(
             signed_value
@@ -789,24 +887,18 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         params: AuthorizationParams,
         subject: str,
     ) -> str:
-        """동의 완료 후 짧은 opaque 인가 코드를 발급하고 subject를 연결한다."""
-        code = f"test_auth_code_{secrets.token_hex(16)}"
-        auth_code = AuthorizationCode(
-            code=code,
-            scopes=params.scopes or [],
-            expires_at=time.time() + 300,
-            client_id=client.client_id or "",
-            code_challenge=params.code_challenge,
-            redirect_uri=params.redirect_uri,
-            redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
-            subject=subject,
-        )
+        """동의 완료 후 복구 가능한 signed 인가 코드를 발급하고 subject를 연결한다."""
+        code = self._encode_authorization_code(client, params, subject)
+        auth_code = await self._decode_authorization_code(client, code)
         self.auth_codes[code] = auth_code
+        redirect_parts = urlsplit(str(params.redirect_uri))
         self._record_oauth_event(
             "auth_code_issued",
             client_id=client.client_id,
             subject_present=bool(subject),
             code_length=len(code),
+            redirect_host=redirect_parts.netloc,
+            redirect_path=redirect_parts.path,
         )
         self.snapshot_save()
         return _with_query(str(params.redirect_uri), {"code": code, "state": params.state})
@@ -822,7 +914,10 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
                 client_id=client.client_id,
             )
             return auth_code
-        if not authorization_code.startswith("sqc."):
+        if not (
+            authorization_code.startswith("sq1_")
+            or authorization_code.startswith("sqc.")
+        ):
             self._record_oauth_event(
                 "auth_code_missing",
                 client_id=client.client_id,
@@ -1027,6 +1122,34 @@ def _with_query(url: str, values: dict[str, str | None]) -> str:
     return urlunsplit(parts._replace(query=urlencode(query)))
 
 
+def _compact_playmcp_redirect_uri(uri: str) -> dict[str, str] | None:
+    parts = urlsplit(uri)
+    match = re.fullmatch(
+        r"/api/v1/applied-mcps/([0-9]+)/authorize/oauth:callback",
+        parts.path,
+    )
+    if (
+        parts.scheme != "https"
+        or parts.netloc not in _PLAYMCP_CALLBACK_HOSTS
+        or match is None
+        or parts.query
+        or parts.fragment
+    ):
+        return None
+    return {"h": _PLAYMCP_CALLBACK_CODES_BY_HOST[parts.netloc], "m": match.group(1)}
+
+
+def _expand_playmcp_redirect_uri(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    host_code = str(value.get("h") or "")
+    host = _PLAYMCP_CALLBACK_HOST_CODES.get(host_code, host_code)
+    mcp_id = str(value.get("m") or "")
+    if host not in _PLAYMCP_CALLBACK_HOSTS or not re.fullmatch(r"[0-9]+", mcp_id):
+        return None
+    return f"https://{host}/api/v1/applied-mcps/{mcp_id}/authorize/oauth:callback"
+
+
 def _authorization_error_redirect(
     params: AuthorizationParams,
     error: str,
@@ -1161,7 +1284,7 @@ def _oauth_runtime_diagnostics(provider: KakaoRestrictedOAuthProvider) -> dict[s
         "external_key_suffix": rest_key[-6:] if rest_key else None,
         "external_secret_present": bool(config and config.client_secret),
         "external_redirect_uri": config.redirect_uri if config else None,
-        "authorization_code_format": "short_opaque_snapshot",
+        "authorization_code_format": "compact_signed_snapshot",
         "recent_events": provider._oauth_events[-10:],
     }
 
