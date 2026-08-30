@@ -702,6 +702,52 @@ def test_chart_image_route_renders_png(cache):
     assert response.content.startswith(b"\x89PNG")
 
 
+def test_ops_stats_reports_aggregate_counts(cache, monkeypatch, tmp_path):
+    from server.main import _runtime_middleware, build_app
+
+    path = tmp_path / "scores.json"
+    store = QuizStore()
+    score_store = ScoreStore(snapshot_path=path)
+    app = build_app(
+        cache,
+        store,
+        score_store,
+        QuizBank(rng=random.Random(0)),
+    ).http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+    handlers = QuizHandlers(cache, store, score_store, QuizBank(rng=random.Random(0)))
+    outcome = handlers.quiz(QuizMode.PRICE, None, identity_key="oauth-stats")
+    state = store.get(outcome.quiz_id)
+
+    async def answer():
+        await handlers.submit_answer(
+            outcome.quiz_id,
+            str(state.answer.price * 0.5),
+            identity_key="oauth-stats",
+        )
+        await score_store.snapshot_save()
+
+    asyncio.run(answer())
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.get("/ops/stats")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["scoreboard"]["quiz_players"] == 1
+    assert payload["scoreboard"]["quiz_starts"] == 1
+    assert payload["scoreboard"]["submitted_answers"] == 1
+    assert payload["scoreboard"]["wrong_answers"] == 1
+
+
 def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, tmp_path):
     """PlayMCP가 /token에서 secret을 body나 Basic header로 보내도 둘 다 받는다."""
     import base64

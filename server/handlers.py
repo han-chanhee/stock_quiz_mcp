@@ -395,6 +395,8 @@ class QuizHandlers:
         display_name = self._score_display_name(nickname, identity_key, score_identity)
         if score_identity is None or outcome.widget is None:
             return outcome
+        if outcome.quiz_id:
+            self._score_store.record_quiz_started(score_identity)
         leaderboard = self._score_store.leaderboard(score_identity, display_name=display_name)
         return QuizOutcome(
             outcome.quiz_id,

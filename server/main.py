@@ -385,6 +385,17 @@ def _build_app(
             }
         )
 
+    @mcp.custom_route("/ops/stats", methods=["GET"])
+    async def ops_stats(request: Request) -> JSONResponse:
+        score_store.snapshot_load()
+        return JSONResponse(
+            {
+                "status": "ok",
+                "linked_oauth_users": _linked_oauth_users(_OPTIONAL_AUTH_PROVIDER),
+                "scoreboard": score_store.stats(),
+            }
+        )
+
     @mcp.custom_route("/quiz/chart/{quiz_id}.png", methods=["GET"])
     async def chart_image_get(request: Request) -> Response:
         quiz_id = request.path_params.get("quiz_id", "")
@@ -402,6 +413,22 @@ def _build_app(
         return RedirectResponse(_public_https_url(request, "/mcp"), status_code=307)
 
     return mcp
+
+
+def _linked_oauth_users(provider: Any | None) -> int:
+    if provider is None:
+        return 0
+    snapshot_load = getattr(provider, "snapshot_load", None)
+    if callable(snapshot_load):
+        snapshot_load()
+    subjects = set()
+    for collection_name in ("access_tokens", "refresh_tokens"):
+        collection = getattr(provider, collection_name, {})
+        for token in collection.values():
+            subject = getattr(token, "subject", None)
+            if isinstance(subject, str) and subject.strip():
+                subjects.add(subject.strip())
+    return len(subjects)
 
 
 async def _refresh_today(cache: QuizCache, client: MarketClient) -> None:
