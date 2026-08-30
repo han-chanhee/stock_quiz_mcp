@@ -37,35 +37,20 @@ def _text_lines(value: str, **properties: object) -> dict:
 def _brand_header() -> dict:
     return {
         "type": "Col",
-        "gap": 6,
         "children": [
             {
                 "type": "Markdown",
                 "value": f"![주식대결 로고]({_public_base_url()}{_LOGO_ASSET_PATH})",
             },
-            {"type": "Caption", "value": "주식대결", "size": "sm"},
         ],
     }
 
 
-def _panel(children: list[dict], *, flex: int | None = None) -> dict:
-    panel = {
-        "type": "Col",
-        "gap": 8,
-        "children": children,
-    }
-    if flex is not None:
-        panel["flex"] = flex
-    return panel
-
-
-def _stock_battle_layout(
+def _card_payload(
     *,
-    left_children: list[dict],
-    right_children: list[dict],
-    bottom_children: list[dict],
     copy_text: str,
     name: str,
+    children: list[dict],
 ) -> dict:
     return {
         "widget": {
@@ -75,39 +60,12 @@ def _stock_battle_layout(
             "children": [
                 _brand_header(),
                 {"type": "Divider", "spacing": 10},
-                {
-                    "type": "Row",
-                    "gap": 10,
-                    "wrap": True,
-                    "align": "stretch",
-                    "children": [
-                        _panel(left_children, flex=1),
-                        _panel(right_children, flex=1),
-                    ],
-                },
-                {"type": "Divider", "spacing": 10},
-                _panel(bottom_children),
+                *children,
             ],
         },
         "copy_text": copy_text,
         "name": name,
     }
-
-
-def _stock_battle_card(
-    *,
-    children: list[dict],
-    copy_text: str,
-    name: str,
-) -> dict:
-    midpoint = max(1, (len(children) + 1) // 2)
-    return _stock_battle_layout(
-        left_children=children[:midpoint],
-        right_children=children[midpoint:],
-        bottom_children=[],
-        copy_text=copy_text,
-        name=name,
-    )
 
 
 def _quiz_frame(
@@ -121,18 +79,18 @@ def _quiz_frame(
 ) -> dict:
     """출제 모드가 공유하는 공통 틀. 바디만 모드별 함수가 채워 넣는다."""
     expires_in_min = expires_in_sec // 60
-    bottom_children: list[dict] = []
     analysis_copy = ""
+    analysis_children: list[dict] = []
     if analysis_lines:
-        bottom_children.extend([
+        analysis_children = [
+            {"type": "Divider", "spacing": 12},
             {"type": "Title", "value": "문제 분석", "size": "md", "weight": "bold"},
             _analysis_list(analysis_lines),
-            {"type": "Divider", "spacing": 12},
-        ])
+        ]
         analysis_copy = "\n\n**문제 분석**\n" + "\n".join(
             f"{index}. {line}" for index, line in enumerate(analysis_lines, start=1)
         )
-    left_children = [
+    children = [
         {
             "type": "Row",
             "align": "center",
@@ -161,26 +119,22 @@ def _quiz_frame(
             "weight": "bold",
         },
         _text_lines(mode_intro, size="md", maxLines=3),
-    ]
-    bottom_children.extend([
+        {"type": "Divider", "spacing": 12},
+        *body_children,
+        *analysis_children,
+        {"type": "Divider", "spacing": 12},
         {"type": "Markdown", "value": f"정답 제출용 ID: `{quiz_id}`"},
         {
             "type": "Caption",
             "value": f"위 ID와 정답을 {expires_in_min}분 안에 함께 말해주세요",
             "size": "sm",
         },
-    ])
+    ]
     copy_text = (
         f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}{analysis_copy}\n\n"
         f"제출 ID: `{quiz_id}`"
     )
-    return _stock_battle_layout(
-        left_children=left_children,
-        right_children=body_children,
-        bottom_children=bottom_children,
-        copy_text=copy_text,
-        name=name,
-    )
+    return _card_payload(copy_text=copy_text, name=name, children=children)
 
 
 def _analysis_list(lines: list[str]) -> dict:
@@ -352,7 +306,7 @@ def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
     """오답 응답 위젯. 간단한 Card + Text 구성.
     {"widget": {...}, "copy_text": "...", "name": "wrong_answer"}"""
     copy_text = f"❌ 오답입니다. (시도 {attempts}회)\n\n💡 힌트: **{hint_text}**"
-    return _stock_battle_card(
+    return _card_payload(
         children=[
             {"type": "Text", "value": f"오답입니다. (시도 {attempts}회)"},
             {"type": "Badge", "label": hint_text, "color": "warning"},
@@ -375,15 +329,12 @@ def correct_answer_widget(
     """정답 응답 위젯. 미니분석 + (있으면) 점수·TOP3 랭킹 + 다음 액션.
     {"widget": {...}, "copy_text": "...", "name": "correct_answer"}"""
     detail_lines = analysis_lines or [price_line, rank_line, reason_line]
-    left_children: list[dict] = [
+    children: list[dict] = [
         {"type": "Title", "value": f"정답! {answer_name}", "size": "lg", "weight": "bold"},
-        {"type": "Text", "value": "정답 분석은 공개된 정답 종목 기준으로 다시 계산됩니다.", "size": "sm"},
-    ]
-    right_children: list[dict] = [
         {"type": "Title", "value": "정답 분석", "size": "md", "weight": "bold"},
         _analysis_list(detail_lines),
+        {"type": "Divider", "spacing": 12},
     ]
-    bottom_children: list[dict] = []
     copy_lines = [
         f"✅ 정답! **{answer_name}**",
         "",
@@ -396,7 +347,7 @@ def correct_answer_widget(
 
     if leaderboard is not None:
         if earned_score is not None:
-            left_children.append(
+            children.append(
                 {
                     "type": "Badge",
                     "label": f"이번 정답으로 {earned_score}점 획득!",
@@ -404,18 +355,20 @@ def correct_answer_widget(
                 }
             )
             copy_lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!"])
-        bottom_children.extend([
-            {"type": "Title", "value": "주간 랭킹", "size": "md", "weight": "bold"},
-            leaderboard_listview_rows(leaderboard),
-            {
-                "type": "Text",
-                "value": (
-                    f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
-                    f"· 닉네임 {leaderboard.my_entry.display_name}"
-                ),
-                "weight": "bold",
-            },
-        ])
+        children.extend(
+            [
+                {"type": "Title", "value": "주간 랭킹", "size": "md", "weight": "bold"},
+                leaderboard_listview_rows(leaderboard),
+                {
+                    "type": "Text",
+                    "value": (
+                        f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위 "
+                        f"· 닉네임 {leaderboard.my_entry.display_name}"
+                    ),
+                    "weight": "bold",
+                },
+            ]
+        )
         copy_lines.extend(["", "**주간 TOP3**"])
         copy_lines.extend(
             f"{rank}. {entry.display_name} — {entry.score}점"
@@ -427,25 +380,14 @@ def correct_answer_widget(
         )
 
     if next_actions:
-        if bottom_children:
-            bottom_children.append({"type": "Divider", "spacing": 12})
-        bottom_children.append({
-            "type": "Row",
-            "gap": 8,
-            "wrap": True,
-            "children": [
-                {"type": "Button", "label": action, "pill": True, "variant": "soft"}
-                for action in next_actions
-            ],
-        })
+        children.append({"type": "Divider", "spacing": 12})
+        children.extend({"type": "Button", "label": action} for action in next_actions)
         copy_lines.extend(
             ["", "다음 중 선택: " + " / ".join(f"`{action}`" for action in next_actions)]
         )
 
-    return _stock_battle_layout(
-        left_children=left_children,
-        right_children=right_children,
-        bottom_children=bottom_children,
+    return _card_payload(
+        children=children,
         copy_text="\n".join(copy_lines),
         name="correct_answer",
     )
@@ -477,16 +419,7 @@ def with_leaderboard(
             "weight": "bold",
         },
     ]
-    if children and children[-1].get("type") == "Col":
-        bottom_panel = dict(children[-1])
-        bottom_children = list(bottom_panel.get("children", []))
-        if bottom_children:
-            bottom_children.append({"type": "Divider", "spacing": 12})
-        bottom_children.extend(ranking_children)
-        bottom_panel["children"] = bottom_children
-        children[-1] = bottom_panel
-    else:
-        children.append(_panel(ranking_children))
+    children.extend([{"type": "Divider", "spacing": 12}, *ranking_children])
     widget["children"] = children
 
     copy_text = payload["copy_text"]
@@ -673,7 +606,7 @@ def welcome_widget() -> dict:
         "로그인한 사용자는 자동 닉네임으로 주간 랭킹(매주 초기화)에 참여합니다.\n\n"
         '예: "주가 모드로 퀴즈 내줘."'
     )
-    return _stock_battle_card(children=children, copy_text=copy_text, name="welcome")
+    return _card_payload(children=children, copy_text=copy_text, name="welcome")
 
 
 def mode_selection_widget() -> dict:
@@ -701,7 +634,7 @@ def mode_selection_widget() -> dict:
         "주가 / 시장 / 종목 / 차트 중 하나를 골라주세요.\n\n"
         '예: "종목 모드로 퀴즈 내줘."'
     )
-    return _stock_battle_card(
+    return _card_payload(
         children=children,
         copy_text=copy_text,
         name="mode_selection",
@@ -717,7 +650,7 @@ def _notice_widget(text: str, caption: str, name: str) -> dict:
         {"type": "Text", "value": text},
         {"type": "Caption", "value": caption, "size": "sm"},
     ]
-    return _stock_battle_card(
+    return _card_payload(
         children=children,
         copy_text=f"{text}\n\n{caption}",
         name=name,

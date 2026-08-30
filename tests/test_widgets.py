@@ -61,10 +61,6 @@ def _assert_payload(payload: dict, expected_name: str) -> None:
         children = payload["widget"]["children"]
         assert children[0]["type"] == "Col"
         assert children[1]["type"] == "Divider"
-        assert children[2]["type"] == "Row"
-        assert children[2]["wrap"] is True
-        assert children[3]["type"] == "Divider"
-        assert children[4]["type"] == "Col"
         serialized_header = json.dumps(children[0], ensure_ascii=False)
         assert "/assets/logo-banner.png" in serialized_header
         assert '"type": "Markdown"' in serialized_header
@@ -99,6 +95,23 @@ def test_price_quiz_widget_uses_mode_independent_title_and_question() -> None:
 
     assert "이 기업의 종목명은?" not in serialized
     assert question_md in serialized
+
+
+def test_quiz_widget_keeps_analysis_in_simple_card() -> None:
+    analysis = [f"문제 분석 {index}" for index in range(1, 6)]
+    payload = price_quiz_widget(
+        "QZ-A",
+        "📈 주가 퀴즈 — 가격 맞히기",
+        "현재가는?",
+        analysis_lines=analysis,
+    )
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    _assert_payload(payload, "price_quiz")
+    assert "문제 분석" in serialized
+    assert all(line in serialized for line in analysis)
+    assert "Box" not in serialized
+    assert "Image" not in serialized
 
 
 def test_market_quiz_widget_direction_badge_color() -> None:
@@ -214,6 +227,26 @@ def test_correct_answer_widget_without_leaderboard() -> None:
     payload = correct_answer_widget("삼성전자", "가격", "순위", "재료", None, None, ["종료"])
     _assert_payload(payload, "correct_answer")
     assert all(child.get("type") != "Table" for child in _walk_components(payload))
+
+
+def test_correct_answer_widget_uses_answer_analysis_lines() -> None:
+    analysis = [f"정답 분석 {index}" for index in range(1, 6)]
+    payload = correct_answer_widget(
+        "삼성전자",
+        "가격",
+        "순위",
+        "재료",
+        None,
+        None,
+        [],
+        analysis_lines=analysis,
+    )
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    _assert_payload(payload, "correct_answer")
+    assert "정답 분석" in serialized
+    assert all(line in serialized for line in analysis)
+    assert "가격" not in payload["copy_text"]
 
 
 def test_leaderboard_table_rows_schema() -> None:
