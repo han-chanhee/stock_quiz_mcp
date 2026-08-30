@@ -16,6 +16,8 @@ Redirect URI는 카카오 개발 가이드 6장 1-a를 그대로 따른다(경�
 "oauth/callback"이 아니라 "oauth:callback"):
   https://tools.kakao.com/api/v1/applied-mcps/{mcpId}/authorize/oauth:callback
   https://playmcp.kakao.com/api/v1/applied-mcps/{mcpId}/authorize/oauth:callback
+실제 PlayMCP 관리 콘솔 도메인(playmcp.kakaocloud.io)에서 같은 callback을 쓰는 경우도
+운영 호환성 차원에서 함께 허용한다.
 
 동의 화면(consent_page)과 연동 해제 화면(disconnect_page)은 build_auth_routes()가
 FastMCP의 custom_route로 등록한다. 카카오 요구사항(개발 가이드 6장 1-b) 두 가지를
@@ -34,10 +36,11 @@ import hmac
 from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl, unquote
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qs, parse_qsl, unquote
 
 from fastmcp.server.auth.auth import TokenHandler
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
+from mcp.server.auth.handlers.revoke import RevocationHandler
 from mcp.server.auth.middleware.client_auth import AuthenticationError, ClientAuthenticator
 from mcp.server.auth.provider import (
     AccessToken,
@@ -47,7 +50,7 @@ from mcp.server.auth.provider import (
     RefreshToken,
 )
 from mcp.server.auth.routes import cors_middleware
-from mcp.server.auth.settings import ClientRegistrationOptions
+from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
@@ -61,6 +64,7 @@ if TYPE_CHECKING:
 _REDIRECT_URI_TEMPLATES = (
     "https://tools.kakao.com/api/v1/applied-mcps/{mcp_id}/authorize/oauth:callback",
     "https://playmcp.kakao.com/api/v1/applied-mcps/{mcp_id}/authorize/oauth:callback",
+    "https://playmcp.kakaocloud.io/api/v1/applied-mcps/{mcp_id}/authorize/oauth:callback",
 )
 
 # PlayMCP in KC 콘솔에서 기존 등록된 서버의 환경변수를 편집할 방법을 찾지
@@ -191,9 +195,9 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         self._allowed_redirect_uri_set = set(allowed_redirect_uris)
         self._consented_clients: set[str] = set()
         self._static_client_ids: set[str] = set()
-        # 동의 대기 중인 요청: consent_token -> (client, params)
+        # 동의 대기 중인 요청: consent_token -> (client, params, user_subject)
         self._pending_consents: dict[
-            str, tuple[OAuthClientInformationFull, AuthorizationParams]
+            str, tuple[OAuthClientInformationFull, AuthorizationParams, str]
         ] = {}
 
     def install_static_client(self, client_info: OAuthClientInformationFull) -> None:
@@ -253,6 +257,25 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
                         methods=["POST", "OPTIONS"],
                     )
                 )
+            elif (
+                isinstance(route, Route)
+                and route.path == "/revoke"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                revocation_handler = RevocationHandler(
+                    provider=self,
+                    client_authenticator=FlexibleStaticClientAuthenticator(self),
+                )
+                result.append(
+                    Route(
+                        path="/revoke",
+                        endpoint=cors_middleware(
+                            revocation_handler.handle, ["POST", "OPTIONS"]
+                        ),
+                        methods=["POST", "OPTIONS"],
+                    )
+                )
             else:
                 result.append(route)
         return result
@@ -262,7 +285,16 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         client: OAuthClientInformationFull,
         authorization_code: AuthorizationCode,
     ) -> OAuthToken:
+        subject = authorization_code.subject
         token = await super().exchange_authorization_code(client, authorization_code)
+        if subject:
+            access_token = self.access_tokens.get(token.access_token)
+            if access_token is not None:
+                access_token.subject = subject
+            if token.refresh_token:
+                refresh_token = self.refresh_tokens.get(token.refresh_token)
+                if refresh_token is not None:
+                    refresh_token.subject = subject
         self.snapshot_save()
         return token
 
@@ -272,7 +304,16 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
+        subject = refresh_token.subject
         token = await super().exchange_refresh_token(client, refresh_token, scopes)
+        if subject:
+            access_token = self.access_tokens.get(token.access_token)
+            if access_token is not None:
+                access_token.subject = subject
+            if token.refresh_token:
+                new_refresh = self.refresh_tokens.get(token.refresh_token)
+                if new_refresh is not None:
+                    new_refresh.subject = subject
         self.snapshot_save()
         return token
 
@@ -290,13 +331,24 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         문자열"이므로 그대로 재사용). 사용자가 동의 화면에서 승인하면
         _finish_authorize()가 실제 authorize()를 이어서 호출한다.
         """
-        client_id = client.client_id or ""
-        if client_id in self._consented_clients:
-            return await super().authorize(client, params)
-
         consent_token = secrets.token_urlsafe(16)
-        self._pending_consents[consent_token] = (client, params)
+        subject = f"playmcp-user-{secrets.token_urlsafe(18)}"
+        self._pending_consents[consent_token] = (client, params, subject)
         return f"/oauth/consent?token={consent_token}"
+
+    async def finish_authorize(
+        self,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+        subject: str,
+    ) -> str:
+        """동의 완료 후 인가 코드를 발급하고 사용자 subject를 코드에 연결한다."""
+        redirect_uri = await super().authorize(client, params)
+        code = parse_qs(urlsplit(redirect_uri).query).get("code", [""])[0]
+        auth_code = self.auth_codes.get(code)
+        if auth_code is not None:
+            auth_code.subject = subject
+        return redirect_uri
 
     async def revoke_client_consent(self, client_id: str) -> None:
         """연동 해제: 동의 기록과 발급된 토큰/등록 정보를 모두 지운다."""
@@ -562,7 +614,7 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
         if pending is None:
             return HTMLResponse("만료되었거나 잘못된 동의 요청입니다.", status_code=400)
 
-        client, params = pending
+        client, params, subject = pending
         if decision != "allow":
             return RedirectResponse(
                 _authorization_error_redirect(params, "access_denied"),
@@ -572,7 +624,7 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
         client_id = client.client_id or ""
         provider._consented_clients.add(client_id)
         provider.snapshot_save()
-        redirect_uri = await provider.authorize(client, params)
+        redirect_uri = await provider.finish_authorize(client, params, subject)
         return RedirectResponse(redirect_uri, status_code=302)
 
     @mcp.custom_route("/oauth/disconnect", methods=["GET"])
@@ -619,6 +671,7 @@ def build_auth_provider() -> "AuthProvider | None":
         ),
         base_url=base_url,
         client_registration_options=ClientRegistrationOptions(enabled=True),
+        revocation_options=RevocationOptions(enabled=True),
     )
     provider.snapshot_load()
     static_client = _static_playmcp_client(

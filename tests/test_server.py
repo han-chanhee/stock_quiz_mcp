@@ -553,6 +553,36 @@ async def test_tool_scoring_ignores_oauth_client_id_without_user_subject(cache):
     assert score_store.leaderboard("stockquiz-playmcp-83185073570028966").my_entry.score == 0
 
 
+@pytest.mark.asyncio
+async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
+    """OAuth subject가 있으면 닉네임이 아니라 subject 기준으로 점수를 적립한다."""
+    import server.main as main
+
+    class FakeAccessToken:
+        subject = "playmcp-user-subject-1"
+
+    monkeypatch.setattr(main, "get_access_token", lambda: FakeAccessToken())
+
+    store = QuizStore()
+    score_store = ScoreStore()
+    app = main.build_app(cache, store, score_store, QuizBank(rng=random.Random(0)))
+
+    quiz_tool = await app.get_tool("quiz")
+    submit_tool = await app.get_tool("submit_answer")
+    quiz_tool.fn(mode="주가", nickname="같은닉네임")
+
+    quiz_id = next(iter(store._data))
+    state = store.get(quiz_id)
+    await submit_tool.fn(
+        quiz_id=quiz_id,
+        answer=str(state.answer.price),
+        nickname="같은닉네임",
+    )
+
+    assert score_store.leaderboard("playmcp-user-subject-1").my_entry.score == 3
+    assert score_store.leaderboard("같은닉네임").my_entry.score == 0
+
+
 def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
     """Preview가 /mcp/로 탐색해도 HTTPS에서 HTTP로 다운그레이드하지 않는다."""
     from server.main import _runtime_middleware, build_app
@@ -651,6 +681,23 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
                 "code_verifier": verifier,
             },
         )
+        post_access_token = post_response.json()["access_token"]
+        revoke_response = client.post(
+            "/revoke",
+            data={
+                "token": post_access_token,
+                "client_id": client_id,
+                "client_secret": _DEFAULT_PLAYMCP_CLIENT_SECRET,
+            },
+        )
+        revoked_tools_response = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Authorization": f"Bearer {post_access_token}",
+            },
+        )
 
         verifier, code = issue_code(client, "basic")
         basic = base64.b64encode(
@@ -686,8 +733,92 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
         )
 
     assert post_response.status_code == 200
+    assert revoke_response.status_code == 200
+    assert revoked_tools_response.status_code == 401
     assert basic_response.status_code == 200
     assert upper_basic_response.status_code == 200
+
+
+def test_static_oauth_client_accepts_kakaocloud_console_redirect(
+    cache, monkeypatch, tmp_path
+):
+    """관리 콘솔 도메인이 callback으로 들어와도 정식 PlayMCP와 동일하게 허용한다."""
+    import base64
+    import hashlib
+    import urllib.parse
+
+    from server.auth import _DEFAULT_PLAYMCP_CLIENT_SECRET, _DEFAULT_PLAYMCP_BEARER_TOKEN
+    from server.main import _runtime_middleware, create_server
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+    client_id = "stockquiz-playmcp-83185073570028966"
+    redirect_uri = (
+        "https://playmcp.kakaocloud.io/api/v1/applied-mcps/"
+        "83185073570028966/authorize/oauth:callback"
+    )
+    app = create_server().http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+    verifier = "codex-cloud-redirect-verifier-012345678901234567890123456789"
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).decode().rstrip("=")
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": "cloud-console",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        location = response.headers["location"]
+        if location.startswith("/oauth/consent?token="):
+            token = urllib.parse.parse_qs(
+                urllib.parse.urlsplit(location).query
+            )["token"][0]
+            response = client.post(
+                "/oauth/consent",
+                data={"token": token, "decision": "allow"},
+                follow_redirects=False,
+            )
+            location = response.headers["location"]
+        code = urllib.parse.parse_qs(urllib.parse.urlsplit(location).query)["code"][0]
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "AUTHORIZATION_CODE",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "client_secret": _DEFAULT_PLAYMCP_CLIENT_SECRET,
+                "code_verifier": verifier,
+            },
+        )
+        tools_response = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Authorization": f"Bearer {_DEFAULT_PLAYMCP_BEARER_TOKEN}",
+            },
+        )
+
+    assert location.startswith(redirect_uri)
+    assert token_response.status_code == 200
+    assert tools_response.status_code == 200
 
 
 @pytest.mark.asyncio

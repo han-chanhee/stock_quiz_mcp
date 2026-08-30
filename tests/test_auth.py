@@ -49,6 +49,7 @@ def test_oauth_provider_uses_injected_mcp_id(monkeypatch):
     assert provider.allowed_redirect_uris == (
         "https://tools.kakao.com/api/v1/applied-mcps/test-id/authorize/oauth:callback",
         "https://playmcp.kakao.com/api/v1/applied-mcps/test-id/authorize/oauth:callback",
+        "https://playmcp.kakaocloud.io/api/v1/applied-mcps/test-id/authorize/oauth:callback",
     )
     static = provider.clients["stockquiz-playmcp-test-id"]
     assert static.client_secret == _DEFAULT_PLAYMCP_CLIENT_SECRET
@@ -171,12 +172,13 @@ async def test_authorize_after_consent_issues_real_redirect():
         client_id="c2", redirect_uris=["https://allowed.example/oauth/callback"]
     )
     await provider.register_client(client)
-    provider._consented_clients.add("c2")
 
-    result = await provider.authorize(client, _params())
+    result = await provider.finish_authorize(client, _params(), "subject-c2")
 
     assert result.startswith("https://allowed.example/oauth/callback")
     assert "code=" in result
+    code = parse_qs(urlsplit(result).query)["code"][0]
+    assert provider.auth_codes[code].subject == "subject-c2"
 
 
 @pytest.mark.asyncio
@@ -190,8 +192,7 @@ async def test_oauth_snapshot_round_trip_after_token_issue(tmp_path):
         client_id="c-token", redirect_uris=["https://allowed.example/oauth/callback"]
     )
     await provider.register_client(client)
-    provider._consented_clients.add("c-token")
-    redirect = await provider.authorize(client, _params())
+    redirect = await provider.finish_authorize(client, _params(), "subject-token")
     code = parse_qs(urlsplit(redirect).query)["code"][0]
     auth_code = await provider.load_authorization_code(client, code)
 
@@ -204,9 +205,12 @@ async def test_oauth_snapshot_round_trip_after_token_issue(tmp_path):
     restored.snapshot_load()
 
     assert await restored.get_client("c-token") == client
-    assert await restored.load_access_token(token.access_token) is not None
-    assert await restored.load_refresh_token(client, token.refresh_token) is not None
-    assert "c-token" in restored._consented_clients
+    access = await restored.load_access_token(token.access_token)
+    refresh = await restored.load_refresh_token(client, token.refresh_token)
+    assert access is not None
+    assert refresh is not None
+    assert access.subject == "subject-token"
+    assert refresh.subject == "subject-token"
 
 
 @pytest.mark.asyncio

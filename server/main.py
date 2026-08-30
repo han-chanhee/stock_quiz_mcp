@@ -25,6 +25,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp import Context
 from fastmcp.tools.tool import ToolAnnotations
+from mcp.server.auth.middleware.auth_context import get_access_token
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -86,6 +87,10 @@ def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
     않는다. 플랫폼이 subject/user_id 메타를 제공하면 그 값만 사용하고, 없으면
     핸들러가 닉네임 fallback을 쓴다.
     """
+    access_token = get_access_token()
+    if access_token and access_token.subject:
+        return access_token.subject
+
     if ctx is None:
         return None
     meta = getattr(ctx.request_context, "meta", None) if ctx.request_context else None
