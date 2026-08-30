@@ -1,4 +1,4 @@
-"""모듈 B 테스트: 출제 4종/초성/±3% property/별칭 정규화/reason 없음/Reason 검증."""
+"""모듈 B 테스트: 출제 3종/초성/±3% property/별칭 정규화/reason 없음/Reason 검증."""
 
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ from services import (
     build_analysis,
     build_answer_analysis_lines,
     build_question_analysis,
-    chart_shape_for_snapshot,
     chosung,
     first_letter_hint,
     is_correct,
@@ -45,7 +44,7 @@ def _snap(name="삼성전자", price=78500.0, market=Market.KR, sector=None, ran
     )
 
 
-# ── 출제 4종: 스키마 유효 + 정답 미포함 ──────────────────────
+# ── 출제 3종: 스키마 유효 + 정답 미포함 ──────────────────────
 
 def _pool():
     return [
@@ -78,25 +77,12 @@ def test_movers_quiz_hides_name():
         assert len(state.hints_precomputed) == 2       # 초성/첫글자 precompute
 
 
-def test_chart_quiz_renders_shape_without_answer_name():
-    bank = QuizBank(rng=random.Random(0))
-    q, state = bank.chart_quiz(_pool())
-
-    assert state.quiz_type == QuizType.COMPANY
-    assert state.answer.name not in q.question_md
-    assert chart_shape_for_snapshot(state.answer) in q.question_md
-    assert "최근 1주 시간봉" in q.question_md
-    assert len(state.hints_precomputed) == 2
-
-
 def test_chart_points_use_one_week_hourly_shape():
     snap = _pool()[0]
     points = chart_points_for_snapshot(snap)
-    shape = chart_shape_for_snapshot(snap)
 
     assert len(points) == 35
     assert all(0.05 <= point <= 0.95 for point in points)
-    assert len(shape) == 14
 
 
 def test_precomputed_hints_never_leak_full_name():

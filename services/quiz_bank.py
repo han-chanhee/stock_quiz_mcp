@@ -1,4 +1,4 @@
-"""출제 4종 생성. 정답은 QuizState에만 담고 QuizQuestion에는 절대 넣지 않는다.
+"""출제 3종 생성. 정답은 QuizState에만 담고 QuizQuestion에는 절대 넣지 않는다.
 
 힌트는 출제 시점에 전 단계를 precompute해 QuizState.hints_precomputed에 저장한다
 (채점 경로의 문자열 연산 제거 — 루트 규칙 12).
@@ -125,7 +125,7 @@ def chart_shape_for_snapshot(snap: StockSnapshot) -> str:
 
 
 class QuizBank:
-    """출제 4종 팩토리. rng/clock 주입으로 테스트 결정론 확보."""
+    """출제 3종 팩토리. rng/clock 주입으로 테스트 결정론 확보."""
 
     def __init__(
         self,
@@ -243,39 +243,6 @@ class QuizBank:
             quiz_type=QuizType.COMPANY,
             question_md=question_md,
             hint_policy=hint_policy,
-        )
-        state = QuizState(
-            quiz_id=quiz_id,
-            quiz_type=QuizType.COMPANY,
-            answer=answer,
-            hints_precomputed=self._name_hints(answer),
-            created_at=self._clock(),
-        )
-        return question, state
-
-    # ── 5. chart_quiz ───────────────────────────────────────
-
-    def chart_quiz(self, pool: list[StockSnapshot]) -> tuple[QuizQuestion, QuizState]:
-        if not pool:
-            raise ValueError("chart_quiz 풀이 비어 있음")
-        answer = self._rng.choice(pool)
-        quiz_id = _new_id()
-        chart = chart_shape_for_snapshot(answer)
-        sector_txt = answer.sector.value if answer.sector else "미분류"
-        lines = [
-            "아래 최근 1주 시간봉 형태와 힌트로 종목명을 맞혀보세요.",
-            f"`{chart}`",
-            f"- 흐름: **{_chart_direction_label(answer.change_pct)}**",
-            f"- 가격대: {_price_band(answer)}",
-            f"- 섹터: **{sector_txt}**",
-        ]
-        if answer.market_cap_rank is not None:
-            lines.append(f"- 랭킹 단서: {answer.market_cap_rank}위권")
-        question = QuizQuestion(
-            quiz_id=quiz_id,
-            quiz_type=QuizType.COMPANY,
-            question_md="\n".join(lines),
-            hint_policy="chosung" if answer.market == Market.KR else "first_letter",
         )
         state = QuizState(
             quiz_id=quiz_id,

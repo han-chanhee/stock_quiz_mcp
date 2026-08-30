@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -79,6 +78,17 @@ def _quiz_frame(
 ) -> dict:
     """출제 모드가 공유하는 공통 틀. 바디만 모드별 함수가 채워 넣는다."""
     expires_in_min = expires_in_sec // 60
+    image_url = f"{_public_base_url()}/quiz/chart/{quiz_id}.png"
+    chart_children = [
+        {"type": "Divider", "spacing": 12},
+        {"type": "Title", "value": "차트 힌트", "size": "md", "weight": "bold"},
+        {"type": "Markdown", "value": f"![차트 힌트]({image_url})"},
+        {
+            "type": "Caption",
+            "value": "최근 1주 시간봉 형태입니다.",
+            "size": "sm",
+        },
+    ]
     analysis_copy = ""
     analysis_children: list[dict] = []
     if analysis_lines:
@@ -121,6 +131,7 @@ def _quiz_frame(
         _text_lines(mode_intro, size="md", maxLines=3),
         {"type": "Divider", "spacing": 12},
         *body_children,
+        *chart_children,
         *analysis_children,
         {"type": "Divider", "spacing": 12},
         {"type": "Markdown", "value": f"정답 제출용 ID: `{quiz_id}`"},
@@ -131,7 +142,8 @@ def _quiz_frame(
         },
     ]
     copy_text = (
-        f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}{analysis_copy}\n\n"
+        f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}\n\n"
+        f"차트 힌트: {image_url}{analysis_copy}\n\n"
         f"제출 ID: `{quiz_id}`"
     )
     return _card_payload(copy_text=copy_text, name=name, children=children)
@@ -247,59 +259,6 @@ def company_quiz_widget(
     return _quiz_frame(
         quiz_id, mode_intro, body, expires_in_sec, "company_quiz", question_md, analysis_lines
     )
-
-
-def chart_quiz_widget(
-    quiz_id: str,
-    mode_intro: str,
-    question_md: str,
-    expires_in_sec: int = 1800,
-    analysis_lines: list[str] | None = None,
-) -> dict:
-    """차트 모양 종목 맞히기 위젯. 안전한 Text/Row 조합으로 막대 차트를 렌더링한다."""
-    chart = _extract_chart_shape(question_md)
-    image_url = f"{_public_base_url()}/quiz/chart/{quiz_id}.png"
-    chart_row = {
-        "type": "Row",
-        "align": "end",
-        "gap": 4,
-        "children": [
-            {
-                "type": "Text",
-                "value": char,
-                "size": "lg",
-                "weight": "bold",
-            }
-            for char in chart
-        ],
-    }
-    body = [
-        {"type": "Title", "value": "차트 모양", "size": "md", "weight": "bold"},
-        {"type": "Markdown", "value": f"![차트 힌트]({image_url})"},
-        chart_row,
-        {"type": "Markdown", "value": question_md},
-        {
-            "type": "Badge",
-            "label": "종목명을 입력하세요",
-            "color": "info",
-            "variant": "soft",
-            "size": "sm",
-        },
-    ]
-    return _quiz_frame(
-        quiz_id,
-        mode_intro,
-        body,
-        expires_in_sec,
-        "chart_quiz",
-        f"{question_md}\n\n차트 이미지: {image_url}",
-        analysis_lines,
-    )
-
-
-def _extract_chart_shape(question_md: str) -> str:
-    match = re.search(r"`([▁▂▃▄▅▆▇]+)`", question_md)
-    return match.group(1) if match else "▃▄▅▄▆▅▇"
 
 
 def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
@@ -565,21 +524,12 @@ def welcome_widget() -> dict:
                 {"type": "Text", "value": "종목 — 섹터·가격·시총 힌트로 회사 맞히기", "flex": 1},
             ],
         },
-        {
-            "type": "Row",
-            "align": "center",
-            "gap": 8,
-            "children": [
-                {"type": "Icon", "name": "activity", "color": "info", "size": "sm"},
-                {"type": "Text", "value": "차트 — 미니 차트와 단서로 종목 맞히기", "flex": 1},
-            ],
-        },
     ]
     children = [
         {"type": "Title", "value": "주식대결에 오신 걸 환영해요!", "size": "lg", "weight": "bold"},
         {
             "type": "Text",
-            "value": "코스피/코스닥 종목으로 즐기는 주식 퀴즈예요.",
+            "value": "코스피/코스닥 종목으로 즐기는 주식 퀴즈예요. 모든 문제에 차트 힌트가 함께 나와요.",
             "size": "md",
         },
         {"type": "Divider", "spacing": 12},
@@ -598,11 +548,10 @@ def welcome_widget() -> dict:
     ]
     copy_text = (
         "**주식대결에 오신 걸 환영해요!**\n\n"
-        "코스피/코스닥 종목으로 즐기는 주식 퀴즈입니다.\n\n"
+        "코스피/코스닥 종목으로 즐기는 주식 퀴즈입니다. 모든 문제에 차트 힌트가 함께 나옵니다.\n\n"
         "- 📈 주가 — 종목 현재가 맞히기(±3%)\n"
         "- 📊 시장 — 가장 오르거나 떨어진 종목 맞히기\n"
-        "- 🏢 종목 — 섹터·가격·시총 힌트로 회사 맞히기\n"
-        "- 📉 차트 — 미니 차트와 단서로 종목 맞히기\n\n"
+        "- 🏢 종목 — 섹터·가격·시총 힌트로 회사 맞히기\n\n"
         "로그인한 사용자는 자동 닉네임으로 주간 랭킹(매주 초기화)에 참여합니다.\n\n"
         '예: "주가 모드로 퀴즈 내줘."'
     )
@@ -620,7 +569,6 @@ def mode_selection_widget() -> dict:
                 {"type": "Badge", "label": "주가", "color": "info", "variant": "soft"},
                 {"type": "Badge", "label": "시장", "color": "info", "variant": "soft"},
                 {"type": "Badge", "label": "종목", "color": "info", "variant": "soft"},
-                {"type": "Badge", "label": "차트", "color": "info", "variant": "soft"},
             ],
         },
         {
@@ -631,7 +579,7 @@ def mode_selection_widget() -> dict:
     ]
     copy_text = (
         "모드를 골라주세요.\n\n"
-        "주가 / 시장 / 종목 / 차트 중 하나를 골라주세요.\n\n"
+        "주가 / 시장 / 종목 중 하나를 골라주세요.\n\n"
         '예: "종목 모드로 퀴즈 내줘."'
     )
     return _card_payload(
@@ -707,8 +655,8 @@ def company_pool_empty_widget() -> dict:
 
 def mode_unknown_widget() -> dict:
     return _notice_widget(
-        "주가 / 시장 / 종목 / 차트 중에서 골라주세요.",
-        '예: "차트 모드로 퀴즈 내줘."',
+        "주가 / 시장 / 종목 중에서 골라주세요.",
+        '예: "종목 모드로 퀴즈 내줘."',
         "mode_unknown",
     )
 

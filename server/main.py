@@ -298,8 +298,8 @@ def _build_app(
     @mcp.tool(
         name="help",
         description=(
-            "Shows how to play 주식대결 (Stock Quiz Battle / 주식사전 퀴즈): the four "
-            "quiz modes (주가/시장/종목/차트), automatic ranking nickname behavior, "
+            "Shows how to play 주식대결 (Stock Quiz Battle / 주식사전 퀴즈): the three "
+            "quiz modes (주가/시장/종목), automatic ranking nickname behavior, "
             "and example phrases to start. Call this when the user asks how the quiz "
             "works, what modes exist, or seems unsure how to start."
         ),
@@ -316,10 +316,10 @@ def _build_app(
             "Requires mode; nickname is optional because the server assigns a stable "
             "display nickname for authenticated users. If mode is missing, call this "
             "tool anyway with what you have; it replies with a short guide instead of erroring. "
-            "Pick one of four modes: '주가' (guess a random stock's current price, "
+            "Pick one of three modes: '주가' (guess a random stock's current price, "
             "±3% correct), '시장' (guess the biggest gainer or loser over a period; "
             "direction is random), '종목' (guess the company from sector/price/market-cap "
-            "hints), '차트' (guess the company from a rendered mini chart and clues). "
+            "hints). Every quiz includes a rendered one-week hourly-shape chart clue. "
             "The reply includes a short mode intro, the quiz, a distinct 5-line "
             "problem analysis, live ranking, and a quiz_id; grade answers with submit_answer. "
             "Korean market only for now."

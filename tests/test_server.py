@@ -132,6 +132,8 @@ async def test_quiz_modes_route_and_show_intro(cache):
     p = handlers.quiz(QuizMode.PRICE, "테스터", Market.KR)
     assert "주가 퀴즈" in p.markdown and p.quiz_id
     assert "문제 분석" in p.markdown
+    assert p.widget is not None
+    assert f"/quiz/chart/{p.quiz_id}.png" in json.dumps(p.widget, ensure_ascii=False)
     assert store.get(p.quiz_id).quiz_type.value == "price"
 
     # 종목 모드
@@ -139,6 +141,8 @@ async def test_quiz_modes_route_and_show_intro(cache):
     assert "종목 퀴즈" in s.markdown and s.quiz_id
     assert "문제 분석" in s.markdown
     assert "5." in s.markdown
+    assert s.widget is not None
+    assert f"/quiz/chart/{s.quiz_id}.png" in json.dumps(s.widget, ensure_ascii=False)
     assert store.get(s.quiz_id).quiz_type.value == "company"
     assert store.get(s.quiz_id).answer.name not in s.markdown  # 정답 미노출
 
@@ -147,18 +151,10 @@ async def test_quiz_modes_route_and_show_intro(cache):
     assert "시장 퀴즈" in m.markdown and m.quiz_id
     assert "문제 분석" in m.markdown
     assert "5." in m.markdown
+    assert m.widget is not None
+    assert f"/quiz/chart/{m.quiz_id}.png" in json.dumps(m.widget, ensure_ascii=False)
     assert store.get(m.quiz_id).quiz_type.value in ("gainer", "loser")
     assert store.get(m.quiz_id).answer.name not in m.markdown
-
-    # 차트 모드 — 렌더링용 차트 힌트 + 이름 맞히기
-    c = handlers.quiz(QuizMode.CHART, "테스터", Market.KR)
-    assert "차트 퀴즈" in c.markdown and c.quiz_id
-    assert "문제 분석" in c.markdown
-    assert "5." in c.markdown
-    assert c.widget is not None
-    assert c.widget["name"] == "chart_quiz"
-    assert store.get(c.quiz_id).quiz_type.value == "company"
-    assert store.get(c.quiz_id).answer.name not in c.markdown
 
     # US는 모드와 무관하게 차단
     from server.handlers import _US_BLOCKED_MD
@@ -699,7 +695,7 @@ def test_chart_image_route_renders_png(cache):
         middleware=_runtime_middleware(),
     )
     handlers = QuizHandlers(cache, store, ScoreStore(), QuizBank(rng=random.Random(0)))
-    outcome = handlers.chart_quiz(Market.KR)
+    outcome = handlers.price_quiz(Market.KR)
 
     with TestClient(
         app,

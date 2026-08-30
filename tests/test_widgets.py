@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from contracts.schemas import LeaderboardSnapshot, ScoreEntry
 from server.widgets import (
     already_solved_widget,
-    chart_quiz_widget,
     company_pool_empty_widget,
     company_quiz_widget,
     correct_answer_widget,
@@ -143,30 +142,33 @@ def test_company_quiz_widget_payload() -> None:
     assert "QZ-4" in payload["copy_text"]
 
 
-def test_chart_quiz_widget_payload() -> None:
-    question_md = (
-        "아래 차트 모양과 힌트로 종목명을 맞혀보세요.\n"
-        "`▁▂▃▄▅▆▇`\n"
-        "- 흐름: **상승**"
-    )
-    payload = chart_quiz_widget("QZ-5", "📉 차트 퀴즈", question_md)
-    _assert_payload(payload, "chart_quiz")
-    assert "/quiz/chart/QZ-5.png" in json.dumps(payload, ensure_ascii=False)
-    assert "![차트 힌트]" in json.dumps(payload, ensure_ascii=False)
-    assert "▁" in payload["copy_text"]
-    assert "/quiz/chart/QZ-5.png" in payload["copy_text"]
+def test_all_quiz_widgets_include_chart_hint() -> None:
+    cases = [
+        ("QZ-P", price_quiz_widget("QZ-P", "📈 주가 퀴즈", "현재가는?")),
+        ("QZ-M", market_quiz_widget("QZ-M", "📊 시장 퀴즈", "가장 오른 종목은?", 5.2)),
+        ("QZ-C", company_quiz_widget("QZ-C", "🏢 종목 퀴즈", "이 회사는?")),
+    ]
+
+    for quiz_id, payload in cases:
+        serialized = json.dumps(payload, ensure_ascii=False)
+        assert "차트 힌트" in serialized
+        assert f"/quiz/chart/{quiz_id}.png" in serialized
+        assert "![차트 힌트]" in serialized
+        assert "차트 힌트:" in payload["copy_text"]
 
 
 def test_welcome_widget_payload() -> None:
     payload = welcome_widget()
     _assert_payload(payload, "welcome")
     assert "닉네임" in payload["copy_text"]
+    assert "차트 —" not in payload["copy_text"]
 
 
 def test_mode_selection_widget_payload() -> None:
     payload = mode_selection_widget()
     _assert_payload(payload, "mode_selection")
     assert "모드" in payload["copy_text"]
+    assert "차트" not in payload["copy_text"]
 
 
 def test_notice_widgets_payload() -> None:

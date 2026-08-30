@@ -81,12 +81,6 @@ def collect_widget_payloads() -> dict[str, dict]:
         "company_quiz": widgets.company_quiz_widget(
             "QZ-COMPANY", "종목 퀴즈", "이 회사는?", analysis_lines=question_analysis
         ),
-        "chart_quiz": widgets.chart_quiz_widget(
-            "QZ-CHART",
-            "차트 퀴즈",
-            "아래 차트 모양과 힌트로 종목명을 맞혀보세요.\n`▁▂▃▄▅▆▇`\n- 흐름: **상승**",
-            analysis_lines=question_analysis,
-        ),
         "wrong_answer": widgets.wrong_answer_widget("UP", 1),
         "correct_answer": widgets.correct_answer_widget(
             "삼성전자",
