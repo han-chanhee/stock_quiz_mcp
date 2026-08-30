@@ -756,6 +756,99 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
     assert upper_basic_response.status_code == 200
 
 
+def test_oauth_can_delegate_user_login_to_kakao(cache, monkeypatch, tmp_path):
+    """KAKAO_REST_API_KEY가 있으면 Kakao Login 후 자체 동의와 token 발급을 이어간다."""
+    import base64
+    import hashlib
+    import urllib.parse
+
+    from server.auth import KakaoRestrictedOAuthProvider
+    from server.main import _runtime_middleware, create_server
+
+    async def exchange_stub(self, code):
+        assert code == "kakao-code"
+        return "kakao-access-token"
+
+    async def subject_stub(self, access_token):
+        assert access_token == "kakao-access-token"
+        return "kakao:12345"
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("KAKAO_REST_API_KEY", "rest-api-key")
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+    monkeypatch.setattr(KakaoRestrictedOAuthProvider, "_exchange_kakao_code", exchange_stub)
+    monkeypatch.setattr(KakaoRestrictedOAuthProvider, "_fetch_kakao_subject", subject_stub)
+    client_id = "stockquiz-playmcp-87440044842919710"
+    redirect_uri = (
+        "https://playmcp.kakao.com/api/v1/applied-mcps/"
+        "87440044842919710/authorize/oauth:callback"
+    )
+    verifier = "codex-kakao-login-verifier-012345678901234567890123456789"
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).decode().rstrip("=")
+    app = create_server().http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        authorize_response = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": "playmcp-state",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        kakao_location = authorize_response.headers["location"]
+        kakao_query = urllib.parse.parse_qs(urllib.parse.urlsplit(kakao_location).query)
+        callback_response = client.get(
+            "/oauth/kakao/callback",
+            params={"code": "kakao-code", "state": kakao_query["state"][0]},
+            follow_redirects=False,
+        )
+        consent_location = callback_response.headers["location"]
+        consent_token = urllib.parse.parse_qs(
+            urllib.parse.urlsplit(consent_location).query
+        )["token"][0]
+        consent_response = client.post(
+            "/oauth/consent",
+            data={"token": consent_token, "decision": "allow"},
+            follow_redirects=False,
+        )
+        callback = consent_response.headers["location"]
+        code = urllib.parse.parse_qs(urllib.parse.urlsplit(callback).query)["code"][0]
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "AUTHORIZATION_CODE",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": verifier,
+            },
+        )
+
+    assert kakao_location.startswith("https://kauth.kakao.com/oauth/authorize?")
+    assert kakao_query["client_id"] == ["rest-api-key"]
+    assert kakao_query["redirect_uri"] == [
+        "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/oauth/kakao/callback"
+    ]
+    assert consent_location.startswith("/oauth/consent?token=")
+    assert callback.startswith(redirect_uri)
+    assert token_response.status_code == 200
+
+
 def test_mcp_tools_list_does_not_require_verification_header(
     cache, monkeypatch, tmp_path
 ):
