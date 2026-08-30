@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from starlette.testclient import TestClient
 
 from clients import MockMarketClient
 from batch import DailyBatch, MockReasonProvider
@@ -520,6 +521,34 @@ async def test_tool_returns_widget_json_and_markdown_fallback(cache):
     us_payload = json.loads(us_result)
     assert us_payload["name"] == "us_blocked"
     assert _US_BLOCKED_MD in us_payload["copy_text"] or "해외" in us_payload["copy_text"]
+
+
+def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
+    """Preview가 /mcp/로 탐색해도 HTTPS에서 HTTP로 다운그레이드하지 않는다."""
+    from server.main import _runtime_middleware, build_app
+
+    app = build_app(cache, QuizStore(), ScoreStore()).http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="http://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+        headers={"x-forwarded-proto": "https"},
+    ) as client:
+        response = client.post(
+            "/mcp/",
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 307
+    assert response.headers["location"] == (
+        "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/mcp"
+    )
 
 
 @pytest.mark.asyncio

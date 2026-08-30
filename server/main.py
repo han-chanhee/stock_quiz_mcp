@@ -25,6 +25,8 @@ from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp import Context
 from fastmcp.tools.tool import ToolAnnotations
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
 
@@ -57,6 +59,19 @@ _COMMON_ANN = dict(
 )
 
 _SAFE_ERROR = "잠시 후 다시 시도해주세요."
+
+
+class ForwardedHttpsRedirectMiddleware(BaseHTTPMiddleware):
+    """TLS 종료 프록시 뒤에서 Starlette 슬래시 리다이렉트가 http로 내려가지 않게 보정."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        location = response.headers.get("location", "")
+        forwarded_proto = request.headers.get("x-forwarded-proto", "")
+        is_forwarded_https = forwarded_proto.split(",", 1)[0].strip().lower() == "https"
+        if is_forwarded_https and location.startswith("http://"):
+            response.headers["location"] = "https://" + location.removeprefix("http://")
+        return response
 
 
 def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
@@ -323,6 +338,10 @@ def create_server() -> FastMCP:
     return mcp
 
 
+def _runtime_middleware() -> list[Middleware]:
+    return [Middleware(ForwardedHttpsRedirectMiddleware)]
+
+
 if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
@@ -335,6 +354,7 @@ if __name__ == "__main__":
         # TLS 종료 프록시(Fly 등) 뒤에서 X-Forwarded-Proto를 신뢰 →
         # 슬래시 리다이렉트(/mcp/ → /mcp)가 http로 다운그레이드되는 문제 방지.
         "uvicorn_config": {"proxy_headers": True, "forwarded_allow_ips": "*"},
+        "middleware": _runtime_middleware(),
     }
     # 공개 배포 시 Host 헤더 보호 때문에 외부 도메인 요청이 막힐 수 있다.
     # ALLOWED_HOSTS="app.fly.dev,example.com" 로 허용 호스트 지정(권장),
