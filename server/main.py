@@ -82,18 +82,19 @@ class ForwardedHttpsRedirectMiddleware(BaseHTTPMiddleware):
 def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
     """툴 호출 컨텍스트에서 점수용 식별자를 뽑는다.
 
-    OAuth/DCR client_id를 우선 사용한다. 향후 플랫폼이 subject 메타를 제공하면
-    같은 함수에서 흡수한다. 둘 다 없으면 핸들러가 닉네임 fallback을 쓴다.
+    OAuth client_id는 PlayMCP 앱 식별자이지 최종 사용자가 아니므로 점수 키로 쓰지
+    않는다. 플랫폼이 subject/user_id 메타를 제공하면 그 값만 사용하고, 없으면
+    핸들러가 닉네임 fallback을 쓴다.
     """
     if ctx is None:
         return None
     meta = getattr(ctx.request_context, "meta", None) if ctx.request_context else None
     for name in ("subject", "user_id", "client_id"):
         value = getattr(meta, name, None) if meta is not None else None
+        if value is None and isinstance(meta, dict):
+            value = meta.get(name)
         if isinstance(value, str) and value.strip():
             return value.strip()
-    if ctx.client_id:
-        return ctx.client_id
     return None
 
 

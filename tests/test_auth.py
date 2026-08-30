@@ -11,6 +11,7 @@ from server.auth import (
     _authorization_error_redirect,
     _consent_page_html,
     _disconnect_page_html,
+    _DEFAULT_PLAYMCP_BEARER_TOKEN,
     _DEFAULT_PLAYMCP_CLIENT_SECRET,
     build_auth_provider,
 )
@@ -54,6 +55,9 @@ def test_oauth_provider_uses_injected_mcp_id(monkeypatch):
     assert static.token_endpoint_auth_method == "client_secret_post"
     assert static.grant_types == ["authorization_code", "refresh_token"]
     assert static.response_types == ["code"]
+    static_token = provider.access_tokens[_DEFAULT_PLAYMCP_BEARER_TOKEN]
+    assert static_token.client_id == "stockquiz-playmcp-test-id"
+    assert static_token.expires_at is None
 
 
 def test_oauth_static_client_can_be_overridden_by_env(monkeypatch):
@@ -61,11 +65,13 @@ def test_oauth_static_client_can_be_overridden_by_env(monkeypatch):
     monkeypatch.setenv("OAUTH_MCP_ID", "test-id")
     monkeypatch.setenv("OAUTH_PLAYMCP_CLIENT_ID", "custom-client")
     monkeypatch.setenv("OAUTH_PLAYMCP_CLIENT_SECRET", "custom-secret")
+    monkeypatch.setenv("OAUTH_PLAYMCP_BEARER_TOKEN", "custom-bearer")
 
     provider = build_auth_provider()
 
     static = provider.clients["custom-client"]
     assert static.client_secret == "custom-secret"
+    assert provider.access_tokens["custom-bearer"].client_id == "custom-client"
     assert "stockquiz-playmcp-test-id" not in provider.clients
 
 

@@ -68,6 +68,7 @@ _HARDCODED_MCP_ID = "3606"
 _DEFAULT_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
 _DEFAULT_OAUTH_SNAPSHOT_PATH = Path(__file__).parent.parent / "store" / "data" / "oauth.json"
 _DEFAULT_PLAYMCP_CLIENT_SECRET = "stockquiz_3221c246c3f3f4e0b9cd0235c2699c0f772165438b273780"
+_DEFAULT_PLAYMCP_BEARER_TOKEN = "stockquiz_preview_0c28879f772d4f17eb9dfa5f9b4c76de28a278720c57cdeb"
 
 CONSENT_TEXT = {
     "제공받는 자": "(주) 카카오",
@@ -111,6 +112,17 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             raise ValueError("static client_id is required")
         self.clients[client_id] = client_info
         self._static_client_ids.add(client_id)
+
+    def install_static_bearer_token(self, token: str, client_id: str) -> None:
+        """PlayMCP 직접 입력 인증헤더 검사에 쓰는 고정 Bearer token을 등록한다."""
+        if not token or not client_id:
+            raise ValueError("static bearer token and client_id are required")
+        self.access_tokens[token] = AccessToken(
+            token=token,
+            client_id=client_id,
+            scopes=[],
+            expires_at=None,
+        )
 
     async def register_client(
         self, client_info: OAuthClientInformationFull
@@ -285,6 +297,13 @@ def _static_playmcp_client(
         grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],
         client_name="주식대결 PlayMCP",
+    )
+
+
+def _static_playmcp_bearer_token() -> str:
+    return (
+        os.environ.get("OAUTH_PLAYMCP_BEARER_TOKEN", "").strip()
+        or _DEFAULT_PLAYMCP_BEARER_TOKEN
     )
 
 
@@ -484,10 +503,13 @@ def build_auth_provider() -> "AuthProvider | None":
         client_registration_options=ClientRegistrationOptions(enabled=True),
     )
     provider.snapshot_load()
-    provider.install_static_client(
-        _static_playmcp_client(
-            mcp_id=mcp_id,
-            allowed_redirect_uris=allowed_redirect_uris,
-        )
+    static_client = _static_playmcp_client(
+        mcp_id=mcp_id,
+        allowed_redirect_uris=allowed_redirect_uris,
+    )
+    provider.install_static_client(static_client)
+    provider.install_static_bearer_token(
+        _static_playmcp_bearer_token(),
+        static_client.client_id or "",
     )
     return provider

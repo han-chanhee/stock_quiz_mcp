@@ -523,6 +523,36 @@ async def test_tool_returns_widget_json_and_markdown_fallback(cache):
     assert _US_BLOCKED_MD in us_payload["copy_text"] or "해외" in us_payload["copy_text"]
 
 
+@pytest.mark.asyncio
+async def test_tool_scoring_ignores_oauth_client_id_without_user_subject(cache):
+    """OAuth client_id만 있으면 앱 ID라서 사용자 점수 키로 쓰지 않고 닉네임을 쓴다."""
+    from server.main import build_app
+
+    class FakeContext:
+        client_id = "stockquiz-playmcp-3606"
+        request_context = None
+
+    store = QuizStore()
+    score_store = ScoreStore()
+    app = build_app(cache, store, score_store, QuizBank(rng=random.Random(0)))
+
+    quiz_tool = await app.get_tool("quiz")
+    submit_tool = await app.get_tool("submit_answer")
+    quiz_tool.fn(mode="주가", nickname="개인A", ctx=FakeContext())
+
+    quiz_id = next(iter(store._data))
+    state = store.get(quiz_id)
+    await submit_tool.fn(
+        quiz_id=quiz_id,
+        answer=str(state.answer.price),
+        nickname="개인A",
+        ctx=FakeContext(),
+    )
+
+    assert score_store.leaderboard("개인A").my_entry.score == 3
+    assert score_store.leaderboard("stockquiz-playmcp-3606").my_entry.score == 0
+
+
 def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
     """Preview가 /mcp/로 탐색해도 HTTPS에서 HTTP로 다운그레이드하지 않는다."""
     from server.main import _runtime_middleware, build_app
