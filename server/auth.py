@@ -73,6 +73,7 @@ _REDIRECT_URI_TEMPLATES = (
 # 값이 바뀌면(재생성 등) 이 상수만 고쳐서 재배포하면 된다.
 # 2026-08-30: PlayMCP OAuth 안내 메일 기준 최종 mcpId.
 _HARDCODED_MCP_ID = "87440044842919710"
+_LEGACY_MCP_IDS = ("83185073570028966",)
 
 # OAuth issuer/base URL. MCP SDK가 HTTPS를 강제하므로 실제 배포 도메인을 쓴다.
 # (OAUTH_BASE_URL 환경변수로 덮어쓸 수 있음)
@@ -472,6 +473,17 @@ def _static_playmcp_client(
     )
 
 
+def _playmcp_mcp_ids() -> tuple[str, ...]:
+    primary = os.environ.get("OAUTH_MCP_ID", "").strip() or _HARDCODED_MCP_ID
+    extra = tuple(
+        item.strip()
+        for item in os.environ.get("OAUTH_EXTRA_MCP_IDS", "").split(",")
+        if item.strip()
+    )
+    ordered = (primary, *_LEGACY_MCP_IDS, *extra)
+    return tuple(dict.fromkeys(ordered))
+
+
 def _static_playmcp_bearer_token() -> str:
     return (
         os.environ.get("OAUTH_PLAYMCP_BEARER_TOKEN", "").strip()
@@ -652,10 +664,13 @@ def build_auth_provider() -> "AuthProvider | None":
     if os.environ.get("OAUTH_ENABLED") != "1":
         return None
 
-    mcp_id = os.environ.get("OAUTH_MCP_ID", "").strip() or _HARDCODED_MCP_ID
+    mcp_ids = _playmcp_mcp_ids()
+    primary_mcp_id = mcp_ids[0]
 
     allowed_redirect_uris = tuple(
-        template.format(mcp_id=mcp_id) for template in _REDIRECT_URI_TEMPLATES
+        template.format(mcp_id=mcp_id)
+        for mcp_id in mcp_ids
+        for template in _REDIRECT_URI_TEMPLATES
     )
     # base_url을 명시하지 않으면 InMemoryOAuthProvider 기본값(http://fastmcp.example.com)이
     # 쓰이는데, MCP SDK가 issuer URL에 HTTPS를 강제해 기동 시 ValueError로 죽는다
@@ -676,13 +691,24 @@ def build_auth_provider() -> "AuthProvider | None":
         revocation_options=RevocationOptions(enabled=True),
     )
     provider.snapshot_load()
-    static_client = _static_playmcp_client(
-        mcp_id=mcp_id,
-        allowed_redirect_uris=allowed_redirect_uris,
-    )
-    provider.install_static_client(static_client)
+    static_clients = [
+        _static_playmcp_client(
+            mcp_id=primary_mcp_id,
+            allowed_redirect_uris=allowed_redirect_uris,
+        )
+    ]
+    if "OAUTH_PLAYMCP_CLIENT_ID" not in os.environ:
+        static_clients.extend(
+            _static_playmcp_client(
+                mcp_id=mcp_id,
+                allowed_redirect_uris=allowed_redirect_uris,
+            )
+            for mcp_id in mcp_ids[1:]
+        )
+    for static_client in static_clients:
+        provider.install_static_client(static_client)
     provider.install_static_bearer_token(
         _static_playmcp_bearer_token(),
-        static_client.client_id or "",
+        static_clients[0].client_id or "",
     )
     return provider

@@ -35,7 +35,7 @@ def test_oauth_falls_back_to_hardcoded_mcp_id_when_env_missing(monkeypatch):
     provider = build_auth_provider()
 
     assert provider is not None
-    assert all(f"/{_HARDCODED_MCP_ID}/" in uri for uri in provider.allowed_redirect_uris)
+    assert any(f"/{_HARDCODED_MCP_ID}/" in uri for uri in provider.allowed_redirect_uris)
     assert f"stockquiz-playmcp-{_HARDCODED_MCP_ID}" in provider.clients
 
 
@@ -50,6 +50,9 @@ def test_oauth_provider_uses_injected_mcp_id(monkeypatch):
         "https://tools.kakao.com/api/v1/applied-mcps/test-id/authorize/oauth:callback",
         "https://playmcp.kakao.com/api/v1/applied-mcps/test-id/authorize/oauth:callback",
         "https://playmcp.kakaocloud.io/api/v1/applied-mcps/test-id/authorize/oauth:callback",
+        "https://tools.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
+        "https://playmcp.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
+        "https://playmcp.kakaocloud.io/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
     )
     static = provider.clients["stockquiz-playmcp-test-id"]
     assert static.client_secret == _DEFAULT_PLAYMCP_CLIENT_SECRET
