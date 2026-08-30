@@ -118,6 +118,8 @@ class FlexibleStaticClientAuthenticator(ClientAuthenticator):
             request_secret = form_data.get("client_secret")
             if not isinstance(request_secret, str):
                 request_secret = basic_secret
+            if not request_secret and client_id in static_client_ids:
+                return client
             if not request_secret or not client.client_secret:
                 raise AuthenticationError("Client secret is required")
             if not hmac.compare_digest(

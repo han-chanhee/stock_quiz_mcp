@@ -681,6 +681,17 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
                 "code_verifier": verifier,
             },
         )
+        verifier, code = issue_code(client, "no-secret")
+        no_secret_response = client.post(
+            "/token",
+            data={
+                "grant_type": "AUTHORIZATION_CODE",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": verifier,
+            },
+        )
         post_access_token = post_response.json()["access_token"]
         revoke_response = client.post(
             "/revoke",
@@ -733,6 +744,7 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
         )
 
     assert post_response.status_code == 200
+    assert no_secret_response.status_code == 200
     assert revoke_response.status_code == 200
     assert revoked_tools_response.status_code == 401
     assert basic_response.status_code == 200
