@@ -233,7 +233,7 @@ def test_correct_answer_widget_payload_and_top_three() -> None:
         "삼성전자",
         "현재가 80,000원",
         "시가총액 1위",
-        "특별한 재료 확인 안 됨",
+        "확인된 공개 이슈는 아직 없습니다.",
         10,
         leaderboard,
         ["다음 퀴즈", "종료"],

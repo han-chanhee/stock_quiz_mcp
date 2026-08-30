@@ -252,20 +252,21 @@ class QuizHandlers:
         if (blocked := self._us_guard(market)) is not None:
             return blocked
         pool = self._cache.sector_pool()
+        # 데이터가 얇아 해당 섹터에 종목이 없을 수 있다(크래시 대신 안내).
+        if sector is not None and not [s for s in pool if s.sector == sector]:
+            return QuizOutcome(
+                quiz_id="",
+                markdown=f"🗂️ '{sector.value}' 섹터는 아직 준비된 종목이 부족해요. "
+                "섹터를 비워두면 전체에서 출제해 드려요.",
+                widget=widgets.sector_empty_widget(sector.value),
+            )
         if not pool:
             return QuizOutcome(
                 quiz_id="",
                 markdown="🗂️ 회사 맞히기 데이터를 준비 중이에요.",
                 widget=widgets.company_pool_empty_widget(),
             )
-        try:
-            question, state = self._bank.company_quiz(pool, sector)
-        except ValueError:
-            return QuizOutcome(
-                quiz_id="",
-                markdown="🗂️ 카카오 종목 퀴즈 데이터를 준비 중이에요.",
-                widget=widgets.company_pool_empty_widget(),
-            )
+        question, state = self._bank.company_quiz(pool, sector)
         return self._register(question, state)
 
     # ── 채점 ─────────────────────────────────────────────────

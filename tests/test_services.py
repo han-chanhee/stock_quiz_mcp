@@ -16,7 +16,6 @@ from contracts.schemas import (
     QuizQuestion,
     QuizType,
     Reason,
-    Sector,
     StockSnapshot,
 )
 from services import (
@@ -115,28 +114,9 @@ def test_precomputed_hints_never_leak_full_name():
 
 def test_company_quiz_hides_name_shows_hints():
     bank = QuizBank(rng=random.Random(0))
-    kakao = _snap("카카오", 58200, sector=Sector.INTERNET_GAME, rank=22)
-    kakao.ticker = "035720"
-    q, state = bank.company_quiz([*_pool(), kakao])
+    q, state = bank.company_quiz(_pool())
     assert state.answer.name not in q.question_md
     assert "현재가" in q.question_md
-
-
-def test_company_quiz_forces_kakao_when_available():
-    kakao = _snap("카카오", 58200, sector=Sector.INTERNET_GAME, rank=22)
-    kakao.ticker = "035720"
-    pool = [_snap("삼성전자", 78500, sector=Sector.SEMICONDUCTOR, rank=1), kakao]
-
-    for seed in range(10):
-        q, state = QuizBank(rng=random.Random(seed)).company_quiz(pool, Sector.BIO)
-        assert state.answer.name == "카카오"
-        assert state.answer.ticker == "035720"
-        assert state.answer.name not in q.question_md
-
-
-def test_company_quiz_without_kakao_does_not_pick_other_company():
-    with pytest.raises(ValueError, match="카카오"):
-        QuizBank(rng=random.Random(0)).company_quiz(_pool())
 
 
 # ── 초성 변환 ────────────────────────────────────────────────
@@ -259,8 +239,8 @@ def test_question_analysis_is_five_lines_and_hides_answer_for_name_quizzes():
     assert len(public) == 5
     assert all(snap.name not in line for line in hidden)
     assert any(snap.name in line for line in public)
-    assert hidden[-1] == "검색 기반 특징: 해당 종목 HBM 수요 강세 보도"
-    assert public[-1] == "검색 기반 특징: 삼성전자 HBM 수요 강세 보도"
+    assert hidden[-1] == "검색으로 확인한 특징: 해당 종목 HBM 수요 강세 보도"
+    assert public[-1] == "검색으로 확인한 특징: 삼성전자 HBM 수요 강세 보도"
 
 
 def test_answer_analysis_is_five_lines_and_differs_from_question_analysis():
@@ -277,7 +257,7 @@ def test_answer_analysis_is_five_lines_and_differs_from_question_analysis():
     assert len(answer_lines) == 5
     assert answer_lines != question_lines
     assert any(snap.name in line for line in answer_lines)
-    assert answer_lines[-1] == "확인된 재료: HBM 수요 강세 보도"
+    assert answer_lines[-1] == "확인된 공개 이슈: HBM 수요 강세 보도"
 
 
 def test_reason_without_source_url_raises():

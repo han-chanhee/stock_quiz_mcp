@@ -98,26 +98,16 @@ async def test_cache_us_absent_is_not_stale(tmp_path):
 
 @pytest.mark.asyncio
 async def test_guess_company_empty_sector_is_graceful(cache):
-    """카카오 데이터가 없으면 다른 종목으로 대체 출제하지 않고 안내한다."""
+    """얇은 데이터로 빈 섹터를 요청해도 크래시 대신 안내 메시지."""
     from contracts.schemas import Sector
 
     handlers, _ = _handlers(cache)
     cache._sector_pool = [
         s for s in cache.sector_pool() if s.sector == Sector.FINANCE
-    ]  # 카카오가 없는 금융만 남김(화이트박스)
+    ]  # 금융만 남김(화이트박스)
     out = handlers.guess_company(Sector.BIO, Market.KR)
     assert out.quiz_id == "" and "준비" in out.markdown
-
-
-@pytest.mark.asyncio
-async def test_guess_company_always_uses_kakao_even_with_other_sector(cache):
-    from contracts.schemas import Sector
-
-    handlers, store = _handlers(cache)
-    out = handlers.guess_company(Sector.BIO, Market.KR)
-    assert out.quiz_id != ""
-    assert store.get(out.quiz_id).answer.name == "카카오"
-    assert store.get(out.quiz_id).answer.ticker == "035720"
+    assert handlers.guess_company(Sector.FINANCE, Market.KR).quiz_id != ""
 
 
 @pytest.mark.asyncio
@@ -210,7 +200,7 @@ async def test_full_scenario_price_quiz(cache):
     assert correct.analysis is not None
     assert DISCLAIMER in correct.markdown
     assert "정답 분석" in correct.markdown
-    assert "5. 확인된 재료:" in correct.markdown
+    assert "5. 확인된 공개 이슈" in correct.markdown
     assert correct.next_actions == ["다음 퀴즈", "다른 퀴즈", "종료"]
     assert correct.widget is not None
     assert correct.widget["name"] == "correct_answer"

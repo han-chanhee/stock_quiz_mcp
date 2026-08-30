@@ -1,14 +1,14 @@
 """정답 후 미니분석 생성. 팩트만. 매수/매도 권유 문장 절대 금지.
 
 문장 템플릿을 코드에 고정한다(생성형 문장 금지). reason은 프리캐싱된 Reason만 사용하고,
-없으면 반드시 "특별한 재료 확인 안 됨"을 반환한다(루트 규칙 8·11).
+없으면 반드시 NO_REASON 문구를 반환한다(루트 규칙 8·11).
 """
 
 from __future__ import annotations
 
 from contracts.schemas import Market, MiniAnalysis, Reason, StockSnapshot
 
-NO_REASON = "특별한 재료 확인 안 됨"
+NO_REASON = "확인된 공개 이슈는 아직 없습니다."
 
 
 def _fmt_price(snap: StockSnapshot) -> str:
@@ -56,8 +56,8 @@ def _movement_label(change_pct: float) -> str:
 
 def _rank_hint_line(snap: StockSnapshot) -> str:
     if snap.market_cap_rank is None:
-        return "순위형 단서는 이번 데이터에 없습니다."
-    return f"데이터 랭킹 단서는 {snap.market_cap_rank}위권입니다."
+        return "시가총액 순위 정보는 이번 데이터에 없습니다."
+    return f"시가총액 순위는 {snap.market_cap_rank}위권입니다."
 
 
 def _variant_key(snap: StockSnapshot, salt: str) -> int:
@@ -71,13 +71,19 @@ def _feature_line(
     reveal_name: bool,
 ) -> str:
     if reason is None or not reason.source_url:
-        return "검색 기반 특징은 아직 확인된 공개 재료가 없습니다."
+        return "검색으로 확인한 특징은 아직 없습니다."
     text = reason.text.strip()
     if not reveal_name:
         text = text.replace(answer.name, "해당 종목")
         compact_name = answer.name.replace(" ", "")
         text = text.replace(compact_name, "해당 종목")
-    return f"검색 기반 특징: {text}"
+    return f"검색으로 확인한 특징: {text}"
+
+
+def _answer_feature_line(reason: Reason | None) -> str:
+    if reason is None or not reason.source_url:
+        return NO_REASON
+    return f"확인된 공개 이슈: {reason.text.strip()}"
 
 
 def build_question_analysis(
@@ -97,23 +103,23 @@ def build_question_analysis(
         feature = _feature_line(answer, reason, reveal_name=True)
         variants = [
             [
-                f"{answer.name}은 출제 시점 기준 {movement} 흐름({pct})입니다.",
-                f"가격대는 {price_band}이고 1만원 단위 숫자로 맞히면 됩니다.",
-                f"섹터는 {sector}로 분류되어 있습니다.",
+                f"{answer.name}의 출제 기준 가격대는 {price_band} 구간입니다.",
+                f"전일 대비 흐름은 {movement}({pct})입니다.",
+                f"업종 단서는 {sector}입니다.",
                 rank_line,
                 feature,
             ],
             [
                 f"이번 문제는 {answer.name}의 현재가 감각을 묻습니다.",
-                f"등락률 단서는 {pct}, 흐름은 {movement}입니다.",
-                f"대략적인 가격 구간은 {price_band}입니다.",
+                f"전일 대비 {pct}, 흐름은 {movement}입니다.",
+                f"가격 구간은 {price_band}입니다.",
                 rank_line,
                 feature,
             ],
             [
-                f"{answer.name}의 가격을 맞히는 공개 종목형 문제입니다.",
-                f"출제 데이터의 움직임은 {movement}({pct})입니다.",
-                f"섹터 단서는 {sector}, 가격대 단서는 {price_band}입니다.",
+                f"{answer.name}의 가격을 1만원 단위로 맞히는 문제입니다.",
+                f"출제 데이터 기준 움직임은 {movement}({pct})입니다.",
+                f"업종은 {sector}, 가격대는 {price_band} 구간입니다.",
                 rank_line,
                 feature,
             ],
@@ -128,23 +134,23 @@ def build_question_analysis(
     }.get(context, "종목 추론")
     variants = [
         [
-            f"이 문제는 정답명을 숨긴 {label} 문제입니다.",
-            f"등락 흐름은 {movement}({pct})입니다.",
-            f"가격대는 {price_band}, 섹터는 {sector}입니다.",
+            f"정답명은 숨겨두었습니다. 유형은 {label}입니다.",
+            f"전일 대비 흐름은 {movement}({pct})입니다.",
+            f"가격대는 {price_band}, 업종은 {sector}입니다.",
             rank_line,
             feature,
         ],
         [
-            f"정답 종목명은 아직 공개하지 않습니다. 유형은 {label}입니다.",
-            f"움직임 단서는 {movement}, 등락률은 {pct}입니다.",
-            f"가격 구간은 {price_band}이고 섹터 단서는 {sector}입니다.",
+            f"차트와 단서를 보고 종목명을 맞히는 {label} 문제입니다.",
+            f"흐름은 {movement}, 전일 대비 등락률은 {pct}입니다.",
+            f"가격 구간은 {price_band}, 업종 단서는 {sector}입니다.",
             rank_line,
             feature,
         ],
         [
-            f"{label} 문제라서 이름보다 패턴과 단서를 먼저 봐야 합니다.",
-            f"출제 시점 흐름은 {movement}({pct})입니다.",
-            f"가격대 {price_band}, 섹터 {sector}가 핵심 단서입니다.",
+            f"{label} 문제라서 이름 대신 패턴과 단서를 먼저 봅니다.",
+            f"출제 기준 흐름은 {movement}({pct})입니다.",
+            f"가격대 {price_band}, 업종 {sector}가 핵심 단서입니다.",
             rank_line,
             feature,
         ],
@@ -157,25 +163,24 @@ def build_answer_analysis_lines(
     reason: Reason | None = None,
 ) -> list[str]:
     """정답 공개 후 보여줄 5줄 분석. 팩트 기반 문장만 조립한다."""
-    reason_text = reason.text if reason is not None and reason.source_url else NO_REASON
     return [
-        f"{answer.name} 현재가는 {_fmt_price(answer)}이고 등락률은 {_fmt_pct(answer.change_pct)}입니다.",
-        f"출제 시점 기준 흐름은 {_movement_label(answer.change_pct)}으로 분류됩니다.",
-        f"섹터는 {_sector_label(answer)}, 가격대는 {_price_band(answer)}입니다.",
+        f"{answer.name}의 출제 기준 현재가는 {_fmt_price(answer)}이며, 전일 대비 {_fmt_pct(answer.change_pct)}입니다.",
+        f"주가 흐름은 {_movement_label(answer.change_pct)} 흐름입니다.",
+        f"업종은 {_sector_label(answer)}, 가격대는 {_price_band(answer)} 구간입니다.",
         _rank_hint_line(answer),
-        f"확인된 재료: {reason_text}",
+        _answer_feature_line(reason),
     ]
 
 
 def build_analysis(answer: StockSnapshot, reason: Reason | None = None) -> MiniAnalysis:
     """스냅샷(+선택적 Reason)으로 팩트 3줄 조립."""
-    price_line = f"{answer.name} 현재가 {_fmt_price(answer)} ({_fmt_pct(answer.change_pct)})"
+    price_line = f"{answer.name}의 현재가 {_fmt_price(answer)} · 전일 대비 {_fmt_pct(answer.change_pct)}"
 
     if answer.market_cap_rank is not None:
         market_label = "국내" if answer.market == Market.KR else "미국"
         rank_line = f"{market_label} 시가총액 {answer.market_cap_rank}위"
     else:
-        rank_line = "시가총액 순위 정보 없음"
+        rank_line = "시가총액 순위 정보는 없습니다."
 
     if reason is not None and reason.source_url:
         reason_line = reason.text

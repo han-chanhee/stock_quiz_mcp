@@ -14,7 +14,7 @@
   - 초성 변환 유틸 포함 (한글 유니코드 분해, 외부 라이브러리 금지)
 - `analysis.py`: MiniAnalysis 생성
   - price_line, rank_line은 스냅샷에서 조립
-  - reason_line: 뉴스 근거가 주입되지 않으면 반드시 "특별한 재료 확인 안 됨"
+  - reason_line: 뉴스 근거가 주입되지 않으면 반드시 "확인된 공개 이슈는 아직 없습니다."
   - 권유 문장 생성 절대 금지. 문장 템플릿을 코드에 고정할 것
 
 ## 의존
@@ -36,5 +36,5 @@
   - ±3% 판정은 hypothesis property 테스트로 경계 포함 수백 케이스 자동 생성
     (정확히 3.0% 케이스 명시 포함)
   - 별칭/오타/한영혼용 판정도 hypothesis로 정규화 불변성 검증
-  - reason 미조회 시 "특별한 재료 확인 안 됨" 반환 100%
+  - reason 미조회 시 "확인된 공개 이슈는 아직 없습니다." 반환 100%
   - source_url 없는 Reason 생성 시도 → ValidationError 발생 확인
