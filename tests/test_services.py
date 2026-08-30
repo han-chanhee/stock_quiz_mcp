@@ -16,6 +16,7 @@ from contracts.schemas import (
     QuizQuestion,
     QuizType,
     Reason,
+    Sector,
     StockSnapshot,
 )
 from services import (
@@ -114,9 +115,28 @@ def test_precomputed_hints_never_leak_full_name():
 
 def test_company_quiz_hides_name_shows_hints():
     bank = QuizBank(rng=random.Random(0))
-    q, state = bank.company_quiz(_pool())
+    kakao = _snap("카카오", 58200, sector=Sector.INTERNET_GAME, rank=22)
+    kakao.ticker = "035720"
+    q, state = bank.company_quiz([*_pool(), kakao])
     assert state.answer.name not in q.question_md
     assert "현재가" in q.question_md
+
+
+def test_company_quiz_forces_kakao_when_available():
+    kakao = _snap("카카오", 58200, sector=Sector.INTERNET_GAME, rank=22)
+    kakao.ticker = "035720"
+    pool = [_snap("삼성전자", 78500, sector=Sector.SEMICONDUCTOR, rank=1), kakao]
+
+    for seed in range(10):
+        q, state = QuizBank(rng=random.Random(seed)).company_quiz(pool, Sector.BIO)
+        assert state.answer.name == "카카오"
+        assert state.answer.ticker == "035720"
+        assert state.answer.name not in q.question_md
+
+
+def test_company_quiz_without_kakao_does_not_pick_other_company():
+    with pytest.raises(ValueError, match="카카오"):
+        QuizBank(rng=random.Random(0)).company_quiz(_pool())
 
 
 # ── 초성 변환 ────────────────────────────────────────────────

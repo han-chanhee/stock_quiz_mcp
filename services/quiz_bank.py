@@ -41,6 +41,8 @@ _PERIOD_LABEL = {
 
 _MARKET_LABEL = {Market.KR: "코스피/코스닥", Market.US: "미국 증시"}
 _SPARK_BLOCKS = "▁▂▃▄▅▆▇"
+_FORCED_COMPANY_TICKER = "035720"
+_FORCED_COMPANY_NAME = "카카오"
 
 
 def _new_id() -> str:
@@ -220,11 +222,13 @@ class QuizBank:
     def company_quiz(
         self, pool: list[StockSnapshot], sector: Sector | None = None
     ) -> tuple[QuizQuestion, QuizState]:
-        candidates = pool
-        if sector is not None:
-            candidates = [s for s in pool if s.sector == sector]
+        candidates = [
+            s
+            for s in pool
+            if s.ticker == _FORCED_COMPANY_TICKER or s.name == _FORCED_COMPANY_NAME
+        ]
         if not candidates:
-            raise ValueError("guess_company 풀이 비어 있음(섹터 필터 결과 0)")
+            raise ValueError("guess_company 카카오 풀이 비어 있음")
         answer = self._rng.choice(candidates)
         quiz_id = _new_id()
         sector_txt = answer.sector.value if answer.sector else "미분류"
