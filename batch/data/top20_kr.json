@@ -4,199 +4,199 @@
     "name": "삼성전자",
     "market": "KR",
     "sector": "반도체",
-    "price": 274500.0,
-    "change_pct": 2.43,
+    "price": 257000.0,
+    "change_pct": -3.38,
     "market_cap_rank": 1,
-    "as_of": "2026-08-17T16:22:47.950622+09:00"
+    "as_of": "2026-08-30T22:06:50.457637+09:00"
   },
   {
     "ticker": "000660",
     "name": "SK하이닉스",
     "market": "KR",
     "sector": "반도체",
-    "price": 1645000.0,
-    "change_pct": 3.26,
+    "price": 1653000.0,
+    "change_pct": -4.45,
     "market_cap_rank": 2,
-    "as_of": "2026-08-17T16:22:47.950773+09:00"
+    "as_of": "2026-08-30T22:06:50.457688+09:00"
   },
   {
     "ticker": "005935",
     "name": "삼성전자우",
     "market": "KR",
     "sector": null,
-    "price": 195600.0,
-    "change_pct": 4.15,
+    "price": 186800.0,
+    "change_pct": -3.86,
     "market_cap_rank": 3,
-    "as_of": "2026-08-17T16:22:47.950796+09:00"
+    "as_of": "2026-08-30T22:06:50.457695+09:00"
   },
   {
     "ticker": "402340",
     "name": "SK스퀘어",
     "market": "KR",
     "sector": null,
-    "price": 1154000.0,
-    "change_pct": 3.31,
+    "price": 1028000.0,
+    "change_pct": -3.75,
     "market_cap_rank": 4,
-    "as_of": "2026-08-17T16:22:47.950806+09:00"
+    "as_of": "2026-08-30T22:06:50.457699+09:00"
   },
   {
     "ticker": "009150",
     "name": "삼성전기",
     "market": "KR",
     "sector": "반도체",
-    "price": 1558000.0,
-    "change_pct": 3.66,
+    "price": 1421000.0,
+    "change_pct": 2.6,
     "market_cap_rank": 5,
-    "as_of": "2026-08-17T16:22:47.950815+09:00"
-  },
-  {
-    "ticker": "005380",
-    "name": "현대차",
-    "market": "KR",
-    "sector": "자동차",
-    "price": 453000.0,
-    "change_pct": 8.24,
-    "market_cap_rank": 6,
-    "as_of": "2026-08-17T16:22:47.950823+09:00"
+    "as_of": "2026-08-30T22:06:50.457703+09:00"
   },
   {
     "ticker": "373220",
     "name": "LG에너지솔루션",
     "market": "KR",
     "sector": "2차전지",
-    "price": 369500.0,
-    "change_pct": 1.09,
+    "price": 370000.0,
+    "change_pct": -0.13,
+    "market_cap_rank": 6,
+    "as_of": "2026-08-30T22:06:50.457741+09:00"
+  },
+  {
+    "ticker": "005380",
+    "name": "현대차",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 399500.0,
+    "change_pct": 0.38,
     "market_cap_rank": 7,
-    "as_of": "2026-08-17T16:22:47.950838+09:00"
+    "as_of": "2026-08-30T22:06:50.457749+09:00"
   },
   {
     "ticker": "207940",
     "name": "삼성바이오로직스",
     "market": "KR",
     "sector": "바이오",
-    "price": 1548000.0,
-    "change_pct": -1.02,
+    "price": 1486000.0,
+    "change_pct": -6.78,
     "market_cap_rank": 8,
-    "as_of": "2026-08-17T16:22:47.950846+09:00"
+    "as_of": "2026-08-30T22:06:50.457753+09:00"
   },
   {
     "ticker": "032830",
     "name": "삼성생명",
     "market": "KR",
     "sector": "금융",
-    "price": 301000.0,
-    "change_pct": 3.26,
+    "price": 310000.0,
+    "change_pct": 0.98,
     "market_cap_rank": 9,
-    "as_of": "2026-08-17T16:22:47.950854+09:00"
-  },
-  {
-    "ticker": "028260",
-    "name": "삼성물산",
-    "market": "KR",
-    "sector": null,
-    "price": 369000.0,
-    "change_pct": 1.1,
-    "market_cap_rank": 10,
-    "as_of": "2026-08-17T16:22:47.950862+09:00"
-  },
-  {
-    "ticker": "012450",
-    "name": "한화에어로스페이스",
-    "market": "KR",
-    "sector": "조선방산",
-    "price": 1160000.0,
-    "change_pct": -2.11,
-    "market_cap_rank": 11,
-    "as_of": "2026-08-17T16:22:47.950869+09:00"
+    "as_of": "2026-08-30T22:06:50.457756+09:00"
   },
   {
     "ticker": "105560",
     "name": "KB금융",
     "market": "KR",
     "sector": "금융",
-    "price": 168500.0,
-    "change_pct": 0.24,
-    "market_cap_rank": 12,
-    "as_of": "2026-08-17T16:22:47.950877+09:00"
+    "price": 171600.0,
+    "change_pct": 2.08,
+    "market_cap_rank": 10,
+    "as_of": "2026-08-30T22:06:50.457761+09:00"
   },
   {
-    "ticker": "000270",
-    "name": "기아",
+    "ticker": "028260",
+    "name": "삼성물산",
     "market": "KR",
-    "sector": "자동차",
-    "price": 141700.0,
-    "change_pct": 3.13,
-    "market_cap_rank": 13,
-    "as_of": "2026-08-17T16:22:47.950885+09:00"
+    "sector": null,
+    "price": 375000.0,
+    "change_pct": -0.13,
+    "market_cap_rank": 11,
+    "as_of": "2026-08-30T22:06:50.457764+09:00"
   },
   {
-    "ticker": "329180",
-    "name": "HD현대중공업",
+    "ticker": "012450",
+    "name": "한화에어로스페이스",
     "market": "KR",
     "sector": "조선방산",
-    "price": 510000.0,
-    "change_pct": 2.82,
-    "market_cap_rank": 14,
-    "as_of": "2026-08-17T16:22:47.950892+09:00"
+    "price": 1157000.0,
+    "change_pct": 0.61,
+    "market_cap_rank": 12,
+    "as_of": "2026-08-30T22:06:50.457768+09:00"
   },
   {
     "ticker": "034020",
     "name": "두산에너빌리티",
     "market": "KR",
     "sector": null,
-    "price": 82600.0,
-    "change_pct": 2.1,
-    "market_cap_rank": 15,
-    "as_of": "2026-08-17T16:22:47.950903+09:00"
+    "price": 88200.0,
+    "change_pct": 2.68,
+    "market_cap_rank": 13,
+    "as_of": "2026-08-30T22:06:50.457771+09:00"
   },
   {
     "ticker": "055550",
     "name": "신한지주",
     "market": "KR",
     "sector": "금융",
-    "price": 107400.0,
-    "change_pct": 0.75,
-    "market_cap_rank": 16,
-    "as_of": "2026-08-17T16:22:47.950910+09:00"
+    "price": 109700.0,
+    "change_pct": 0.83,
+    "market_cap_rank": 14,
+    "as_of": "2026-08-30T22:06:50.457775+09:00"
   },
   {
-    "ticker": "012330",
-    "name": "현대모비스",
+    "ticker": "000270",
+    "name": "기아",
     "market": "KR",
     "sector": "자동차",
-    "price": 547000.0,
-    "change_pct": 7.05,
-    "market_cap_rank": 17,
-    "as_of": "2026-08-17T16:22:47.950917+09:00"
+    "price": 128000.0,
+    "change_pct": 1.51,
+    "market_cap_rank": 15,
+    "as_of": "2026-08-30T22:06:50.457778+09:00"
   },
   {
-    "ticker": "068270",
-    "name": "셀트리온",
+    "ticker": "329180",
+    "name": "HD현대중공업",
     "market": "KR",
-    "sector": "바이오",
-    "price": 201000.0,
-    "change_pct": -0.5,
-    "market_cap_rank": 18,
-    "as_of": "2026-08-17T16:22:47.950925+09:00"
-  },
-  {
-    "ticker": "034730",
-    "name": "SK",
-    "market": "KR",
-    "sector": null,
-    "price": 585000.0,
-    "change_pct": 5.79,
-    "market_cap_rank": 19,
-    "as_of": "2026-08-17T16:22:47.950932+09:00"
+    "sector": "조선방산",
+    "price": 457000.0,
+    "change_pct": -2.77,
+    "market_cap_rank": 16,
+    "as_of": "2026-08-30T22:06:50.457781+09:00"
   },
   {
     "ticker": "006400",
     "name": "삼성SDI",
     "market": "KR",
     "sector": "2차전지",
-    "price": 516000.0,
-    "change_pct": 5.95,
+    "price": 571000.0,
+    "change_pct": 0.35,
+    "market_cap_rank": 17,
+    "as_of": "2026-08-30T22:06:50.457786+09:00"
+  },
+  {
+    "ticker": "068270",
+    "name": "셀트리온",
+    "market": "KR",
+    "sector": "바이오",
+    "price": 190700.0,
+    "change_pct": -0.31,
+    "market_cap_rank": 18,
+    "as_of": "2026-08-30T22:06:50.457791+09:00"
+  },
+  {
+    "ticker": "012330",
+    "name": "현대모비스",
+    "market": "KR",
+    "sector": "자동차",
+    "price": 450500.0,
+    "change_pct": -0.22,
+    "market_cap_rank": 19,
+    "as_of": "2026-08-30T22:06:50.457795+09:00"
+  },
+  {
+    "ticker": "034730",
+    "name": "SK",
+    "market": "KR",
+    "sector": null,
+    "price": 543000.0,
+    "change_pct": -2.34,
     "market_cap_rank": 20,
-    "as_of": "2026-08-17T16:22:47.950943+09:00"
+    "as_of": "2026-08-30T22:06:50.457808+09:00"
   }
 ]
