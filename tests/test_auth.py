@@ -394,10 +394,12 @@ async def test_consent_token_can_survive_memory_loss(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_authorization_code_can_survive_memory_loss(monkeypatch):
+async def test_authorization_code_can_survive_memory_loss(monkeypatch, tmp_path):
     monkeypatch.setenv("OAUTH_STATE_SECRET", "stable-state-secret")
+    path = tmp_path / "oauth.json"
     first = KakaoRestrictedOAuthProvider(
-        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
     )
     client = OAuthClientInformationFull(
         client_id="c-token", redirect_uris=["https://allowed.example/oauth/callback"]
@@ -407,15 +409,16 @@ async def test_authorization_code_can_survive_memory_loss(monkeypatch):
     code = parse_qs(urlsplit(redirect).query)["code"][0]
 
     second = KakaoRestrictedOAuthProvider(
-        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
     )
-    await second.register_client(client)
     auth_code = await second.load_authorization_code(client, code)
 
     assert auth_code is not None
+    assert code.startswith("test_auth_code_")
     assert auth_code.code == code
     assert auth_code.subject == "kakao:12345"
-    assert second._oauth_events[-1]["event"] == "auth_code_restored"
+    assert second._oauth_events[-1]["event"] == "auth_code_loaded_from_memory"
 
 
 @pytest.mark.asyncio
@@ -493,6 +496,7 @@ async def test_authorize_after_consent_issues_real_redirect():
     assert result.startswith("https://allowed.example/oauth/callback")
     assert "code=" in result
     code = parse_qs(urlsplit(result).query)["code"][0]
+    assert code.startswith("test_auth_code_")
     assert provider.auth_codes[code].subject == "subject-c2"
 
 

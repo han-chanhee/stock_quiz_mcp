@@ -789,14 +789,24 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         params: AuthorizationParams,
         subject: str,
     ) -> str:
-        """동의 완료 후 stateless 인가 코드를 발급하고 사용자 subject를 코드에 연결한다."""
-        code = self._encode_authorization_code(client, params, subject)
-        auth_code = await self._decode_authorization_code(client, code)
+        """동의 완료 후 짧은 opaque 인가 코드를 발급하고 subject를 연결한다."""
+        code = f"test_auth_code_{secrets.token_hex(16)}"
+        auth_code = AuthorizationCode(
+            code=code,
+            scopes=params.scopes or [],
+            expires_at=time.time() + 300,
+            client_id=client.client_id or "",
+            code_challenge=params.code_challenge,
+            redirect_uri=params.redirect_uri,
+            redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
+            subject=subject,
+        )
         self.auth_codes[code] = auth_code
         self._record_oauth_event(
             "auth_code_issued",
             client_id=client.client_id,
             subject_present=bool(subject),
+            code_length=len(code),
         )
         self.snapshot_save()
         return _with_query(str(params.redirect_uri), {"code": code, "state": params.state})
@@ -804,6 +814,7 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
     async def load_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: str
     ) -> AuthorizationCode | None:
+        self.snapshot_load()
         auth_code = await super().load_authorization_code(client, authorization_code)
         if auth_code is not None:
             self._record_oauth_event(
@@ -895,6 +906,11 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             "access_to_refresh": dict(self._access_to_refresh_map),
             "refresh_to_access": dict(self._refresh_to_access_map),
             "consented_clients": sorted(self._consented_clients),
+            "auth_codes": {
+                code: info.model_dump(mode="json")
+                for code, info in self.auth_codes.items()
+                if info.expires_at >= time.time()
+            },
         }
         tmp = self._snapshot_path.with_suffix(self._snapshot_path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -917,6 +933,11 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             self.refresh_tokens = {
                 token: RefreshToken.model_validate(info)
                 for token, info in payload.get("refresh_tokens", {}).items()
+            }
+            self.auth_codes = {
+                str(code): AuthorizationCode.model_validate(info)
+                for code, info in payload.get("auth_codes", {}).items()
+                if AuthorizationCode.model_validate(info).expires_at >= time.time()
             }
             self._consented_clients = set(payload.get("consented_clients", []))
             self._access_to_refresh_map = {
