@@ -478,8 +478,8 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         params: AuthorizationParams,
         subject: str | None = None,
     ) -> str:
-        consent_token = secrets.token_urlsafe(16)
         user_subject = subject or f"playmcp-user-{secrets.token_urlsafe(18)}"
+        consent_token = self._encode_consent_token(client, params, user_subject)
         self._pending_consents[consent_token] = (client, params, user_subject)
         return f"/oauth/consent?token={consent_token}"
 
@@ -581,6 +581,94 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             ),
         )
         return client, params
+
+    def _encode_consent_token(
+        self,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+        subject: str,
+    ) -> str:
+        payload = {
+            "v": 1,
+            "iat": int(time.time()),
+            "nonce": secrets.token_urlsafe(8),
+            "client_id": client.client_id or "",
+            "redirect_uri": str(params.redirect_uri),
+            "state": params.state,
+            "scopes": params.scopes or [],
+            "code_challenge": params.code_challenge,
+            "redirect_uri_provided_explicitly": params.redirect_uri_provided_explicitly,
+            "subject": subject,
+        }
+        encoded = _base64url_json(payload)
+        signature = hmac.new(
+            self._state_secret,
+            encoded.encode("ascii"),
+            hashlib.sha256,
+        ).digest()
+        encoded_signature = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
+        return f"{encoded}.{encoded_signature}"
+
+    async def _decode_consent_token(
+        self, consent_token: str
+    ) -> tuple[OAuthClientInformationFull, AuthorizationParams, str]:
+        client, params, payload = await self._decode_signed_oauth_payload(consent_token)
+        subject = str(payload.get("subject") or "")
+        if not subject:
+            raise ValueError("동의 token에 사용자 식별값이 없습니다.")
+        return client, params, subject
+
+    async def _decode_signed_oauth_payload(
+        self, value: str
+    ) -> tuple[OAuthClientInformationFull, AuthorizationParams, dict[str, object]]:
+        try:
+            encoded, encoded_signature = value.split(".", 1)
+        except ValueError as exc:
+            raise ValueError("서명 token 형식이 올바르지 않습니다.") from exc
+        expected = hmac.new(
+            self._state_secret,
+            encoded.encode("ascii"),
+            hashlib.sha256,
+        ).digest()
+        padding = "=" * (-len(encoded_signature) % 4)
+        try:
+            actual = base64.urlsafe_b64decode(
+                (encoded_signature + padding).encode("ascii")
+            )
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("서명 token의 서명이 올바르지 않습니다.") from exc
+        if not hmac.compare_digest(expected, actual):
+            raise ValueError("서명 token의 서명이 일치하지 않습니다.")
+
+        payload = _unbase64url_json(encoded)
+        issued_at = int(payload.get("iat", 0))
+        if issued_at < int(time.time()) - 1800:
+            raise ValueError("서명 token이 만료되었습니다.")
+        client_id = str(payload.get("client_id") or "")
+        redirect_uri = str(payload.get("redirect_uri") or "")
+        code_challenge = str(payload.get("code_challenge") or "")
+        if not client_id or not redirect_uri or not code_challenge:
+            raise ValueError("서명 token에 필수 값이 없습니다.")
+        client = await self.get_client(client_id)
+        if client is None:
+            raise ValueError("서명 token의 OAuth client를 찾을 수 없습니다.")
+        registered = [str(uri) for uri in client.redirect_uris or []]
+        if redirect_uri not in registered and not _is_trusted_playmcp_redirect_uri(
+            redirect_uri
+        ):
+            raise ValueError("서명 token의 redirect_uri가 허용되지 않았습니다.")
+        raw_scopes = payload.get("scopes")
+        scopes = raw_scopes if isinstance(raw_scopes, list) else []
+        params = AuthorizationParams(
+            state=str(payload.get("state") or ""),
+            scopes=[str(scope) for scope in scopes],
+            code_challenge=code_challenge,
+            redirect_uri=redirect_uri,
+            redirect_uri_provided_explicitly=bool(
+                payload.get("redirect_uri_provided_explicitly", True)
+            ),
+        )
+        return client, params, payload
 
     async def _exchange_kakao_code(self, code: str) -> str:
         config = self.kakao_login_config
@@ -955,7 +1043,13 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
     async def consent_get(request: Request) -> HTMLResponse:
         token = request.query_params.get("token", "")
         if token not in provider._pending_consents:
-            return HTMLResponse("만료되었거나 잘못된 동의 요청입니다.", status_code=400)
+            try:
+                await provider._decode_consent_token(token)
+            except ValueError as exc:
+                return HTMLResponse(
+                    f"만료되었거나 잘못된 동의 요청입니다: {escape(str(exc))}",
+                    status_code=400,
+                )
         return HTMLResponse(_consent_page_html(token))
 
     @mcp.custom_route("/oauth/consent", methods=["POST"])
@@ -965,7 +1059,13 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
         decision = str(form.get("decision", ""))
         pending = provider._pending_consents.pop(token, None)
         if pending is None:
-            return HTMLResponse("만료되었거나 잘못된 동의 요청입니다.", status_code=400)
+            try:
+                pending = await provider._decode_consent_token(token)
+            except ValueError as exc:
+                return HTMLResponse(
+                    f"만료되었거나 잘못된 동의 요청입니다: {escape(str(exc))}",
+                    status_code=400,
+                )
 
         client, params, subject = pending
         if decision != "allow":

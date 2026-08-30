@@ -358,6 +358,42 @@ async def test_kakao_login_state_can_survive_memory_loss(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_consent_token_can_survive_memory_loss(monkeypatch):
+    monkeypatch.setenv("OAUTH_STATE_SECRET", "stable-state-secret")
+    config = KakaoLoginConfig(
+        rest_api_key="rest-api-key",
+        client_secret=None,
+        redirect_uri="https://issuer.example/oauth/kakao/callback",
+    )
+    first = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        kakao_login_config=config,
+    )
+    client = OAuthClientInformationFull(
+        client_id="c-kakao", redirect_uris=["https://allowed.example/oauth/callback"]
+    )
+    await first.register_client(client)
+    consent_url = first.begin_local_consent(client, _params(), "kakao:12345")
+    token = parse_qs(urlsplit(consent_url).query)["token"][0]
+
+    second = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        kakao_login_config=config,
+    )
+    await second.register_client(client)
+    recovered_client, recovered_params, subject = await second._decode_consent_token(token)
+    redirect = await second.finish_authorize(
+        recovered_client,
+        recovered_params,
+        subject,
+    )
+
+    assert subject == "kakao:12345"
+    assert redirect.startswith("https://allowed.example/oauth/callback")
+    assert "code=" in redirect
+
+
+@pytest.mark.asyncio
 async def test_kakao_token_exchange_retries_without_stale_client_secret():
     provider = KakaoRestrictedOAuthProvider(
         allowed_redirect_uris=("https://allowed.example/oauth/callback",),
