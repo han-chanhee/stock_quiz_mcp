@@ -927,6 +927,20 @@ def test_create_server_can_select_redis_runtime_state(monkeypatch):
     ]
 
 
+def test_sqlite_runtime_is_default_even_if_redis_url_exists(monkeypatch, tmp_path):
+    from server.main import create_server
+
+    state_db = tmp_path / "runtime.sqlite3"
+    monkeypatch.setenv("OAUTH_ENABLED", "0")
+    monkeypatch.delenv("STATE_BACKEND", raising=False)
+    monkeypatch.setenv("REDIS_URL", "redis://example.internal:6379/0")
+    monkeypatch.setenv("STATE_DB_PATH", str(state_db))
+
+    create_server()
+
+    assert state_db.exists()
+
+
 def test_redis_runtime_state_requires_url(monkeypatch):
     from server.main import _runtime_stores
 

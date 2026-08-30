@@ -99,12 +99,12 @@ def _runtime_state_db_path() -> Path:
 def _runtime_stores() -> tuple[QuizStore, ScoreStore]:
     """운영 저장소 선택.
 
-    - STATE_BACKEND=redis 또는 REDIS_URL 존재: 다중 컨테이너 공유 상태
-    - 그 외: 단일 컨테이너 내구성용 SQLite WAL
+    - STATE_BACKEND=redis: 다중 컨테이너 공유 상태
+    - STATE_BACKEND 미설정 또는 sqlite: 단일 컨테이너 내구성용 SQLite WAL
     """
-    backend = os.environ.get("STATE_BACKEND", "").strip().lower()
+    backend = os.environ.get("STATE_BACKEND", "sqlite").strip().lower()
     redis_url = os.environ.get("REDIS_URL", "").strip()
-    if backend == "redis" or redis_url:
+    if backend == "redis":
         if not redis_url:
             raise RuntimeError("STATE_BACKEND=redis requires REDIS_URL")
         prefix = os.environ.get("REDIS_KEY_PREFIX", "stockquiz")
@@ -112,6 +112,8 @@ def _runtime_stores() -> tuple[QuizStore, ScoreStore]:
             RedisQuizStore(redis_url, key_prefix=prefix),
             RedisScoreStore(redis_url, key_prefix=prefix),
         )
+    if backend not in {"", "sqlite"}:
+        raise RuntimeError(f"Unsupported STATE_BACKEND: {backend}")
 
     state_db_path = _runtime_state_db_path()
     return SQLiteQuizStore(state_db_path), SQLiteScoreStore(state_db_path)
