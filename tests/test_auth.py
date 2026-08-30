@@ -17,6 +17,7 @@ from server.auth import (
     _DEFAULT_PLAYMCP_CLIENT_SECRET,
     _oauth_runtime_diagnostics,
     _kakao_login_config,
+    _normalize_token_request,
     build_auth_provider,
 )
 
@@ -478,6 +479,38 @@ def test_oauth_runtime_diagnostics_do_not_expose_secrets():
         "recent_events": [],
     }
     assert "secret-value" not in str(diagnostics)
+
+
+@pytest.mark.asyncio
+async def test_token_request_normalization_adds_missing_static_client_id():
+    async def receive():
+        return {
+            "type": "http.request",
+            "body": (
+                b"grant_type=AUTHORIZATION_CODE&code=abc&"
+                b"redirect_uri=https%3A%2F%2Fplaymcp.kakao.com%2Fcallback"
+            ),
+            "more_body": False,
+        }
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/token",
+        "headers": [
+            (b"content-type", b"application/x-www-form-urlencoded"),
+        ],
+    }
+    from starlette.requests import Request
+
+    normalized = await _normalize_token_request(
+        Request(scope, receive),
+        "stockquiz-playmcp-87440044842919710",
+    )
+    body = (await normalized.body()).decode("utf-8")
+
+    assert "grant_type=authorization_code" in body
+    assert "client_id=stockquiz-playmcp-87440044842919710" in body
 
 
 @pytest.mark.asyncio

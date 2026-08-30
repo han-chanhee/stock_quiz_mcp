@@ -166,6 +166,25 @@ class FlexibleStaticClientAuthenticator(ClientAuthenticator):
 
 async def _normalize_token_grant_type(request: Request) -> Request:
     """카카오 콘솔 enum 대문자 grant_type을 표준 OAuth 값으로 정규화한다."""
+    return await _normalize_token_request(request)
+
+
+def _basic_auth_client_id(request: Request) -> str:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Basic "):
+        return ""
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+        client_id, _ = decoded.split(":", 1)
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        return ""
+    return unquote(client_id)
+
+
+async def _normalize_token_request(
+    request: Request, default_client_id: str | None = None
+) -> Request:
+    """PlayMCP token request variations를 SDK가 받는 표준 form으로 보정한다."""
     content_type = request.headers.get("content-type", "")
     if "application/x-www-form-urlencoded" not in content_type:
         return request
@@ -174,12 +193,20 @@ async def _normalize_token_grant_type(request: Request) -> Request:
     form_items = parse_qsl(body.decode("utf-8"), keep_blank_values=True)
     changed = False
     normalized: list[tuple[str, str]] = []
+    has_client_id = False
     for key, value in form_items:
         if key == "grant_type" and value in {"AUTHORIZATION_CODE", "REFRESH_TOKEN"}:
             normalized.append((key, value.lower()))
             changed = True
         else:
             normalized.append((key, value))
+        if key == "client_id" and value:
+            has_client_id = True
+    if not has_client_id:
+        fallback_client_id = _basic_auth_client_id(request) or default_client_id or ""
+        if fallback_client_id:
+            normalized.append(("client_id", fallback_client_id))
+            changed = True
     if not changed:
         return request
 
@@ -208,6 +235,10 @@ class KakaoTokenHandler(TokenHandler):
 
     async def handle(self, request: Request):
         provider = getattr(self, "provider", None)
+        request = await _normalize_token_request(
+            request,
+            getattr(provider, "_primary_static_client_id", None),
+        )
         record = getattr(provider, "_record_oauth_event", None)
         if callable(record):
             body = await request.body()
@@ -223,7 +254,7 @@ class KakaoTokenHandler(TokenHandler):
                 redirect_host=redirect_parts.netloc,
                 redirect_path=redirect_parts.path,
             )
-        return await super().handle(await _normalize_token_grant_type(request))
+        return await super().handle(request)
 
 
 def _is_playmcp_client_id(client_id: str) -> bool:
@@ -288,6 +319,7 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         self._allowed_redirect_uri_set = set(allowed_redirect_uris)
         self._consented_clients: set[str] = set()
         self._static_client_ids: set[str] = set()
+        self._primary_static_client_id: str | None = None
         # 동의 대기 중인 요청: consent_token -> (client, params, user_subject)
         self._pending_consents: dict[
             str, tuple[OAuthClientInformationFull, AuthorizationParams, str]
@@ -315,6 +347,8 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             raise ValueError("static client_id is required")
         self.clients[client_id] = client_info
         self._static_client_ids.add(client_id)
+        if self._primary_static_client_id is None:
+            self._primary_static_client_id = client_id
 
     def install_static_bearer_token(self, token: str, client_id: str) -> None:
         """PlayMCP 직접 입력 인증헤더 검사에 쓰는 고정 Bearer token을 등록한다."""
