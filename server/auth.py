@@ -124,6 +124,52 @@ class FlexibleStaticClientAuthenticator(ClientAuthenticator):
             return client
 
 
+async def _normalize_token_grant_type(request: Request) -> Request:
+    """카카오 콘솔 enum 대문자 grant_type을 표준 OAuth 값으로 정규화한다."""
+    content_type = request.headers.get("content-type", "")
+    if "application/x-www-form-urlencoded" not in content_type:
+        return request
+
+    body = await request.body()
+    form_items = parse_qsl(body.decode("utf-8"), keep_blank_values=True)
+    changed = False
+    normalized: list[tuple[str, str]] = []
+    for key, value in form_items:
+        if key == "grant_type" and value in {"AUTHORIZATION_CODE", "REFRESH_TOKEN"}:
+            normalized.append((key, value.lower()))
+            changed = True
+        else:
+            normalized.append((key, value))
+    if not changed:
+        return request
+
+    normalized_body = urlencode(normalized).encode("utf-8")
+    headers = []
+    for key, value in request.scope.get("headers", []):
+        if key == b"content-length":
+            headers.append((key, str(len(normalized_body)).encode("ascii")))
+        else:
+            headers.append((key, value))
+    scope = dict(request.scope)
+    scope["headers"] = headers
+
+    async def receive() -> dict[str, object]:
+        return {
+            "type": "http.request",
+            "body": normalized_body,
+            "more_body": False,
+        }
+
+    return Request(scope, receive)
+
+
+class KakaoTokenHandler(TokenHandler):
+    """Token endpoint wrapper for PlayMCP/Kakao console compatibility."""
+
+    async def handle(self, request: Request):
+        return await super().handle(await _normalize_token_grant_type(request))
+
+
 class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
     """카카오가 사전 등록한 Redirect URI만 허용하고, 명시적 동의를 거친 뒤에만
     인가 코드를 발급하는 OAuth 프로바이더.
@@ -194,7 +240,7 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
                 and route.methods is not None
                 and "POST" in route.methods
             ):
-                token_handler = TokenHandler(
+                token_handler = KakaoTokenHandler(
                     provider=self,
                     client_authenticator=FlexibleStaticClientAuthenticator(self),
                 )

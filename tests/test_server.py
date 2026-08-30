@@ -672,8 +672,22 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
             headers={"Authorization": "Basic " + basic},
         )
 
+        verifier, code = issue_code(client, "upper-basic")
+        upper_basic_response = client.post(
+            "/token",
+            data={
+                "grant_type": "AUTHORIZATION_CODE",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": verifier,
+            },
+            headers={"Authorization": "Basic " + basic},
+        )
+
     assert post_response.status_code == 200
     assert basic_response.status_code == 200
+    assert upper_basic_response.status_code == 200
 
 
 @pytest.mark.asyncio
