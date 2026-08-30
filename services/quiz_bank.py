@@ -166,7 +166,7 @@ class QuizBank:
             quiz_id=quiz_id,
             quiz_type=QuizType.PRICE,
             question_md=(
-                f"**{answer.name}**의 현재 주가는 얼마일까요? "
+                f"{answer.name}의 현재 주가는 얼마일까요? "
                 "(1만원 단위 반올림 · 예: 8 = 8만원)"
             ),
             hint_policy="updown",
@@ -230,7 +230,7 @@ class QuizBank:
         sector_txt = answer.sector.value if answer.sector else "미분류"
         lines = [
             "다음 힌트로 회사를 맞혀보세요.",
-            f"- 섹터: **{sector_txt}**",
+            f"- 섹터: {sector_txt}",
             f"- 현재가: {_fmt_price(answer)}",
         ]
         if answer.market_cap_rank is not None:  # 랭크 있을 때만(없으면 줄 생략)

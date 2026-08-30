@@ -86,6 +86,7 @@ def test_price_quiz_widget_payload() -> None:
     _assert_payload(payload, "price_quiz")
     assert any(child.get("type") == "Col" for child in _walk_components(payload["widget"]))
     assert "QZ-한글" in payload["copy_text"]
+    assert "**" not in json.dumps(payload, ensure_ascii=False)
 
 
 def test_price_quiz_widget_uses_mode_independent_title_and_question() -> None:
@@ -94,7 +95,8 @@ def test_price_quiz_widget_uses_mode_independent_title_and_question() -> None:
     serialized = json.dumps(payload, ensure_ascii=False)
 
     assert "이 기업의 종목명은?" not in serialized
-    assert question_md in serialized
+    assert "삼성전자의 현재 주가는 얼마일까요?" in serialized
+    assert "**" not in serialized
 
 
 def test_quiz_widget_keeps_analysis_in_simple_card() -> None:
@@ -132,7 +134,9 @@ def test_quiz_widget_stays_compact_for_preview_density() -> None:
     assert divider_spacings
     assert max(divider_spacings) <= 8
     assert all(component.get("type") != "Spacer" for component in components)
-    assert "최근 1주 시간봉 형태입니다." not in json.dumps(payload, ensure_ascii=False)
+    serialized = json.dumps(payload, ensure_ascii=False)
+    assert "최근 1주 시간봉 형태입니다." not in serialized
+    assert "**" not in serialized
 
 
 def test_market_quiz_widget_direction_badge_color() -> None:
@@ -162,6 +166,7 @@ def test_company_quiz_widget_payload() -> None:
     payload = company_quiz_widget("QZ-4", "🏢 종목 퀴즈", question_md)
     _assert_payload(payload, "company_quiz")
     assert "QZ-4" in payload["copy_text"]
+    assert "**" not in json.dumps(payload, ensure_ascii=False)
 
 
 def test_all_quiz_widgets_include_chart_hint() -> None:
@@ -177,6 +182,7 @@ def test_all_quiz_widgets_include_chart_hint() -> None:
         assert f"/quiz/chart/{quiz_id}.png" in serialized
         assert "![차트 힌트]" in serialized
         assert "차트 힌트:" in payload["copy_text"]
+        assert "**" not in serialized
 
 
 def test_welcome_widget_payload() -> None:

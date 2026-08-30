@@ -32,10 +32,15 @@ def _text_lines(value: str, **properties: object) -> dict:
     return {
         "type": "Col",
         "children": [
-            {"type": "Text", "value": line, **properties}
+            {"type": "Text", "value": _without_bold(line), **properties}
             for line in value.splitlines()
         ],
     }
+
+
+def _without_bold(value: str) -> str:
+    """ChatKit Text에서 그대로 노출되는 Markdown 굵게 표시를 제거한다."""
+    return value.replace("**", "")
 
 
 def _brand_header() -> dict:
@@ -98,7 +103,7 @@ def _quiz_frame(
             {"type": "Text", "value": "문제 분석", "weight": "bold", "size": "sm"},
             _analysis_list(analysis_lines),
         ]
-        analysis_copy = "\n\n**문제 분석**\n" + "\n".join(
+        analysis_copy = "\n\n문제 분석\n" + "\n".join(
             f"{index}. {line}" for index, line in enumerate(analysis_lines, start=1)
         )
     children = [
@@ -142,7 +147,7 @@ def _quiz_frame(
         },
     ]
     copy_text = (
-        f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}\n\n"
+        f"주식대결 퀴즈\n\n{_without_bold(mode_intro)}\n\n{_without_bold(copy_body)}\n\n"
         f"차트 힌트: {image_url}{analysis_copy}\n\n"
         f"제출 ID: `{quiz_id}`"
     )
@@ -184,7 +189,7 @@ def price_quiz_widget(
 ) -> dict:
     """주가 퀴즈 출제 위젯. 숫자 입력을 강조하는 바디."""
     body = [
-        {"type": "Markdown", "value": question_md},
+        {"type": "Markdown", "value": _without_bold(question_md)},
         {
             "type": "Badge",
             "label": "숫자만 입력하세요",
@@ -211,10 +216,11 @@ def market_quiz_widget(
     direction_label = f"{change_pct:+.2f}%"
     sparkline = _change_sparkline(change_pct)
     body = [
-        {"type": "Markdown", "value": question_md},
+        {"type": "Markdown", "value": _without_bold(question_md)},
         {
-            "type": "Markdown",
-            "value": f"**차트형 힌트** `{sparkline}`",
+            "type": "Text",
+            "value": f"차트형 힌트 {sparkline}",
+            "size": "sm",
         },
         {
             "type": "Badge",
@@ -255,7 +261,7 @@ def company_quiz_widget(
     analysis_lines: list[str] | None = None,
 ) -> dict:
     """종목 퀴즈 출제 위젯. 힌트 목록(섹터/현재가/시총순위)을 그대로 표시."""
-    body = [{"type": "Markdown", "value": question_md}]
+    body = [{"type": "Markdown", "value": _without_bold(question_md)}]
     return _quiz_frame(
         quiz_id, mode_intro, body, expires_in_sec, "company_quiz", question_md, analysis_lines
     )
@@ -264,7 +270,7 @@ def company_quiz_widget(
 def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
     """오답 응답 위젯. 간단한 Card + Text 구성.
     {"widget": {...}, "copy_text": "...", "name": "wrong_answer"}"""
-    copy_text = f"❌ 오답입니다. (시도 {attempts}회)\n\n💡 힌트: **{hint_text}**"
+    copy_text = f"❌ 오답입니다. (시도 {attempts}회)\n\n💡 힌트: {hint_text}"
     return _card_payload(
         children=[
             {"type": "Text", "value": f"오답입니다. (시도 {attempts}회)"},
@@ -295,9 +301,9 @@ def correct_answer_widget(
         {"type": "Divider", "spacing": _SECTION_SPACING},
     ]
     copy_lines = [
-        f"✅ 정답! **{answer_name}**",
+        f"✅ 정답! {answer_name}",
         "",
-        "**정답 분석**",
+        "정답 분석",
         *(
             f"{index}. {line}"
             for index, line in enumerate(detail_lines[:5], start=1)
@@ -314,7 +320,7 @@ def correct_answer_widget(
                     "size": "sm",
                 }
             )
-            copy_lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!"])
+            copy_lines.extend(["", f"🎯 이번 정답으로 {earned_score}점 획득!"])
         children.extend(
             [
                 {"type": "Title", "value": "주간 랭킹", "size": "md", "weight": "bold"},
@@ -330,7 +336,7 @@ def correct_answer_widget(
                 },
             ]
         )
-        copy_lines.extend(["", "**주간 TOP3**"])
+        copy_lines.extend(["", "주간 TOP3"])
         copy_lines.extend(
             f"{rank}. {entry.display_name} — {entry.score}점"
             for rank, entry in enumerate(leaderboard.top[:3], start=1)
@@ -390,7 +396,7 @@ def with_leaderboard(
         action = "획득" if score_delta > 0 else "감점"
         ranking_lines.append(f"점수 {abs(score_delta)}점 {action}")
         ranking_lines.append("")
-    ranking_lines.append("**주간 TOP3**")
+    ranking_lines.append("주간 TOP3")
     ranking_lines.extend(
         f"{rank}. {entry.display_name} — {entry.score}점"
         for rank, entry in enumerate(leaderboard.top[:3], start=1)
@@ -552,7 +558,7 @@ def welcome_widget() -> dict:
         },
     ]
     copy_text = (
-        "**주식대결에 오신 걸 환영해요!**\n\n"
+        "주식대결에 오신 걸 환영해요!\n\n"
         "코스피/코스닥 종목으로 즐기는 주식 퀴즈입니다. 모든 문제에 차트 힌트가 함께 나옵니다.\n\n"
         "- 📈 주가 — 현재가를 1만원 단위로 맞히기\n"
         "- 📊 시장 — 가장 오르거나 떨어진 종목 맞히기\n"

@@ -299,7 +299,7 @@ async def test_wrong_then_correct_applies_penalty_then_reward(cache):
 
     assert wrong.leaderboard.my_entry.score == -1
     assert "점수 1점 감점" in wrong.markdown
-    assert "이번 정답으로 **2점** 획득" in correct.markdown
+    assert "이번 정답으로 2점 획득" in correct.markdown
     assert correct.leaderboard.my_entry.score == 1
     assert "내 점수 1점" in correct.markdown
 

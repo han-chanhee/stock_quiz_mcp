@@ -52,9 +52,9 @@ class QuizMode(str, Enum):
 
 # 모드 선택 시 문제 앞에 붙는 설명 1줄 (팩트만, 권유 문구 없음)
 _MODE_INTRO = {
-    QuizMode.PRICE: "📈 **주가 퀴즈** — 종목의 현재 주가를 1만원 단위로 맞혀보세요.",
-    QuizMode.MARKET: "📊 **시장 퀴즈** — 기간 내 가장 많이 오르거나 떨어진 종목을 맞혀보세요.",
-    QuizMode.STOCK: "🏢 **종목 퀴즈** — 섹터·현재가·시총순위 힌트로 어떤 회사인지 맞혀보세요.",
+    QuizMode.PRICE: "📈 주가 퀴즈 — 종목의 현재 주가를 1만원 단위로 맞혀보세요.",
+    QuizMode.MARKET: "📊 시장 퀴즈 — 기간 내 가장 많이 오르거나 떨어진 종목을 맞혀보세요.",
+    QuizMode.STOCK: "🏢 종목 퀴즈 — 섹터·현재가·시총순위 힌트로 어떤 회사인지 맞혀보세요.",
 }
 
 
@@ -166,7 +166,7 @@ class QuizHandlers:
         self._store.put(state)
         md = (
             f"{question.question_md}\n\n"
-            f"`quiz_id`: **{question.quiz_id}** (제한시간 30분)\n"
+            f"`quiz_id`: {question.quiz_id} (제한시간 30분)\n"
             f"→ `submit_answer(quiz_id, answer)`로 정답을 제출하세요."
         )
         mode = mode_override or {
@@ -217,7 +217,7 @@ class QuizHandlers:
         )
         return QuizOutcome(
             question.quiz_id,
-            f"{md}\n\n**문제 분석**\n{question_analysis_md}" + _as_of_footer(self._cache),
+            f"{md}\n\n문제 분석\n{question_analysis_md}" + _as_of_footer(self._cache),
             widget,
         )
 
@@ -355,7 +355,7 @@ class QuizHandlers:
             leaderboard = self._score_store.leaderboard(score_identity)
         md = (
             f"❌ 오답입니다. (시도 {attempts}회)\n\n"
-            f"💡 힌트: **{hint.text}**"
+            f"💡 힌트: {hint.text}"
             + self._render_score_delta(penalty, leaderboard)
             + _as_of_footer(self._cache)
         )
@@ -437,7 +437,7 @@ class QuizHandlers:
         if leaderboard is None:
             return "\n\n닉네임이 없어 점수와 랭킹은 반영하지 않았습니다."
         if delta is None:
-            lines = ["", "**주간 TOP3**"]
+            lines = ["", "주간 TOP3"]
             lines.extend(
                 f"{rank}. {entry.display_name} — {entry.score}점"
                 for rank, entry in enumerate(leaderboard.top[:3], start=1)
@@ -453,7 +453,7 @@ class QuizHandlers:
             "",
             f"점수 {amount}점 {action}",
             "",
-            "**주간 TOP3**",
+            "주간 TOP3",
         ]
         lines.extend(
             f"{rank}. {entry.display_name} — {entry.score}점"
@@ -474,15 +474,15 @@ class QuizHandlers:
         answer_analysis: list[str],
     ) -> str:
         lines = [
-            f"✅ 정답! **{name}**",
+            f"✅ 정답! {name}",
             "",
-            "**정답 분석**",
+            "정답 분석",
         ]
         lines.extend(
             f"{index}. {line}" for index, line in enumerate(answer_analysis[:5], start=1)
         )
         if leaderboard is not None and earned_score is not None:
-            lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!", "", "**주간 TOP3**"])
+            lines.extend(["", f"🎯 이번 정답으로 {earned_score}점 획득!", "", "주간 TOP3"])
             lines.extend(
                 f"{rank}. {entry.display_name} — {entry.score}점"
                 for rank, entry in enumerate(leaderboard.top[:3], start=1)
