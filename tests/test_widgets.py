@@ -59,14 +59,19 @@ def _assert_payload(payload: dict, expected_name: str) -> None:
     assert payload["widget"]["type"] in {"Card", "ListView"}
     if payload["widget"]["type"] == "Card":
         children = payload["widget"]["children"]
-        assert children[0]["type"] == "Box"
-        assert children[0]["radius"] >= 16
-        assert children[1]["type"] == "Row"
-        assert children[1]["wrap"] is True
-        assert children[2]["type"] == "Box"
+        assert children[0]["type"] == "Col"
+        assert children[1]["type"] == "Divider"
+        assert children[2]["type"] == "Row"
+        assert children[2]["wrap"] is True
+        assert children[3]["type"] == "Divider"
+        assert children[4]["type"] == "Col"
         serialized_header = json.dumps(children[0], ensure_ascii=False)
         assert "/assets/logo-banner.png" in serialized_header
-        assert '"type": "Image"' in serialized_header
+        assert '"type": "Markdown"' in serialized_header
+        assert all(
+            child.get("type") not in {"Box", "Image"}
+            for child in _walk_components(payload["widget"])
+        )
     restored = json.loads(json.dumps(payload, ensure_ascii=False))
     assert restored == payload
 
@@ -134,10 +139,7 @@ def test_chart_quiz_widget_payload() -> None:
     payload = chart_quiz_widget("QZ-5", "📉 차트 퀴즈", question_md)
     _assert_payload(payload, "chart_quiz")
     assert "/quiz/chart/QZ-5.png" in json.dumps(payload, ensure_ascii=False)
-    assert any(
-        c.get("type") == "Image" and c.get("alt") == "차트 힌트"
-        for c in _walk_components(payload)
-    )
+    assert "![차트 힌트]" in json.dumps(payload, ensure_ascii=False)
     assert "▁" in payload["copy_text"]
     assert "/quiz/chart/QZ-5.png" in payload["copy_text"]
 

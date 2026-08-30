@@ -27,7 +27,7 @@ from store.quiz_store import DEFAULT_MAX_ENTRIES
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "batch" / "data"
 _EXPECTED_TOOLS = {"help", "quiz", "submit_answer"}
-_FORBIDDEN_WIDGET_TYPES = {"Table"}
+_FORBIDDEN_WIDGET_TYPES = {"Box", "Image", "Table"}
 
 
 def sample_leaderboard() -> LeaderboardSnapshot:

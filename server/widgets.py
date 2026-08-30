@@ -36,32 +36,22 @@ def _text_lines(value: str, **properties: object) -> dict:
 
 def _brand_header() -> dict:
     return {
-        "type": "Box",
-        "direction": "col",
-        "background": "#02051a",
-        "radius": 18,
-        "padding": 8,
+        "type": "Col",
+        "gap": 6,
         "children": [
             {
-                "type": "Image",
-                "src": f"{_public_base_url()}{_LOGO_ASSET_PATH}",
-                "alt": "주식대결",
-                "fit": "cover",
-                "radius": 14,
-                "aspectRatio": 4.62,
+                "type": "Markdown",
+                "value": f"![주식대결 로고]({_public_base_url()}{_LOGO_ASSET_PATH})",
             },
+            {"type": "Caption", "value": "주식대결", "size": "sm"},
         ],
     }
 
 
 def _panel(children: list[dict], *, flex: int | None = None) -> dict:
     panel = {
-        "type": "Box",
-        "direction": "col",
+        "type": "Col",
         "gap": 8,
-        "padding": 14,
-        "background": "#ffffff",
-        "radius": 16,
         "children": children,
     }
     if flex is not None:
@@ -81,10 +71,10 @@ def _stock_battle_layout(
         "widget": {
             "type": "Card",
             "size": "full",
-            "padding": 12,
-            "background": "#eef5f8",
+            "padding": 16,
             "children": [
                 _brand_header(),
+                {"type": "Divider", "spacing": 10},
                 {
                     "type": "Row",
                     "gap": 10,
@@ -95,6 +85,7 @@ def _stock_battle_layout(
                         _panel(right_children, flex=1),
                     ],
                 },
+                {"type": "Divider", "spacing": 10},
                 _panel(bottom_children),
             ],
         },
@@ -330,14 +321,7 @@ def chart_quiz_widget(
     }
     body = [
         {"type": "Title", "value": "차트 모양", "size": "md", "weight": "bold"},
-        {
-            "type": "Image",
-            "src": image_url,
-            "alt": "차트 힌트",
-            "fit": "contain",
-            "radius": 14,
-            "aspectRatio": 2.2,
-        },
+        {"type": "Markdown", "value": f"![차트 힌트]({image_url})"},
         chart_row,
         {"type": "Markdown", "value": question_md},
         {
@@ -493,7 +477,7 @@ def with_leaderboard(
             "weight": "bold",
         },
     ]
-    if children and children[-1].get("type") == "Box":
+    if children and children[-1].get("type") == "Col":
         bottom_panel = dict(children[-1])
         bottom_children = list(bottom_panel.get("children", []))
         if bottom_children:
