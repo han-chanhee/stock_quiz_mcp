@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import json
 import random
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,8 +23,13 @@ from server import widgets
 from server.cache import QuizCache
 from server.handlers import QuizHandlers, QuizMode
 from services.quiz_bank import QuizBank
-from store import QuizStore, ScoreStore
-from store.quiz_store import DEFAULT_MAX_ENTRIES
+from store import (
+    DEFAULT_SQLITE_MAX_QUIZZES,
+    QuizStore,
+    ScoreStore,
+    SQLiteQuizStore,
+    SQLiteScoreStore,
+)
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "batch" / "data"
 _EXPECTED_TOOLS = {"help", "quiz", "submit_answer"}
@@ -140,30 +146,48 @@ async def _load_cache(data_dir: Path = _DATA_DIR) -> QuizCache:
 
 async def load_smoke(requests: int = 200, concurrency: int = 20) -> dict[str, Any]:
     cache = await _load_cache()
-    store = QuizStore()
-    score_store = ScoreStore()
-    handlers = QuizHandlers(cache, store, score_store, QuizBank(rng=random.Random(0)), rng=random.Random(0))
-    sem = asyncio.Semaphore(concurrency)
+    with tempfile.TemporaryDirectory(prefix="stock-quiz-load-") as tmp:
+        db_path = Path(tmp) / "runtime.sqlite3"
+        store = SQLiteQuizStore(db_path)
+        score_store = SQLiteScoreStore(db_path)
+        handlers = QuizHandlers(
+            cache,
+            store,
+            score_store,
+            QuizBank(rng=random.Random(0)),
+            rng=random.Random(0),
+        )
+        sem = asyncio.Semaphore(concurrency)
 
-    async def one(index: int) -> None:
-        async with sem:
-            nickname = f"부하{index % 25}"
-            outcome = handlers.quiz(QuizMode.PRICE, nickname, Market.KR, Period.TODAY)
-            state = store.get(outcome.quiz_id)
-            await handlers.submit_answer(outcome.quiz_id, str(state.answer.price * 0.5), nickname)
+        async def one(index: int) -> None:
+            async with sem:
+                nickname = f"부하{index % 25}"
+                outcome = handlers.quiz(
+                    QuizMode.PRICE,
+                    nickname,
+                    Market.KR,
+                    Period.TODAY,
+                )
+                state = store.get(outcome.quiz_id)
+                await handlers.submit_answer(
+                    outcome.quiz_id,
+                    str(state.answer.price * 0.5),
+                    nickname,
+                )
 
-    start = time.perf_counter()
-    await asyncio.gather(*(one(index) for index in range(requests)))
-    elapsed = time.perf_counter() - start
-    return {
-        "requests": requests,
-        "concurrency": concurrency,
-        "elapsed_sec": round(elapsed, 4),
-        "rps": round(requests / elapsed, 2) if elapsed else requests,
-        "stored_quizzes": len(store),
-        "max_active_quizzes": DEFAULT_MAX_ENTRIES,
-        "cap_reached": len(store) == DEFAULT_MAX_ENTRIES,
-    }
+        start = time.perf_counter()
+        await asyncio.gather(*(one(index) for index in range(requests)))
+        elapsed = time.perf_counter() - start
+        return {
+            "backend": "sqlite",
+            "requests": requests,
+            "concurrency": concurrency,
+            "elapsed_sec": round(elapsed, 4),
+            "rps": round(requests / elapsed, 2) if elapsed else requests,
+            "stored_quizzes": len(store),
+            "max_active_quizzes": DEFAULT_SQLITE_MAX_QUIZZES,
+            "cap_reached": len(store) == DEFAULT_SQLITE_MAX_QUIZZES,
+        }
 
 
 async def conflict_report() -> dict[str, Any]:

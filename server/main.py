@@ -40,7 +40,15 @@ from contracts.schemas import Market, Period, Sector
 
 from clients.base import MarketClient
 from services.quiz_bank import QuizBank
-from store import QuizStore, ScoreStore
+from store import (
+    DEFAULT_SQLITE_PATH,
+    RedisQuizStore,
+    RedisScoreStore,
+    QuizStore,
+    SQLiteQuizStore,
+    SQLiteScoreStore,
+    ScoreStore,
+)
 
 from .cache import QuizCache
 from .auth import (
@@ -77,6 +85,36 @@ _COMMON_ANN = dict(
 
 _SAFE_ERROR = "잠시 후 다시 시도해주세요."
 _OPTIONAL_AUTH_PROVIDER: Any | None = None
+
+
+def _runtime_state_db_path() -> Path:
+    """운영 퀴즈/랭킹 상태 DB 경로.
+
+    PlayMCP 컨테이너 안에서는 기본적으로 프로젝트 내부 ignored data 경로를 쓴다.
+    별도 서버로 뺄 때는 STATE_DB_PATH만 바꾸면 같은 코드가 다른 볼륨을 사용할 수 있다.
+    """
+    return Path(os.environ.get("STATE_DB_PATH", str(DEFAULT_SQLITE_PATH)))
+
+
+def _runtime_stores() -> tuple[QuizStore, ScoreStore]:
+    """운영 저장소 선택.
+
+    - STATE_BACKEND=redis 또는 REDIS_URL 존재: 다중 컨테이너 공유 상태
+    - 그 외: 단일 컨테이너 내구성용 SQLite WAL
+    """
+    backend = os.environ.get("STATE_BACKEND", "").strip().lower()
+    redis_url = os.environ.get("REDIS_URL", "").strip()
+    if backend == "redis" or redis_url:
+        if not redis_url:
+            raise RuntimeError("STATE_BACKEND=redis requires REDIS_URL")
+        prefix = os.environ.get("REDIS_KEY_PREFIX", "stockquiz")
+        return (
+            RedisQuizStore(redis_url, key_prefix=prefix),
+            RedisScoreStore(redis_url, key_prefix=prefix),
+        )
+
+    state_db_path = _runtime_state_db_path()
+    return SQLiteQuizStore(state_db_path), SQLiteScoreStore(state_db_path)
 
 
 def _public_https_url(request: Request, path: str) -> str:
@@ -546,8 +584,7 @@ def create_server() -> FastMCP:
     from clients.kis import KISClient
 
     cache = QuizCache(_DATA_DIR).load()  # 검증 실패 시 여기서 기동 중단
-    store = QuizStore()
-    score_store = ScoreStore()
+    store, score_store = _runtime_stores()
     score_store.snapshot_load()
     client = KISClient()
     auth = build_auth_provider()

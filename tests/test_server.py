@@ -885,6 +885,58 @@ def test_runtime_requirements_include_chart_renderer():
     assert "matplotlib" in requirements
 
 
+def test_create_server_uses_sqlite_runtime_state(monkeypatch, tmp_path):
+    from server.main import create_server
+
+    state_db = tmp_path / "runtime.sqlite3"
+    monkeypatch.setenv("OAUTH_ENABLED", "0")
+    monkeypatch.setenv("STATE_DB_PATH", str(state_db))
+
+    create_server()
+
+    assert state_db.exists()
+
+
+def test_create_server_can_select_redis_runtime_state(monkeypatch):
+    from server import main
+
+    calls: list[tuple[str, str, str]] = []
+
+    class FakeRedisQuizStore(QuizStore):
+        def __init__(self, redis_url: str, *, key_prefix: str):
+            calls.append(("quiz", redis_url, key_prefix))
+            super().__init__()
+
+    class FakeRedisScoreStore(ScoreStore):
+        def __init__(self, redis_url: str, *, key_prefix: str):
+            calls.append(("score", redis_url, key_prefix))
+            super().__init__()
+
+    monkeypatch.setenv("OAUTH_ENABLED", "0")
+    monkeypatch.setenv("STATE_BACKEND", "redis")
+    monkeypatch.setenv("REDIS_URL", "redis://example.internal:6379/0")
+    monkeypatch.setenv("REDIS_KEY_PREFIX", "stockquiz-prod")
+    monkeypatch.setattr(main, "RedisQuizStore", FakeRedisQuizStore)
+    monkeypatch.setattr(main, "RedisScoreStore", FakeRedisScoreStore)
+
+    main.create_server()
+
+    assert calls == [
+        ("quiz", "redis://example.internal:6379/0", "stockquiz-prod"),
+        ("score", "redis://example.internal:6379/0", "stockquiz-prod"),
+    ]
+
+
+def test_redis_runtime_state_requires_url(monkeypatch):
+    from server.main import _runtime_stores
+
+    monkeypatch.setenv("STATE_BACKEND", "redis")
+    monkeypatch.delenv("REDIS_URL", raising=False)
+
+    with pytest.raises(RuntimeError, match="REDIS_URL"):
+        _runtime_stores()
+
+
 def test_ops_stats_reports_aggregate_counts(cache, monkeypatch, tmp_path):
     from server.main import _runtime_middleware, build_app
 
