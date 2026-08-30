@@ -47,6 +47,11 @@ def _assert_payload(payload: dict, expected_name: str) -> None:
     assert set(payload) == {"widget", "copy_text", "name"}
     assert payload["name"] == expected_name
     assert payload["widget"]["type"] in {"Card", "ListView"}
+    if payload["widget"]["type"] == "Card":
+        children = payload["widget"]["children"]
+        assert children[0]["type"] == "Col"
+        assert "/assets/logo-banner.png" in json.dumps(children[0], ensure_ascii=False)
+        assert children[1]["type"] == "Divider"
     restored = json.loads(json.dumps(payload, ensure_ascii=False))
     assert restored == payload
 
@@ -63,7 +68,7 @@ def _assert_payload(payload: dict, expected_name: str) -> None:
 def test_price_quiz_widget_payload() -> None:
     payload = price_quiz_widget("QZ-한글", "📈 주가 퀴즈 — 가격 맞히기", "**힌트**: 반도체")
     _assert_payload(payload, "price_quiz")
-    assert payload["widget"]["children"][3]["type"] == "Col"
+    assert any(child["type"] == "Col" for child in payload["widget"]["children"][2:])
     assert "QZ-한글" in payload["copy_text"]
 
 
@@ -144,7 +149,10 @@ def test_sector_empty_widget_payload() -> None:
 def test_wrong_answer_widget_payload() -> None:
     payload = wrong_answer_widget("초성은 ㅅㅅㅈㅈ", 2)
     _assert_payload(payload, "wrong_answer")
-    assert payload["widget"]["children"][1]["color"] == "warning"
+    warning_badge = next(
+        child for child in payload["widget"]["children"] if child.get("type") == "Badge"
+    )
+    assert warning_badge["color"] == "warning"
 
 
 def test_correct_answer_widget_payload_and_top_three() -> None:
@@ -164,7 +172,9 @@ def test_correct_answer_widget_payload_and_top_three() -> None:
     # correct_answer_widget에서 쓰이지 않는다.
     assert all(child["type"] != "Table" for child in payload["widget"]["children"])
     leaderboard_col = next(
-        child for child in payload["widget"]["children"] if child["type"] == "Col"
+        child
+        for child in payload["widget"]["children"]
+        if child["type"] == "Col" and len(child.get("children", [])) == 3
     )
     assert len(leaderboard_col["children"]) == 3
     assert "주간 TOP3" in payload["copy_text"]

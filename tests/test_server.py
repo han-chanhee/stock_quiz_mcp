@@ -702,6 +702,36 @@ def test_chart_image_route_renders_png(cache):
     assert response.content.startswith(b"\x89PNG")
 
 
+def test_logo_asset_route_serves_png(cache):
+    from server.main import _runtime_middleware, build_app
+
+    app = build_app(
+        cache,
+        QuizStore(),
+        ScoreStore(),
+        QuizBank(rng=random.Random(0)),
+    ).http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        responses = [
+            client.get("/assets/logo.png"),
+            client.get("/assets/logo-banner.png"),
+        ]
+
+    for response in responses:
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content.startswith(b"\x89PNG")
+
+
 def test_runtime_requirements_include_chart_renderer():
     requirements = Path("requirements.txt").read_text(encoding="utf-8")
 

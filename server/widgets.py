@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 
 _DEFAULT_PUBLIC_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
+_LOGO_ASSET_PATH = "/assets/logo-banner.png"
 
 
 def _public_base_url() -> str:
@@ -33,6 +34,46 @@ def _text_lines(value: str, **properties: object) -> dict:
     }
 
 
+def _brand_header() -> dict:
+    return {
+        "type": "Col",
+        "gap": 8,
+        "children": [
+            {
+                "type": "Markdown",
+                "value": f"![주식대결 로고]({_public_base_url()}{_LOGO_ASSET_PATH})",
+            },
+            {
+                "type": "Caption",
+                "value": "주식대결",
+                "size": "sm",
+            },
+        ],
+    }
+
+
+def _stock_battle_card(
+    *,
+    children: list[dict],
+    copy_text: str,
+    name: str,
+) -> dict:
+    return {
+        "widget": {
+            "type": "Card",
+            "size": "full",
+            "padding": 16,
+            "children": [
+                _brand_header(),
+                {"type": "Divider", "spacing": 12},
+                *children,
+            ],
+        },
+        "copy_text": copy_text,
+        "name": name,
+    }
+
+
 def _quiz_frame(
     quiz_id: str,
     mode_intro: str,
@@ -41,7 +82,7 @@ def _quiz_frame(
     name: str,
     copy_body: str,
 ) -> dict:
-    """3개 출제 모드가 공유하는 공통 틀. 바디만 모드별 함수가 채워 넣는다."""
+    """출제 모드가 공유하는 공통 틀. 바디만 모드별 함수가 채워 넣는다."""
     expires_in_min = expires_in_sec // 60
     children = [
         {
@@ -86,16 +127,7 @@ def _quiz_frame(
         f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}\n\n"
         f"제출 ID: `{quiz_id}`"
     )
-    return {
-        "widget": {
-            "type": "Card",
-            "size": "full",
-            "padding": 16,
-            "children": children,
-        },
-        "copy_text": copy_text,
-        "name": name,
-    }
+    return _stock_battle_card(children=children, copy_text=copy_text, name=name)
 
 
 def price_quiz_widget(
@@ -235,17 +267,14 @@ def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
     """오답 응답 위젯. 간단한 Card + Text 구성.
     {"widget": {...}, "copy_text": "...", "name": "wrong_answer"}"""
     copy_text = f"❌ 오답입니다. (시도 {attempts}회)\n\n💡 힌트: **{hint_text}**"
-    return {
-        "widget": {
-            "type": "Card",
-            "children": [
-                {"type": "Text", "value": f"오답입니다. (시도 {attempts}회)"},
-                {"type": "Badge", "label": hint_text, "color": "warning"},
-            ],
-        },
-        "copy_text": copy_text,
-        "name": "wrong_answer",
-    }
+    return _stock_battle_card(
+        children=[
+            {"type": "Text", "value": f"오답입니다. (시도 {attempts}회)"},
+            {"type": "Badge", "label": hint_text, "color": "warning"},
+        ],
+        copy_text=copy_text,
+        name="wrong_answer",
+    )
 
 
 def correct_answer_widget(
@@ -313,11 +342,11 @@ def correct_answer_widget(
             ["", "다음 중 선택: " + " / ".join(f"`{action}`" for action in next_actions)]
         )
 
-    return {
-        "widget": {"type": "Card", "size": "full", "padding": 16, "children": children},
-        "copy_text": "\n".join(copy_lines),
-        "name": "correct_answer",
-    }
+    return _stock_battle_card(
+        children=children,
+        copy_text="\n".join(copy_lines),
+        name="correct_answer",
+    )
 
 
 def with_leaderboard(
@@ -535,11 +564,7 @@ def welcome_widget() -> dict:
         "로그인한 사용자는 자동 닉네임으로 주간 랭킹(매주 초기화)에 참여합니다.\n\n"
         '예: "주가 모드로 퀴즈 내줘."'
     )
-    return {
-        "widget": {"type": "Card", "size": "full", "padding": 16, "children": children},
-        "copy_text": copy_text,
-        "name": "welcome",
-    }
+    return _stock_battle_card(children=children, copy_text=copy_text, name="welcome")
 
 
 def mode_selection_widget() -> dict:
@@ -567,11 +592,11 @@ def mode_selection_widget() -> dict:
         "주가 / 시장 / 종목 / 차트 중 하나를 골라주세요.\n\n"
         '예: "종목 모드로 퀴즈 내줘."'
     )
-    return {
-        "widget": {"type": "Card", "children": children},
-        "copy_text": copy_text,
-        "name": "mode_selection",
-    }
+    return _stock_battle_card(
+        children=children,
+        copy_text=copy_text,
+        name="mode_selection",
+    )
 
 
 # ── 안내 / 오류 위젯 (quiz_id 없는 경로) ───────────────────────
@@ -583,11 +608,11 @@ def _notice_widget(text: str, caption: str, name: str) -> dict:
         {"type": "Text", "value": text},
         {"type": "Caption", "value": caption, "size": "sm"},
     ]
-    return {
-        "widget": {"type": "Card", "children": children},
-        "copy_text": f"{text}\n\n{caption}",
-        "name": name,
-    }
+    return _stock_battle_card(
+        children=children,
+        copy_text=f"{text}\n\n{caption}",
+        name=name,
+    )
 
 
 def already_solved_widget() -> dict:
@@ -640,8 +665,8 @@ def company_pool_empty_widget() -> dict:
 
 def mode_unknown_widget() -> dict:
     return _notice_widget(
-        "주가 / 시장 / 종목 중에서 골라주세요.",
-        '예: "주가 모드로 퀴즈 내줘."',
+        "주가 / 시장 / 종목 / 차트 중에서 골라주세요.",
+        '예: "차트 모드로 퀴즈 내줘."',
         "mode_unknown",
     )
 

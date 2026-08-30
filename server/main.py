@@ -52,7 +52,12 @@ from .handlers import QuizHandlers, QuizMode
 from . import widgets
 
 _KST = timezone(_dt.timedelta(hours=9))
-_DATA_DIR = Path(__file__).resolve().parent.parent / "batch" / "data"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_DATA_DIR = _PROJECT_ROOT / "batch" / "data"
+_ASSET_PATHS = {
+    "logo.png": _PROJECT_ROOT / "assets" / "logo.png",
+    "logo-banner.png": _PROJECT_ROOT / "assets" / "logo-banner.png",
+}
 
 # 장중에 한해 1분 간격으로 시세 캐시를 갱신한다.
 _REFRESH_INTERVAL_SEC: int = 60
@@ -406,6 +411,18 @@ def _build_app(
             chart_png(state.answer),
             media_type="image/png",
             headers={"Cache-Control": "no-store"},
+        )
+
+    @mcp.custom_route("/assets/{asset_name}", methods=["GET"])
+    async def logo_asset_get(request: Request) -> Response:
+        asset_name = str(request.path_params.get("asset_name", ""))
+        asset_path = _ASSET_PATHS.get(asset_name)
+        if asset_path is None or not asset_path.exists():
+            return PlainTextResponse("asset not found", status_code=404)
+        return Response(
+            asset_path.read_bytes(),
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
         )
 
     @mcp.custom_route("/mcp/", methods=["POST", "DELETE"], include_in_schema=False)
