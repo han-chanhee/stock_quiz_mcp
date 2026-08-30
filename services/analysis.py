@@ -64,7 +64,27 @@ def _variant_key(snap: StockSnapshot, salt: str) -> int:
     return (sum(ord(ch) for ch in f"{snap.ticker}:{salt}") % 3)
 
 
-def build_question_analysis(answer: StockSnapshot, context: str) -> list[str]:
+def _feature_line(
+    answer: StockSnapshot,
+    reason: Reason | None,
+    *,
+    reveal_name: bool,
+) -> str:
+    if reason is None or not reason.source_url:
+        return "검색 기반 특징은 아직 확인된 공개 재료가 없습니다."
+    text = reason.text.strip()
+    if not reveal_name:
+        text = text.replace(answer.name, "해당 종목")
+        compact_name = answer.name.replace(" ", "")
+        text = text.replace(compact_name, "해당 종목")
+    return f"검색 기반 특징: {text}"
+
+
+def build_question_analysis(
+    answer: StockSnapshot,
+    context: str,
+    reason: Reason | None = None,
+) -> list[str]:
     """출제 위젯용 5줄 분석. 이름 맞히기 계열은 정답명을 노출하지 않는다."""
     movement = _movement_label(answer.change_pct)
     pct = _fmt_pct(answer.change_pct)
@@ -74,31 +94,33 @@ def build_question_analysis(answer: StockSnapshot, context: str) -> list[str]:
     variant = _variant_key(answer, context)
 
     if context == "price":
+        feature = _feature_line(answer, reason, reveal_name=True)
         variants = [
             [
                 f"{answer.name}은 출제 시점 기준 {movement} 흐름({pct})입니다.",
                 f"가격대는 {price_band}이고 원 단위 숫자로 맞히면 됩니다.",
                 f"섹터는 {sector}로 분류되어 있습니다.",
                 rank_line,
-                "정답 허용 범위는 실제 가격의 ±3%입니다.",
+                feature,
             ],
             [
                 f"이번 문제는 {answer.name}의 현재가 감각을 묻습니다.",
                 f"등락률 단서는 {pct}, 흐름은 {movement}입니다.",
                 f"대략적인 가격 구간은 {price_band}입니다.",
                 rank_line,
-                "너무 세밀한 호가보다 출제 시점 가격대에 집중하세요.",
+                feature,
             ],
             [
                 f"{answer.name}의 가격을 맞히는 공개 종목형 문제입니다.",
                 f"출제 데이터의 움직임은 {movement}({pct})입니다.",
                 f"섹터 단서는 {sector}, 가격대 단서는 {price_band}입니다.",
                 rank_line,
-                "±3% 안에 들어오면 정답으로 처리됩니다.",
+                feature,
             ],
         ]
         return variants[variant]
 
+    feature = _feature_line(answer, reason, reveal_name=False)
     label = {
         "market": "시장 랭킹",
         "company": "종목 추론",
@@ -110,21 +132,21 @@ def build_question_analysis(answer: StockSnapshot, context: str) -> list[str]:
             f"등락 흐름은 {movement}({pct})입니다.",
             f"가격대는 {price_band}, 섹터는 {sector}입니다.",
             rank_line,
-            "공개된 단서끼리 맞물리는 종목명을 좁혀보세요.",
+            feature,
         ],
         [
             f"정답 종목명은 아직 공개하지 않습니다. 유형은 {label}입니다.",
             f"움직임 단서는 {movement}, 등락률은 {pct}입니다.",
             f"가격 구간은 {price_band}이고 섹터 단서는 {sector}입니다.",
             rank_line,
-            "초성이나 차트 단서가 나오면 이 정보와 함께 보세요.",
+            feature,
         ],
         [
             f"{label} 문제라서 이름보다 패턴과 단서를 먼저 봐야 합니다.",
             f"출제 시점 흐름은 {movement}({pct})입니다.",
             f"가격대 {price_band}, 섹터 {sector}가 핵심 단서입니다.",
             rank_line,
-            "정답 전 분석은 힌트 역할만 하며 종목명은 숨깁니다.",
+            feature,
         ],
     ]
     return variants[variant]

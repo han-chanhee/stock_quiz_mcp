@@ -29,6 +29,16 @@ from server.widgets import (
 )
 
 
+def _walk_components(value: object):
+    if isinstance(value, dict):
+        yield value
+        for item in value.values():
+            yield from _walk_components(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_components(item)
+
+
 def _leaderboard() -> LeaderboardSnapshot:
     now = datetime.now(timezone.utc)
     entries = [
@@ -49,9 +59,14 @@ def _assert_payload(payload: dict, expected_name: str) -> None:
     assert payload["widget"]["type"] in {"Card", "ListView"}
     if payload["widget"]["type"] == "Card":
         children = payload["widget"]["children"]
-        assert children[0]["type"] == "Col"
-        assert "/assets/logo-banner.png" in json.dumps(children[0], ensure_ascii=False)
-        assert children[1]["type"] == "Divider"
+        assert children[0]["type"] == "Box"
+        assert children[0]["radius"] >= 16
+        assert children[1]["type"] == "Row"
+        assert children[1]["wrap"] is True
+        assert children[2]["type"] == "Box"
+        serialized_header = json.dumps(children[0], ensure_ascii=False)
+        assert "/assets/logo-banner.png" in serialized_header
+        assert '"type": "Image"' in serialized_header
     restored = json.loads(json.dumps(payload, ensure_ascii=False))
     assert restored == payload
 
@@ -68,7 +83,7 @@ def _assert_payload(payload: dict, expected_name: str) -> None:
 def test_price_quiz_widget_payload() -> None:
     payload = price_quiz_widget("QZ-한글", "📈 주가 퀴즈 — 가격 맞히기", "**힌트**: 반도체")
     _assert_payload(payload, "price_quiz")
-    assert any(child["type"] == "Col" for child in payload["widget"]["children"][2:])
+    assert any(child.get("type") == "Col" for child in _walk_components(payload["widget"]))
     assert "QZ-한글" in payload["copy_text"]
 
 
@@ -86,8 +101,16 @@ def test_market_quiz_widget_direction_badge_color() -> None:
     down = market_quiz_widget("QZ-3", "📊 시장 퀴즈", "가장 떨어진 종목은?", -3.1)
     _assert_payload(up, "market_quiz")
     _assert_payload(down, "market_quiz")
-    up_badge = next(c for c in up["widget"]["children"] if c.get("type") == "Badge")
-    down_badge = next(c for c in down["widget"]["children"] if c.get("type") == "Badge")
+    up_badge = next(
+        c
+        for c in _walk_components(up["widget"])
+        if c.get("type") == "Badge" and c.get("label") == "+5.20%"
+    )
+    down_badge = next(
+        c
+        for c in _walk_components(down["widget"])
+        if c.get("type") == "Badge" and c.get("label") == "-3.10%"
+    )
     assert up_badge["color"] == "success"
     assert down_badge["color"] == "danger"
     assert "차트형 힌트" in up["copy_text"]
@@ -110,7 +133,11 @@ def test_chart_quiz_widget_payload() -> None:
     )
     payload = chart_quiz_widget("QZ-5", "📉 차트 퀴즈", question_md)
     _assert_payload(payload, "chart_quiz")
-    assert "![차트 힌트]" in json.dumps(payload, ensure_ascii=False)
+    assert "/quiz/chart/QZ-5.png" in json.dumps(payload, ensure_ascii=False)
+    assert any(
+        c.get("type") == "Image" and c.get("alt") == "차트 힌트"
+        for c in _walk_components(payload)
+    )
     assert "▁" in payload["copy_text"]
     assert "/quiz/chart/QZ-5.png" in payload["copy_text"]
 
@@ -150,7 +177,7 @@ def test_wrong_answer_widget_payload() -> None:
     payload = wrong_answer_widget("초성은 ㅅㅅㅈㅈ", 2)
     _assert_payload(payload, "wrong_answer")
     warning_badge = next(
-        child for child in payload["widget"]["children"] if child.get("type") == "Badge"
+        child for child in _walk_components(payload["widget"]) if child.get("type") == "Badge"
     )
     assert warning_badge["color"] == "warning"
 
@@ -170,10 +197,10 @@ def test_correct_answer_widget_payload_and_top_three() -> None:
     # Table은 Preview 실측(2026-08-19)에서 정답 위젯 전체를 텍스트로 강등시켜
     # leaderboard_listview_rows(Col+Row 조합)로 교체됨. Table 자체는 더 이상
     # correct_answer_widget에서 쓰이지 않는다.
-    assert all(child["type"] != "Table" for child in payload["widget"]["children"])
+    assert all(child.get("type") != "Table" for child in _walk_components(payload))
     leaderboard_col = next(
         child
-        for child in payload["widget"]["children"]
+        for child in _walk_components(payload["widget"])
         if child["type"] == "Col" and len(child.get("children", [])) == 3
     )
     assert len(leaderboard_col["children"]) == 3
@@ -184,7 +211,7 @@ def test_correct_answer_widget_payload_and_top_three() -> None:
 def test_correct_answer_widget_without_leaderboard() -> None:
     payload = correct_answer_widget("삼성전자", "가격", "순위", "재료", None, None, ["종료"])
     _assert_payload(payload, "correct_answer")
-    assert all(child["type"] != "Table" for child in payload["widget"]["children"])
+    assert all(child.get("type") != "Table" for child in _walk_components(payload))
 
 
 def test_leaderboard_table_rows_schema() -> None:
@@ -220,7 +247,7 @@ def test_with_leaderboard_appends_common_ranking_panel() -> None:
     assert "내 점수" in combined["copy_text"]
     assert any(
         child.get("type") == "Title" and child.get("value") == "주간 랭킹"
-        for child in combined["widget"]["children"]
+        for child in _walk_components(combined["widget"])
     )
 
 

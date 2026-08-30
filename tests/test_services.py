@@ -215,13 +215,21 @@ def test_analysis_uses_reason_when_present():
 
 def test_question_analysis_is_five_lines_and_hides_answer_for_name_quizzes():
     snap = _snap("삼성전자", rank=1)
-    hidden = build_question_analysis(snap, "chart")
-    public = build_question_analysis(snap, "price")
+    reason = Reason(
+        ticker="005930",
+        text="삼성전자 HBM 수요 강세 보도",
+        source_url="https://x.example/n",
+        published_at=datetime.now(_KST),
+    )
+    hidden = build_question_analysis(snap, "chart", reason)
+    public = build_question_analysis(snap, "price", reason)
 
     assert len(hidden) == 5
     assert len(public) == 5
     assert all(snap.name not in line for line in hidden)
     assert any(snap.name in line for line in public)
+    assert hidden[-1] == "검색 기반 특징: 해당 종목 HBM 수요 강세 보도"
+    assert public[-1] == "검색 기반 특징: 삼성전자 HBM 수요 강세 보도"
 
 
 def test_answer_analysis_is_five_lines_and_differs_from_question_analysis():

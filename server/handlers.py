@@ -186,7 +186,12 @@ class QuizHandlers:
             QuizMode.STOCK: "company",
             QuizMode.CHART: "chart",
         }[mode]
-        question_analysis = build_question_analysis(state.answer, analysis_context)
+        reason = self._cache.reason(state.answer.ticker)
+        question_analysis = build_question_analysis(
+            state.answer,
+            analysis_context,
+            reason,
+        )
         if mode == QuizMode.PRICE:
             widget = widgets.price_quiz_widget(
                 question.quiz_id,
