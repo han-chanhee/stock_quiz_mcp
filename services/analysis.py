@@ -98,7 +98,7 @@ def build_question_analysis(
         variants = [
             [
                 f"{answer.name}은 출제 시점 기준 {movement} 흐름({pct})입니다.",
-                f"가격대는 {price_band}이고 원 단위 숫자로 맞히면 됩니다.",
+                f"가격대는 {price_band}이고 1만원 단위 숫자로 맞히면 됩니다.",
                 f"섹터는 {sector}로 분류되어 있습니다.",
                 rank_line,
                 feature,

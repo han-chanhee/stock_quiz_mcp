@@ -162,13 +162,12 @@ class QuizBank:
             raise ValueError("price_quiz 풀이 비어 있음")
         answer = self._rng.choice(pool)
         quiz_id = _new_id()
-        digits = len(str(int(answer.price)))  # 자릿수 힌트(막막함 방지, 정답 유출 없음)
         question = QuizQuestion(
             quiz_id=quiz_id,
             quiz_type=QuizType.PRICE,
             question_md=(
                 f"**{answer.name}**의 현재 주가는 얼마일까요? "
-                f"({digits}자리 숫자, 원 단위 · ±3% 이내 정답)"
+                "(1만원 단위 반올림 · 예: 8 = 8만원)"
             ),
             hint_policy="updown",
         )

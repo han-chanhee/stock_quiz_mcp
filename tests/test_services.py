@@ -1,4 +1,4 @@
-"""모듈 B 테스트: 출제 3종/초성/±3% property/별칭 정규화/reason 없음/Reason 검증."""
+"""모듈 B 테스트: 출제 3종/초성/가격 판정/별칭 정규화/reason 없음/Reason 검증."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from services import (
     is_correct,
     judge_price,
     normalize_name,
+    parse_price,
     resolve_alias,
 )
 from services.quiz_bank import chart_points_for_snapshot
@@ -61,6 +62,8 @@ def test_price_quiz_valid_and_no_answer_leak():
     QuizQuestion.model_validate(q.model_dump())  # 스키마 유효
     # price 퀴즈는 이름을 보여주고 가격을 묻는다 → 가격(정답값)은 노출 안 됨
     assert str(int(state.answer.price)) not in q.question_md
+    assert "1만원 단위" in q.question_md
+    assert "±3%" not in q.question_md
     assert q.hint_policy == "updown"
 
 
@@ -136,27 +139,38 @@ def test_first_letter_hint():
     assert first_letter_hint("Tesla") == "T____ (5글자)"
 
 
-# ── ±3% 판정 (hypothesis property) ───────────────────────────
+# ── 가격 판정 (KR 만원 단위 / 비원화 ±3%) ────────────────────
 
 @given(
     price=st.floats(min_value=1.0, max_value=1e7, allow_nan=False, allow_infinity=False),
     ratio=st.floats(min_value=-0.10, max_value=0.10, allow_nan=False),
 )
 def test_price_tolerance_property(price, ratio):
-    # 경계(정확히 3%)의 부동소수 모호구간은 제외하고 성질만 검증
+    # US 등 비원화 시장은 기존 ±3% 판정 유지. 경계 모호구간은 제외한다.
     assume(abs(abs(ratio) - 0.03) > 1e-4)
-    answer = _snap(price=price)
+    answer = _snap(price=price, market=Market.US)
     submitted = price * (1 + ratio)
     expected = abs(ratio) <= 0.03
     assert judge_price(answer, str(submitted)) is expected
 
 
-def test_price_tolerance_exact_boundary_is_correct():
-    answer = _snap(price=100000.0)
+def test_price_tolerance_exact_boundary_is_correct_for_non_kr():
+    answer = _snap(price=100000.0, market=Market.US)
     assert judge_price(answer, "103000") is True   # 정확히 +3.0%
     assert judge_price(answer, "97000") is True     # 정확히 -3.0%
     assert judge_price(answer, "103100") is False    # +3.1%
     assert judge_price(answer, "abc") is None        # 파싱 실패
+
+
+def test_kr_price_quiz_uses_ten_thousand_won_bucket():
+    answer = _snap(price=78500.0, market=Market.KR)
+
+    assert parse_price("8만원") == 80000
+    assert judge_price(answer, "8") is True
+    assert judge_price(answer, "8만원") is True
+    assert judge_price(answer, "80000원") is True
+    assert judge_price(answer, "7") is False
+    assert judge_price(answer, "abc") is None
 
 
 # ── 별칭/정규화 (hypothesis 불변성) ──────────────────────────
