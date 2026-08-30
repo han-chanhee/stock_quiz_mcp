@@ -60,8 +60,8 @@ _REDIRECT_URI_TEMPLATES = (
 # 못해(OAUTH_MCP_ID를 배포 후 주입할 수 없음) mcpId를 상수로 고정한다.
 # mcpId는 서버를 삭제·재생성하지 않는 한 바뀌지 않으므로 하드코딩해도 안전하다.
 # 값이 바뀌면(재생성 등) 이 상수만 고쳐서 재배포하면 된다.
-# 2026-08-19: Git 소스 방식으로 서버 재생성, mcpId가 3556 -> 3606으로 변경됨.
-_HARDCODED_MCP_ID = "3606"
+# 2026-08-30: PlayMCP OAuth 안내 메일 기준 최종 mcpId.
+_HARDCODED_MCP_ID = "83185073570028966"
 
 # OAuth issuer/base URL. MCP SDK가 HTTPS를 강제하므로 실제 배포 도메인을 쓴다.
 # (OAUTH_BASE_URL 환경변수로 덮어쓸 수 있음)

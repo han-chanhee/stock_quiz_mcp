@@ -529,7 +529,7 @@ async def test_tool_scoring_ignores_oauth_client_id_without_user_subject(cache):
     from server.main import build_app
 
     class FakeContext:
-        client_id = "stockquiz-playmcp-3606"
+        client_id = "stockquiz-playmcp-83185073570028966"
         request_context = None
 
     store = QuizStore()
@@ -550,7 +550,7 @@ async def test_tool_scoring_ignores_oauth_client_id_without_user_subject(cache):
     )
 
     assert score_store.leaderboard("개인A").my_entry.score == 3
-    assert score_store.leaderboard("stockquiz-playmcp-3606").my_entry.score == 0
+    assert score_store.leaderboard("stockquiz-playmcp-83185073570028966").my_entry.score == 0
 
 
 def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
