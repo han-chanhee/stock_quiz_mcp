@@ -156,9 +156,10 @@ def test_market_quiz_widget_direction_badge_color() -> None:
     )
     assert up_badge["color"] == "success"
     assert down_badge["color"] == "danger"
-    assert "차트형 힌트" in up["copy_text"]
-    assert "▁▂▃" in up["copy_text"]
-    assert "▅▄▃" in down["copy_text"]
+    serialized = json.dumps([up, down], ensure_ascii=False)
+    assert "차트형 힌트" not in serialized
+    assert "▁▂▃" not in serialized
+    assert "▅▄▃" not in serialized
 
 
 def test_company_quiz_widget_payload() -> None:
@@ -251,6 +252,7 @@ def test_correct_answer_widget_payload_and_top_three() -> None:
     assert len(leaderboard_col["children"]) == 3
     assert "주간 TOP3" in payload["copy_text"]
     assert "내 순위 6위 · 내 점수 54점" in payload["copy_text"]
+    assert payload["copy_text"].index("주간 TOP3") < payload["copy_text"].index("정답 분석")
     serialized_widget = json.dumps(payload["widget"], ensure_ascii=False)
     assert serialized_widget.index("주간 TOP3") < serialized_widget.index("정답 분석")
     assert "내 6위 · 54점" in serialized_widget

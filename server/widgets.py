@@ -247,17 +247,11 @@ def market_quiz_widget(
     expires_in_sec: int = 1800,
     analysis_lines: list[str] | None = None,
 ) -> dict:
-    """시장 퀴즈 출제 위젯. 등락률 방향에 따라 배지 색과 차트형 힌트를 다르게 준다."""
+    """시장 퀴즈 출제 위젯. 등락률 방향은 배지로만 보여준다."""
     direction_color = "success" if change_pct >= 0 else "danger"
     direction_label = f"{change_pct:+.2f}%"
-    sparkline = _change_sparkline(change_pct)
     body = [
         {"type": "Markdown", "value": _without_bold(question_md)},
-        {
-            "type": "Text",
-            "value": f"차트형 힌트 {sparkline}",
-            "size": "sm",
-        },
         {
             "type": "Badge",
             "label": direction_label,
@@ -272,21 +266,9 @@ def market_quiz_widget(
         body,
         expires_in_sec,
         "market_quiz",
-        f"{question_md}\n\n차트형 힌트: `{sparkline}`",
+        question_md,
         analysis_lines,
     )
-
-
-def _change_sparkline(change_pct: float) -> str:
-    """등락 방향과 강도를 한 줄 차트 모양으로 표현한다."""
-    if change_pct >= 0:
-        levels = "▁▂▃▄▅"
-        arrow = "↗"
-    else:
-        levels = "▅▄▃▂▁"
-        arrow = "↘"
-    strength = min(5, max(1, int(abs(change_pct) // 2) + 1))
-    return f"{levels} {arrow} {change_pct:+.2f}% · 강도 {strength}/5"
 
 
 def company_quiz_widget(
@@ -335,12 +317,6 @@ def correct_answer_widget(
     ]
     copy_lines = [
         f"✅ 정답! {answer_name}",
-        "",
-        "정답 분석",
-        *(
-            f"{index}. {line}"
-            for index, line in enumerate(detail_lines[:5], start=1)
-        ),
     ]
 
     if leaderboard is not None:
@@ -365,6 +341,17 @@ def correct_answer_widget(
             f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
             f"· 닉네임 {leaderboard.my_entry.display_name}"
         )
+
+    copy_lines.extend(
+        [
+            "",
+            "정답 분석",
+            *(
+                f"{index}. {line}"
+                for index, line in enumerate(detail_lines[:5], start=1)
+            ),
+        ]
+    )
 
     children.extend(
         [

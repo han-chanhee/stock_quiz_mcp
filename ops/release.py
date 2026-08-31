@@ -500,7 +500,7 @@ def remote_oauth_smoke(
         "tools_status": 200,
         "tool_names": tool_names,
         "quiz_status": 200,
-        "quiz_has_chart_hint": "차트형 힌트" in quiz_raw,
+        "quiz_has_chart_image": "/quiz/chart/" in quiz_raw,
         "quiz_has_leaderboard": "주간 TOP3" in quiz_raw,
         "ctx_exposed": '"ctx"' in raw or '"ctx"' in quiz_raw,
     }

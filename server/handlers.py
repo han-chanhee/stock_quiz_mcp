@@ -409,9 +409,12 @@ class QuizHandlers:
         if outcome.quiz_id:
             self._score_store.record_quiz_started(score_identity)
         leaderboard = self._score_store.leaderboard(score_identity, display_name=display_name)
+        markdown = outcome.markdown
+        if outcome.quiz_id:
+            markdown += self._render_score_delta(None, leaderboard)
         return QuizOutcome(
             outcome.quiz_id,
-            outcome.markdown,
+            markdown,
             widgets.with_leaderboard(outcome.widget, leaderboard),
         )
 
@@ -475,12 +478,7 @@ class QuizHandlers:
     ) -> str:
         lines = [
             f"✅ 정답! {name}",
-            "",
-            "정답 분석",
         ]
-        lines.extend(
-            f"{index}. {line}" for index, line in enumerate(answer_analysis[:5], start=1)
-        )
         if leaderboard is not None and earned_score is not None:
             lines.extend(["", f"🎯 이번 정답으로 {earned_score}점 획득!", "", "주간 TOP3"])
             lines.extend(
@@ -493,6 +491,10 @@ class QuizHandlers:
             )
         else:
             lines.extend(["", "닉네임이 없어 점수와 랭킹은 반영하지 않았습니다."])
+        lines.extend(["", "정답 분석"])
+        lines.extend(
+            f"{index}. {line}" for index, line in enumerate(answer_analysis[:5], start=1)
+        )
         lines.extend([
             "",
             "다음 중 선택: " + " / ".join(f"`{x}`" for x in result.next_actions),

@@ -317,6 +317,8 @@ async def test_quiz_widget_shows_live_leaderboard(cache):
     out = handlers.quiz(QuizMode.PRICE, "랭커", Market.KR)
 
     assert out.widget is not None
+    assert "주간 TOP3" in out.markdown
+    assert "내 점수 3점" in out.markdown
     assert "주간 TOP3" in out.widget["copy_text"]
     assert "내 점수 3점" in out.widget["copy_text"]
 
