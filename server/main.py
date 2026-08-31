@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import datetime as _dt
 import functools
 import hashlib
@@ -75,6 +76,9 @@ _WEEKLY_RESET_INTERVAL_SEC: int = 60
 _SNAPSHOT_INTERVAL_SEC: int = 300
 _MARKET_OPEN = (9, 0)  # KST
 _MARKET_CLOSE = (15, 30)  # KST
+_request_identity_key_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "stockquiz_request_identity_key", default=None
+)
 
 _COMMON_ANN = dict(
     readOnlyHint=True,
@@ -174,9 +178,11 @@ class MCPSelectiveAuthMiddleware:
             return
 
         context_token = auth_context_var.set(AuthenticatedUser(token))
+        identity_token = _request_identity_key_var.set(_access_token_identity_key(token))
         try:
             await self.app(app_scope, replay, send)
         finally:
+            _request_identity_key_var.reset(identity_token)
             auth_context_var.reset(context_token)
 
     def _canonical_mcp_scope(self, scope: Scope) -> Scope:
@@ -279,14 +285,7 @@ def _access_token_identity_key(access_token: Any | None) -> str | None:
                 return value.strip()
 
     raw_token = getattr(access_token, "token", None)
-    static_preview_token = os.environ.get(
-        "OAUTH_PLAYMCP_BEARER_TOKEN", _DEFAULT_PLAYMCP_BEARER_TOKEN
-    )
-    if (
-        isinstance(raw_token, str)
-        and raw_token.strip()
-        and raw_token != static_preview_token
-    ):
+    if isinstance(raw_token, str) and raw_token.strip():
         digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()[:24]
         return f"oauth-token:{digest}"
     return None
@@ -303,6 +302,10 @@ def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
     identity_key = _access_token_identity_key(access_token)
     if identity_key is not None:
         return identity_key
+
+    request_identity_key = _request_identity_key_var.get()
+    if request_identity_key is not None:
+        return request_identity_key
 
     if ctx is None:
         return None

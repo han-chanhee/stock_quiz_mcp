@@ -648,7 +648,6 @@ def test_tool_identity_ignores_oauth_client_id_meta():
 def test_tool_identity_uses_hashed_oauth_token_without_subject(monkeypatch):
     """subject가 없는 OAuth 토큰도 토큰 해시 기반 자동 닉네임 경로를 탄다."""
     import server.main as main
-    from server.auth import _DEFAULT_PLAYMCP_BEARER_TOKEN
 
     class UserAccessToken:
         subject = None
@@ -658,7 +657,7 @@ def test_tool_identity_uses_hashed_oauth_token_without_subject(monkeypatch):
     class StaticPreviewToken:
         subject = None
         claims = None
-        token = _DEFAULT_PLAYMCP_BEARER_TOKEN
+        token = "stockquiz-preview-token"
 
     monkeypatch.setattr(main, "get_access_token", lambda: UserAccessToken())
     identity_key = main._tool_identity_key(None, None)
@@ -667,7 +666,9 @@ def test_tool_identity_uses_hashed_oauth_token_without_subject(monkeypatch):
     assert "issued-user-access-token" not in identity_key
 
     monkeypatch.setattr(main, "get_access_token", lambda: StaticPreviewToken())
-    assert main._tool_identity_key(None, None) is None
+    static_identity_key = main._tool_identity_key(None, None)
+    assert static_identity_key is not None
+    assert static_identity_key.startswith("oauth-token:")
 
 
 @pytest.mark.asyncio
@@ -820,6 +821,66 @@ async def test_mcp_trailing_slash_bearer_preserves_auth_subject():
 
     assert messages[0]["status"] == 204
     assert seen == {"path": "/mcp", "subject": "kakao:rank-user"}
+
+
+@pytest.mark.asyncio
+async def test_mcp_bearer_without_subject_preserves_hashed_identity():
+    """FastMCP 컨텍스트가 subject를 주지 않아도 검증된 Bearer 토큰으로 랭킹 키를 만든다."""
+    from mcp.server.auth.provider import AccessToken
+    from server.main import MCPSelectiveAuthMiddleware, _tool_identity_key
+
+    token = AccessToken(
+        token="subjectless-user-token",
+        client_id="stockquiz-playmcp-87440044842919710",
+        scopes=[],
+        subject=None,
+    )
+
+    class Provider:
+        async def verify_token(self, raw: str):
+            assert raw == "subjectless-user-token"
+            return token
+
+    seen = {}
+
+    async def app(scope, receive, send):
+        seen["path"] = scope["path"]
+        seen["identity"] = _tool_identity_key(None, None)
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = MCPSelectiveAuthMiddleware(app, Provider())
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call"}).encode()
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    messages = []
+
+    async def send(message):
+        messages.append(message)
+
+    await middleware(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp",
+            "raw_path": b"/mcp",
+            "headers": [(b"authorization", b"Bearer subjectless-user-token")],
+        },
+        receive,
+        send,
+    )
+
+    assert messages[0]["status"] == 204
+    assert seen["path"] == "/mcp"
+    assert seen["identity"].startswith("oauth-token:")
+    assert "subjectless-user-token" not in seen["identity"]
 
 
 def test_chart_image_route_renders_png(cache):
