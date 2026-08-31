@@ -964,7 +964,7 @@ def test_health_route_reports_revision(cache):
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["revision"] == "ranking-bearer-v2"
+    assert response.json()["revision"] == "ranking-no-login-v3"
 
 
 def test_runtime_requirements_include_chart_renderer():
@@ -1240,7 +1240,8 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
     assert post_response.status_code == 200
     assert no_secret_response.status_code == 200
     assert revoke_response.status_code == 200
-    assert revoked_tools_response.status_code == 401
+    assert revoked_tools_response.status_code == 200
+    assert "www-authenticate" not in revoked_tools_response.headers
     assert basic_response.status_code == 200
     assert upper_basic_response.status_code == 200
 
@@ -1338,10 +1339,10 @@ def test_oauth_can_delegate_user_login_to_kakao(cache, monkeypatch, tmp_path):
     assert token_response.status_code == 200
 
 
-def test_mcp_tools_list_does_not_require_verification_header(
+def test_mcp_tools_list_and_call_do_not_require_verification_header(
     cache, monkeypatch, tmp_path
 ):
-    """PlayMCP 정보 불러오기는 Header Name/Value 없이 tools/list를 조회할 수 있다."""
+    """PlayMCP는 Header Name/Value 없이 tools/list와 tools/call을 조회할 수 있다."""
     from server.main import _runtime_middleware, create_server
 
     monkeypatch.setenv("OAUTH_ENABLED", "1")
@@ -1374,8 +1375,8 @@ def test_mcp_tools_list_does_not_require_verification_header(
         )
 
     assert tools_response.status_code == 200
-    assert call_response.status_code == 401
-    assert "www-authenticate" in call_response.headers
+    assert call_response.status_code == 200
+    assert "www-authenticate" not in call_response.headers
 
 
 def test_static_oauth_accepts_future_playmcp_id_without_code_change(
@@ -1568,6 +1569,45 @@ def test_runtime_mcp_call_with_static_bearer_shows_ranking(
         )
 
     assert response.status_code == 200
+    assert "주간 TOP3" in response.text
+    assert "내 순위 1위 · 내 점수 0점" in response.text
+    assert "차트형 힌트" not in response.text
+
+
+def test_runtime_mcp_call_without_bearer_shows_guest_ranking(
+    cache, monkeypatch, tmp_path
+):
+    """로그인 없는 MCP 호출도 막지 않고 익명 랭킹을 보여준다."""
+    from server.main import _runtime_middleware, create_server
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("STATE_DB_PATH", str(tmp_path / "state.sqlite3"))
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+
+    app = create_server().http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "quiz", "arguments": {"mode": "시장"}},
+            },
+            headers={"Accept": "application/json, text/event-stream"},
+        )
+
+    assert response.status_code == 200
+    assert "www-authenticate" not in response.headers
     assert "주간 TOP3" in response.text
     assert "내 순위 1위 · 내 점수 0점" in response.text
     assert "차트형 힌트" not in response.text

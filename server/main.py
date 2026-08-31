@@ -76,7 +76,7 @@ _WEEKLY_RESET_INTERVAL_SEC: int = 60
 _SNAPSHOT_INTERVAL_SEC: int = 300
 _MARKET_OPEN = (9, 0)  # KST
 _MARKET_CLOSE = (15, 30)  # KST
-_APP_REVISION = "ranking-bearer-v2"
+_APP_REVISION = "ranking-no-login-v3"
 _request_identity_key_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "stockquiz_request_identity_key", default=None
 )
@@ -143,7 +143,7 @@ class ForwardedHttpsRedirectMiddleware(BaseHTTPMiddleware):
 
 
 class MCPSelectiveAuthMiddleware:
-    """도구 목록은 공개하고 실제 tools/call만 OAuth Bearer를 요구한다."""
+    """MCP 호출을 막지 않고, Bearer가 있으면 사용자 식별 컨텍스트만 보강한다."""
 
     _PUBLIC_METHODS = {"initialize", "tools/list", "ping"}
 
@@ -163,19 +163,17 @@ class MCPSelectiveAuthMiddleware:
         app_scope = self._canonical_mcp_scope(scope) if path == "/mcp/" else scope
 
         body = await self._read_body(receive)
-        methods = self._jsonrpc_methods(body)
-        needs_auth = bool(methods) and any(
-            method not in self._PUBLIC_METHODS for method in methods
-        )
         token = await self._access_token(scope)
-
-        if needs_auth and token is None:
-            await self._unauthorized(scope, send)
-            return
 
         replay = self._replay_body(body)
         if token is None:
-            await self.app(app_scope, replay, send)
+            identity_token = _request_identity_key_var.set(
+                _anonymous_request_identity_key(scope)
+            )
+            try:
+                await self.app(app_scope, replay, send)
+            finally:
+                _request_identity_key_var.reset(identity_token)
             return
 
         context_token = auth_context_var.set(AuthenticatedUser(token))
@@ -290,6 +288,29 @@ def _access_token_identity_key(access_token: Any | None) -> str | None:
         digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()[:24]
         return f"oauth-token:{digest}"
     return None
+
+
+def _anonymous_request_identity_key(scope: Scope) -> str:
+    """로그인 없이 호출될 때 가능한 요청 단서로 익명 랭킹 키를 만든다."""
+    headers = {
+        key.decode("latin1").lower(): value.decode("latin1")
+        for key, value in scope.get("headers", [])
+    }
+    for name in (
+        "x-playmcp-user-id",
+        "x-user-id",
+        "mcp-session-id",
+        "x-session-id",
+        "x-forwarded-for",
+        "user-agent",
+    ):
+        value = headers.get(name, "").strip()
+        if value:
+            digest = hashlib.sha256(f"{name}:{value}".encode("utf-8")).hexdigest()[:24]
+            return f"guest:{digest}"
+    client = scope.get("client")
+    digest = hashlib.sha256(repr(client).encode("utf-8")).hexdigest()[:24]
+    return f"guest:{digest}"
 
 
 def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
