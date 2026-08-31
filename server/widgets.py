@@ -180,6 +180,42 @@ def _analysis_list(lines: list[str]) -> dict:
     }
 
 
+def _my_rank_text(leaderboard: "LeaderboardSnapshot") -> str:
+    return f"내 {leaderboard.my_rank}위 · {leaderboard.my_entry.score}점"
+
+
+def _leaderboard_panel(leaderboard: "LeaderboardSnapshot") -> list[dict]:
+    return [
+        {
+            "type": "Row",
+            "align": "center",
+            "gap": _COMPACT_GAP,
+            "children": [
+                {
+                    "type": "Text",
+                    "value": "주간 TOP3",
+                    "weight": "bold",
+                    "size": "sm",
+                    "flex": 1,
+                },
+                {
+                    "type": "Badge",
+                    "label": _my_rank_text(leaderboard),
+                    "color": "info",
+                    "variant": "soft",
+                    "size": "sm",
+                },
+            ],
+        },
+        leaderboard_listview_rows(leaderboard),
+        {
+            "type": "Caption",
+            "value": f"닉네임 {leaderboard.my_entry.display_name}",
+            "size": "sm",
+        },
+    ]
+
+
 def price_quiz_widget(
     quiz_id: str,
     mode_intro: str,
@@ -296,9 +332,6 @@ def correct_answer_widget(
     detail_lines = analysis_lines or [price_line, rank_line, reason_line]
     children: list[dict] = [
         {"type": "Title", "value": f"정답! {answer_name}", "size": "lg", "weight": "bold"},
-        {"type": "Text", "value": "정답 분석", "weight": "bold", "size": "sm"},
-        _analysis_list(detail_lines),
-        {"type": "Divider", "spacing": _SECTION_SPACING},
     ]
     copy_lines = [
         f"✅ 정답! {answer_name}",
@@ -321,21 +354,8 @@ def correct_answer_widget(
                 }
             )
             copy_lines.extend(["", f"🎯 이번 정답으로 {earned_score}점 획득!"])
-        children.extend(
-            [
-                {"type": "Title", "value": "주간 랭킹", "size": "md", "weight": "bold"},
-                leaderboard_listview_rows(leaderboard),
-                {
-                    "type": "Text",
-                    "value": (
-                        f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
-                        f"· 닉네임 {leaderboard.my_entry.display_name}"
-                    ),
-                    "weight": "bold",
-                    "size": "sm",
-                },
-            ]
-        )
+        children.extend(_leaderboard_panel(leaderboard))
+        children.append({"type": "Divider", "spacing": _SECTION_SPACING})
         copy_lines.extend(["", "주간 TOP3"])
         copy_lines.extend(
             f"{rank}. {entry.display_name} — {entry.score}점"
@@ -346,8 +366,15 @@ def correct_answer_widget(
             f"· 닉네임 {leaderboard.my_entry.display_name}"
         )
 
+    children.extend(
+        [
+            {"type": "Text", "value": "정답 분석", "weight": "bold", "size": "sm"},
+            _analysis_list(detail_lines),
+            {"type": "Divider", "spacing": _SECTION_SPACING},
+        ]
+    )
+
     if next_actions:
-        children.append({"type": "Divider", "spacing": _SECTION_SPACING})
         children.extend({"type": "Button", "label": action} for action in next_actions)
         copy_lines.extend(
             ["", "다음 중 선택: " + " / ".join(f"`{action}`" for action in next_actions)]
@@ -375,19 +402,11 @@ def with_leaderboard(
     widget = dict(payload["widget"])
     children = list(widget.get("children", []))
     ranking_children = [
-        {"type": "Title", "value": "주간 랭킹", "size": "md", "weight": "bold"},
-        leaderboard_listview_rows(leaderboard),
-        {
-            "type": "Text",
-            "value": (
-                f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
-                f"· 닉네임 {leaderboard.my_entry.display_name}"
-            ),
-            "weight": "bold",
-            "size": "sm",
-        },
+        *_leaderboard_panel(leaderboard),
+        {"type": "Divider", "spacing": _SECTION_SPACING},
     ]
-    children.extend([{"type": "Divider", "spacing": _SECTION_SPACING}, *ranking_children])
+    insert_at = 2 if len(children) >= 2 else 0
+    children[insert_at:insert_at] = ranking_children
     widget["children"] = children
 
     copy_text = payload["copy_text"]

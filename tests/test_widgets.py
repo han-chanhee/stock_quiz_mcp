@@ -251,6 +251,9 @@ def test_correct_answer_widget_payload_and_top_three() -> None:
     assert len(leaderboard_col["children"]) == 3
     assert "주간 TOP3" in payload["copy_text"]
     assert "내 순위 6위 · 내 점수 54점" in payload["copy_text"]
+    serialized_widget = json.dumps(payload["widget"], ensure_ascii=False)
+    assert serialized_widget.index("주간 TOP3") < serialized_widget.index("정답 분석")
+    assert "내 6위 · 54점" in serialized_widget
 
 
 def test_correct_answer_widget_without_leaderboard() -> None:
@@ -302,7 +305,7 @@ def test_leaderboard_listview_rows_schema() -> None:
     assert score["textAlign"] == "end"
 
 
-def test_with_leaderboard_appends_common_ranking_panel() -> None:
+def test_with_leaderboard_places_common_ranking_panel_near_top() -> None:
     payload = price_quiz_widget("QZ-5", "📈 주가 퀴즈", "현재가는?")
     combined = with_leaderboard(payload, _leaderboard())
     _assert_payload(combined, "price_quiz")
@@ -310,10 +313,12 @@ def test_with_leaderboard_appends_common_ranking_panel() -> None:
     assert combined["widget"] is not payload["widget"]
     assert "주간 TOP3" in combined["copy_text"]
     assert "내 점수" in combined["copy_text"]
-    assert any(
-        child.get("type") == "Title" and child.get("value") == "주간 랭킹"
-        for child in _walk_components(combined["widget"])
-    )
+    children = combined["widget"]["children"]
+    serialized_first_panel = json.dumps(children[2:5], ensure_ascii=False)
+    serialized_later = json.dumps(children[5:], ensure_ascii=False)
+    assert "주간 TOP3" in serialized_first_panel
+    assert "내 6위 · 54점" in serialized_first_panel
+    assert "주식대결 퀴즈" in serialized_later
 
 
 def test_to_content_text_preserves_korean() -> None:
