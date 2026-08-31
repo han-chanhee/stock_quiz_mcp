@@ -631,6 +631,7 @@ def _runtime_middleware() -> list[Middleware]:
 if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
+    mcp_server = create_server()
     run_kwargs: dict = {
         "transport": "streamable-http",
         "host": host,
@@ -650,4 +651,4 @@ if __name__ == "__main__":
         run_kwargs["allowed_hosts"] = [h.strip() for h in allowed.split(",") if h.strip()]
     if os.environ.get("DISABLE_HOST_PROTECTION") == "1":
         run_kwargs["host_origin_protection"] = False
-    create_server().run(**run_kwargs)
+    mcp_server.run(**run_kwargs)

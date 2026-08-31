@@ -985,6 +985,21 @@ def test_create_server_uses_sqlite_runtime_state(monkeypatch, tmp_path):
     assert state_db.exists()
 
 
+def test_create_server_enables_auth_middleware_before_runtime_run(
+    monkeypatch, tmp_path
+):
+    from server import main
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("STATE_DB_PATH", str(tmp_path / "runtime.sqlite3"))
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+
+    main.create_server()
+    middleware_classes = [item.cls for item in main._runtime_middleware()]
+
+    assert main.MCPSelectiveAuthMiddleware in middleware_classes
+
+
 def test_create_server_can_select_redis_runtime_state(monkeypatch):
     from server import main
 
