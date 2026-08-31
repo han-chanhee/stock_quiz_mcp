@@ -942,6 +942,31 @@ def test_logo_asset_route_serves_png(cache):
         assert response.content.startswith(b"\x89PNG")
 
 
+def test_health_route_reports_revision(cache):
+    from server.main import _runtime_middleware, build_app
+
+    app = build_app(
+        cache,
+        QuizStore(),
+        ScoreStore(),
+        QuizBank(rng=random.Random(0)),
+    ).http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["revision"] == "ranking-bearer-v2"
+
+
 def test_runtime_requirements_include_chart_renderer():
     requirements = Path("requirements.txt").read_text(encoding="utf-8")
 
@@ -1489,6 +1514,48 @@ def test_static_oauth_client_accepts_kakaocloud_console_redirect(
     assert location.startswith(redirect_uri)
     assert token_response.status_code == 200
     assert tools_response.status_code == 200
+
+
+def test_runtime_mcp_call_with_static_bearer_shows_ranking(
+    cache, monkeypatch, tmp_path
+):
+    """운영 MCP 경로에서 subject 없는 Bearer 토큰도 자동 랭킹을 보여준다."""
+    from server.auth import _DEFAULT_PLAYMCP_BEARER_TOKEN
+    from server.main import _runtime_middleware, create_server
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("STATE_DB_PATH", str(tmp_path / "state.sqlite3"))
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+
+    app = create_server().http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "quiz", "arguments": {"mode": "종목"}},
+            },
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Authorization": f"Bearer {_DEFAULT_PLAYMCP_BEARER_TOKEN}",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "주간 TOP3" in response.text
+    assert "내 순위 1위 · 내 점수 0점" in response.text
+    assert "차트형 힌트" not in response.text
 
 
 @pytest.mark.asyncio

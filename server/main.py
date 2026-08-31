@@ -76,6 +76,7 @@ _WEEKLY_RESET_INTERVAL_SEC: int = 60
 _SNAPSHOT_INTERVAL_SEC: int = 300
 _MARKET_OPEN = (9, 0)  # KST
 _MARKET_CLOSE = (15, 30)  # KST
+_APP_REVISION = "ranking-bearer-v2"
 _request_identity_key_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "stockquiz_request_identity_key", default=None
 )
@@ -468,6 +469,7 @@ def _build_app(
         return JSONResponse(
             {
                 "status": "ok",
+                "revision": _APP_REVISION,
                 "stale": cache.stale,
                 "data_as_of": (
                     cache.data_as_of.isoformat() if cache.data_as_of else None
