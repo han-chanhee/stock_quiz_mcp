@@ -483,7 +483,7 @@ def _runtime_middleware() -> list[Middleware]:
     return middleware
 
 
-if __name__ == "__main__":
+def _run() -> None:
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
     run_kwargs: dict = {
@@ -495,7 +495,6 @@ if __name__ == "__main__":
         # TLS 종료 프록시(Fly 등) 뒤에서 X-Forwarded-Proto를 신뢰 →
         # 슬래시 리다이렉트(/mcp/ → /mcp)가 http로 다운그레이드되는 문제 방지.
         "uvicorn_config": {"proxy_headers": True, "forwarded_allow_ips": "*"},
-        "middleware": _runtime_middleware(),
     }
     # 공개 배포 시 Host 헤더 보호 때문에 외부 도메인 요청이 막힐 수 있다.
     # ALLOWED_HOSTS="app.fly.dev,example.com" 로 허용 호스트 지정(권장),
@@ -505,4 +504,10 @@ if __name__ == "__main__":
         run_kwargs["allowed_hosts"] = [h.strip() for h in allowed.split(",") if h.strip()]
     if os.environ.get("DISABLE_HOST_PROTECTION") == "1":
         run_kwargs["host_origin_protection"] = False
-    create_server().run(**run_kwargs)
+    server = create_server()
+    run_kwargs["middleware"] = _runtime_middleware()
+    server.run(**run_kwargs)
+
+
+if __name__ == "__main__":
+    _run()

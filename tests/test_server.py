@@ -611,6 +611,29 @@ def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
     )
 
 
+def test_main_run_attaches_auth_middleware_after_create_server(monkeypatch, tmp_path):
+    from fastmcp import FastMCP
+
+    from server import main
+
+    captured: dict = {}
+
+    def fake_run(self, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+    monkeypatch.setenv("HOST", "127.0.0.1")
+    monkeypatch.setenv("PORT", "8999")
+    monkeypatch.setattr(main, "_OPTIONAL_AUTH_PROVIDER", None)
+    monkeypatch.setattr(FastMCP, "run", fake_run)
+
+    main._run()
+
+    middleware = captured["middleware"]
+    assert any(item.cls is main.MCPSelectiveAuthMiddleware for item in middleware)
+
+
 def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, tmp_path):
     """PlayMCP가 /token에서 secret을 body나 Basic header로 보내도 둘 다 받는다."""
     import base64
