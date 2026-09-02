@@ -310,7 +310,7 @@ def _build_app(
             "Requires mode and nickname — if either is missing, call this tool anyway "
             "with what you have; it replies with a short guide instead of erroring. "
             "Pick one of three modes: '주가' (guess a random stock's current price, "
-            "±3% correct), '시장' (guess the biggest gainer or loser over a period; "
+            "rounded to the nearest KRW 10,000), '시장' (guess the biggest gainer or loser over a period; "
             "direction is random), '종목' (guess the company from sector/price/market-cap "
             "hints). The reply includes a short mode intro plus the quiz and a quiz_id; "
             "grade answers with submit_answer. nickname (닉네임) is required for scoring. "

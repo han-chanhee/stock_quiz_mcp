@@ -3,6 +3,7 @@
 from .analysis import NO_REASON, build_analysis
 from .grading import (
     PRICE_TOLERANCE,
+    PRICE_UNIT_KRW,
     is_correct,
     judge_name,
     judge_price,
@@ -24,6 +25,7 @@ __all__ = [
     "resolve_alias",
     "pick_hint",
     "PRICE_TOLERANCE",
+    "PRICE_UNIT_KRW",
     "build_analysis",
     "NO_REASON",
     "chosung",

@@ -102,7 +102,7 @@ class QuizBank:
             quiz_type=QuizType.PRICE,
             question_md=(
                 f"**{answer.name}**의 현재 주가는 얼마일까요? "
-                f"({digits}자리 숫자, 원 단위 · ±3% 이내 정답)"
+                f"({digits}자리 숫자, 1만원 단위 반올림 · 예: 8 = 8만원)"
             ),
             hint_policy="updown",
         )

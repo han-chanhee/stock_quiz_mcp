@@ -9,7 +9,7 @@
   - 데이터는 주입받은 MarketClient(Protocol)와 batch 산출 JSON에서만 가져온다
 - `grading.py`: 채점 + 힌트
   - 종목명 정규화 판정 (공백/대소문자/별칭 테이블 `aliases.json`)
-  - 가격 ±3% 판정
+  - 국내 가격 1만원 단위 반올림 판정
   - 힌트 단계: KR 1차 초성 → 2차 첫 글자 / US 첫 글자+글자수 / price는 UP·DOWN
   - 초성 변환 유틸 포함 (한글 유니코드 분해, 외부 라이브러리 금지)
 - `analysis.py`: MiniAnalysis 생성
@@ -33,7 +33,7 @@
 - `tests/test_services.py` 통과:
   - 출제 4종이 QuizQuestion 스키마 유효 + 정답 미포함 검증
   - 초성 변환 정확성 ("삼성전자"→"ㅅㅅㅈㅈ", "SK하이닉스" 같은 혼합 케이스 포함)
-  - ±3% 판정은 hypothesis property 테스트로 경계 포함 수백 케이스 자동 생성
+  - 비원화 ±3% 판정은 hypothesis property 테스트로 경계 포함 수백 케이스 자동 생성
     (정확히 3.0% 케이스 명시 포함)
   - 별칭/오타/한영혼용 판정도 hypothesis로 정규화 불변성 검증
   - reason 미조회 시 "특별한 재료 확인 안 됨" 반환 100%
