@@ -264,7 +264,8 @@ async def test_authorize_without_consent_redirects_to_consent_page():
 
     result = await provider.authorize(client, _params())
 
-    assert result.startswith("/oauth/consent?token=")
+    assert urlsplit(result).path == "/oauth/consent"
+    assert urlsplit(result).scheme == "https"
     assert len(provider._pending_consents) == 1
 
 
@@ -283,7 +284,8 @@ async def test_authorize_ignores_kakao_login_env_and_uses_local_consent(monkeypa
 
     result = await provider.authorize(client, _params())
 
-    assert result.startswith("/oauth/consent?token=")
+    assert urlsplit(result).path == "/oauth/consent"
+    assert urlsplit(result).scheme == "https"
     assert "kauth.kakao.com" not in result
     assert len(provider._pending_consents) == 1
 
@@ -341,8 +343,8 @@ async def test_authorize_reuses_consent_only_for_same_subject_client_and_scope()
         _REQUEST_SUBJECT.reset(subject_token)
 
     assert second.startswith("https://allowed.example/oauth/callback")
-    assert other_client_result.startswith("/oauth/consent?token=")
-    assert other_scope_result.startswith("/oauth/consent?token=")
+    assert urlsplit(other_client_result).path == "/oauth/consent"
+    assert urlsplit(other_scope_result).path == "/oauth/consent"
 
 
 @pytest.mark.asyncio

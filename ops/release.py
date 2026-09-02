@@ -402,11 +402,12 @@ def remote_oauth_smoke(
         follow_redirects=False,
     )
     consent_location = _header(headers, "location")
-    if status != 302 or not consent_location.startswith("/oauth/consent?token="):
+    consent_parts = urllib.parse.urlsplit(consent_location)
+    if status != 302 or consent_parts.path != "/oauth/consent":
         raise ReleaseError(f"/authorize did not redirect to consent: {status} {raw[:300]}")
 
     status, consent_html, _ = http_text(
-        f"{base}{consent_location}",
+        urllib.parse.urljoin(base, consent_location),
         headers={"Accept": "text/html"},
     )
     if (
@@ -416,7 +417,7 @@ def remote_oauth_smoke(
     ):
         raise ReleaseError(f"/oauth/consent page invalid: {status}")
 
-    token = urllib.parse.parse_qs(urllib.parse.urlsplit(consent_location).query)["token"][0]
+    token = urllib.parse.parse_qs(consent_parts.query)["token"][0]
     consent_body = urllib.parse.urlencode(
         {"token": token, "decision": "allow", "agree": "yes"}
     ).encode("utf-8")
@@ -457,6 +458,26 @@ def remote_oauth_smoke(
     if status != 200:
         raise ReleaseError(f"/token returned {status}: {raw[:300]}")
     access_token = json.loads(raw)["access_token"]
+
+    unauth_call_body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "tools/call",
+            "params": {"name": "help", "arguments": {}},
+        }
+    ).encode("utf-8")
+    status, raw, headers = http_text(
+        f"{base}/mcp",
+        method="POST",
+        body=unauth_call_body,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+    )
+    if status != 401 or "www-authenticate" not in {key.lower() for key in headers}:
+        raise ReleaseError(f"unauthenticated tools/call returned {status}: {raw[:300]}")
 
     auth_headers = {
         "Content-Type": "application/json",
@@ -501,6 +522,7 @@ def remote_oauth_smoke(
         "authorize_redirect": True,
         "consent_page": True,
         "token_status": 200,
+        "unauth_call_status": 401,
         "tools_status": 200,
         "tool_names": tool_names,
         "quiz_status": 200,

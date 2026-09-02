@@ -675,7 +675,7 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
             follow_redirects=False,
         )
         location = response.headers["location"]
-        if location.startswith("/oauth/consent?token="):
+        if urllib.parse.urlsplit(location).path == "/oauth/consent":
             token = urllib.parse.parse_qs(
                 urllib.parse.urlsplit(location).query
             )["token"][0]
@@ -880,7 +880,7 @@ def test_oauth_uses_local_consent_even_when_kakao_login_env_exists(
         )
 
     assert authorize_response.status_code == 302
-    assert consent_location.startswith("/oauth/consent?token=")
+    assert urllib.parse.urlsplit(consent_location).path == "/oauth/consent"
     assert callback.startswith(redirect_uri)
     assert token_response.status_code == 200
     assert second_authorize_response.status_code == 302
@@ -1053,7 +1053,7 @@ def test_static_oauth_client_accepts_kakaocloud_console_redirect(
             follow_redirects=False,
         )
         location = response.headers["location"]
-        if location.startswith("/oauth/consent?token="):
+        if urllib.parse.urlsplit(location).path == "/oauth/consent":
             token = urllib.parse.parse_qs(
                 urllib.parse.urlsplit(location).query
             )["token"][0]

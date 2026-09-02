@@ -502,7 +502,13 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         consent_token = secrets.token_urlsafe(16)
         user_subject = subject or f"{_SUBJECT_PREFIX}{secrets.token_urlsafe(18)}"
         self._pending_consents[consent_token] = (client, params, user_subject)
-        return f"/oauth/consent?token={consent_token}"
+        configured_base_url = str(self.base_url or "").rstrip("/")
+        base_url = (
+            configured_base_url
+            if urlsplit(configured_base_url).scheme == "https"
+            else _DEFAULT_BASE_URL
+        )
+        return f"{base_url}/oauth/consent?token={consent_token}"
 
     async def finish_authorize(
         self,
