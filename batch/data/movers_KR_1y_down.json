@@ -2,70 +2,70 @@
   {
     "rank": 1,
     "snapshot": {
-      "ticker": "096610",
-      "name": "알에프세미",
+      "ticker": "269620",
+      "name": "시스웍",
       "market": "KR",
       "sector": null,
-      "price": 101.0,
-      "change_pct": -12.17,
+      "price": 17.0,
+      "change_pct": -37.04,
       "market_cap_rank": 1,
-      "as_of": "2026-08-30T22:06:51.294580+09:00"
+      "as_of": "2026-08-17T16:22:49.035968+09:00"
     },
     "period": "1y"
   },
   {
     "rank": 2,
     "snapshot": {
-      "ticker": "417310",
-      "name": "코람코더원리츠",
+      "ticker": "418620",
+      "name": "E8",
       "market": "KR",
       "sector": null,
-      "price": 2335.0,
-      "change_pct": 1.97,
+      "price": 580.0,
+      "change_pct": 5.26,
       "market_cap_rank": 2,
-      "as_of": "2026-08-30T22:06:51.294617+09:00"
+      "as_of": "2026-08-17T16:22:49.036037+09:00"
     },
     "period": "1y"
   },
   {
     "rank": 3,
     "snapshot": {
-      "ticker": "0220WL",
-      "name": "한화머시너리앤서비스홀딩스3우B",
+      "ticker": "058450",
+      "name": "한주에이알티",
       "market": "KR",
       "sector": null,
-      "price": 3150.0,
-      "change_pct": -6.39,
+      "price": 2355.0,
+      "change_pct": 2.84,
       "market_cap_rank": 3,
-      "as_of": "2026-08-30T22:06:51.294622+09:00"
+      "as_of": "2026-08-17T16:22:49.036052+09:00"
     },
     "period": "1y"
   },
   {
     "rank": 4,
     "snapshot": {
-      "ticker": "0220W0",
-      "name": "한화머시너리앤서비스홀딩스",
+      "ticker": "487400",
+      "name": "케이앤에스아이앤씨",
       "market": "KR",
       "sector": null,
-      "price": 7440.0,
-      "change_pct": -2.23,
+      "price": 14860.0,
+      "change_pct": -3.38,
       "market_cap_rank": 4,
-      "as_of": "2026-08-30T22:06:51.294627+09:00"
+      "as_of": "2026-08-17T16:22:49.036067+09:00"
     },
     "period": "1y"
   },
   {
     "rank": 5,
     "snapshot": {
-      "ticker": "083660",
-      "name": "CSA 코스믹",
+      "ticker": "002820",
+      "name": "SUN&L",
       "market": "KR",
       "sector": null,
-      "price": 1761.0,
-      "change_pct": -7.9,
+      "price": 1496.0,
+      "change_pct": -12.87,
       "market_cap_rank": 5,
-      "as_of": "2026-08-30T22:06:51.294632+09:00"
+      "as_of": "2026-08-17T16:22:49.036080+09:00"
     },
     "period": "1y"
   }

@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections import Counter
-from datetime import datetime, timezone
 
-import httpx
 import pytest
 
-from batch import DailyBatch, MockReasonProvider, NaverReasonProvider
+from batch import DailyBatch, MockReasonProvider
 from batch.daily import EmptyOutputError
 from clients import MockMarketClient
-from contracts.schemas import Market, RankingItem, Reason, StockSnapshot
+from contracts.schemas import RankingItem, Reason, StockSnapshot
 
 
 @pytest.mark.asyncio
@@ -86,103 +83,8 @@ async def test_batch_aliases_autoregister(tmp_path):
 @pytest.mark.asyncio
 async def test_reason_provider_none_when_unseen(tmp_path):
     provider = MockReasonProvider(seed={})  # 아무 근거도 없음
+    from contracts.schemas import Market
     assert await provider.fetch("005930", "삼성전자", Market.KR) is None
-
-
-@pytest.mark.asyncio
-async def test_naver_reason_provider_adds_company_feature_keywords():
-    def handler(request: httpx.Request) -> httpx.Response:
-        query = request.url.params.get("query", "")
-        item = (
-            {
-                "title": "<b>삼성전자</b> 실적 기대",
-                "description": "삼성전자 HBM 반도체 매출 회복 기대가 부각됐다.",
-                "originallink": "https://news.example.com/samsung-feature",
-                "pubDate": "Mon, 17 Aug 2026 09:10:00 +0900",
-            }
-            if "실적 사업" in query
-            else {
-                "title": "<b>삼성전자</b> 주가 상승",
-                "description": "삼성전자 주가 흐름이 강세를 보였다.",
-                "originallink": "https://news.example.com/samsung",
-                "pubDate": "Mon, 17 Aug 2026 09:00:00 +0900",
-            }
-        )
-        return httpx.Response(
-            200,
-            json={"items": [item]},
-        )
-
-    provider = NaverReasonProvider(
-        client_id="id",
-        client_secret="secret",
-        transport=httpx.MockTransport(handler),
-    )
-    reason = await provider.fetch("005930", "삼성전자", Market.KR)
-
-    assert reason is not None
-    assert reason.source_url == "https://news.example.com/samsung"
-    assert reason.text == "삼성전자 주가 상승 · 특징: HBM, 반도체, 실적"
-
-
-@pytest.mark.asyncio
-async def test_naver_reason_provider_rejects_advisory_titles():
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={
-                "items": [
-                    {
-                        "title": "삼성전자 매수 추천",
-                        "description": "삼성전자 반도체 주가",
-                        "originallink": "https://news.example.com/bad",
-                        "pubDate": "Mon, 17 Aug 2026 09:00:00 +0900",
-                    }
-                ]
-            },
-        )
-
-    provider = NaverReasonProvider(
-        client_id="id",
-        client_secret="secret",
-        transport=httpx.MockTransport(handler),
-    )
-
-    assert await provider.fetch("005930", "삼성전자", Market.KR) is None
-
-
-@pytest.mark.asyncio
-async def test_batch_prefetches_reasons_with_limited_concurrency(tmp_path):
-    class SlowReasonProvider:
-        def __init__(self) -> None:
-            self.active = 0
-            self.max_active = 0
-
-        async def fetch(self, ticker, name, market):
-            self.active += 1
-            self.max_active = max(self.max_active, self.active)
-            await asyncio.sleep(0.01)
-            self.active -= 1
-            return Reason(
-                ticker=ticker,
-                text=f"{name} 실적 검색 특징",
-                source_url=f"https://news.example.com/{ticker}",
-                published_at=datetime.now(timezone.utc),
-            )
-
-    provider = SlowReasonProvider()
-    snaps = await MockMarketClient().top_market_cap(Market.KR, 8)
-    batch = DailyBatch(
-        MockMarketClient(),
-        data_dir=tmp_path,
-        reason_provider=provider,
-        reason_concurrency=4,
-    )
-    await batch._build_reasons(snaps)
-
-    reasons = json.loads((tmp_path / "reasons.json").read_text(encoding="utf-8"))
-    assert len(reasons) == 8
-    assert 1 < provider.max_active <= 4
 
 
 @pytest.mark.asyncio

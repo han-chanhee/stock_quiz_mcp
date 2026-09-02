@@ -20,13 +20,7 @@ from contracts.schemas import (
     Sector,
     Verdict,
 )
-from services import (
-    build_analysis,
-    build_answer_analysis_lines,
-    build_question_analysis,
-    is_correct,
-    pick_hint,
-)
+from services import build_analysis, is_correct, pick_hint
 from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
 
@@ -37,7 +31,7 @@ DISCLAIMER = "본 내용은 퀴즈/정보 제공이며 투자 권유가 아닙�
 _EXPIRES_SEC = 1800
 
 # 해외(US)는 실 KIS 엔드포인트 미검증이라 잠가 둔다. 엔드포인트 확정 후 True로 바꾸면
-# 출제 3종이 즉시 US를 지원한다(store/채점/힌트/분석은 이미 시장 무관). 관련: clients/kis.py TODO(US).
+# 출제 4종이 즉시 US를 지원한다(store/채점/힌트/분석은 이미 시장 무관). 관련: clients/kis.py TODO(US).
 US_ENABLED = False
 _US_BLOCKED_MD = "🌏 해외 종목 퀴즈는 준비 중입니다. 지금은 국내(KR) 퀴즈만 즐길 수 있어요."
 
@@ -52,9 +46,9 @@ class QuizMode(str, Enum):
 
 # 모드 선택 시 문제 앞에 붙는 설명 1줄 (팩트만, 권유 문구 없음)
 _MODE_INTRO = {
-    QuizMode.PRICE: "📈 주가 퀴즈 — 종목의 현재 주가를 1만원 단위로 맞혀보세요.",
-    QuizMode.MARKET: "📊 시장 퀴즈 — 기간 내 가장 많이 오르거나 떨어진 종목을 맞혀보세요.",
-    QuizMode.STOCK: "🏢 종목 퀴즈 — 섹터·현재가·시총순위 힌트로 어떤 회사인지 맞혀보세요.",
+    QuizMode.PRICE: "📈 **주가 퀴즈** — 종목의 현재 주가를 맞혀보세요. 정답가 ±3% 이내면 정답!",
+    QuizMode.MARKET: "📊 **시장 퀴즈** — 기간 내 가장 많이 오르거나 떨어진 종목을 맞혀보세요.",
+    QuizMode.STOCK: "🏢 **종목 퀴즈** — 섹터·현재가·시총순위 힌트로 어떤 회사인지 맞혀보세요.",
 }
 
 
@@ -85,7 +79,7 @@ def _as_of_footer(cache: QuizCache) -> str:
 
 
 class QuizHandlers:
-    """MCP 툴의 실제 로직."""
+    """5개 툴의 실제 로직."""
 
     def __init__(
         self,
@@ -114,12 +108,12 @@ class QuizHandlers:
     ) -> QuizOutcome:
         """모드 하나를 받아 [모드 설명 + 퀴즈]를 반환한다. 입력은 3모드로 강제된다.
 
-        mode가 없으면 안내 위젯을 반환한다. 닉네임은 OAuth 계정 기준 자동 생성된다.
+        mode 또는 nickname이 없으면(생략 호출) 안내 위젯을 quiz_id 없이 반환한다.
         """
-        if mode is None:
+        if mode is None or nickname is None or not nickname.strip():
             return self._with_live_leaderboard(QuizOutcome(
                 quiz_id="",
-                markdown="모드를 골라주세요. 주가 / 시장 / 종목 중에서 선택하면 바로 시작합니다.",
+                markdown="모드와 닉네임을 알려주세요. 주가 / 시장 / 종목 중에서 골라주세요.",
                 widget=widgets.mode_selection_widget(),
             ), nickname, identity_key)
 
@@ -152,7 +146,7 @@ class QuizHandlers:
             )
         return self._with_live_leaderboard(outcome, nickname, identity_key)
 
-    # ── 출제 3종 (내부 구현 — quiz()가 라우팅) ────────────────
+    # ── 출제 4종 (내부 구현 — quiz()가 라우팅) ────────────────
 
     def _us_guard(self, market: Market) -> QuizOutcome | None:
         """US 잠금 가드. 잠긴 경우 안내 마크다운(quiz_id 없음)을 반환한다."""
@@ -162,38 +156,23 @@ class QuizHandlers:
             )
         return None
 
-    def _register(self, question, state, mode_override: QuizMode | None = None) -> QuizOutcome:
+    def _register(self, question, state) -> QuizOutcome:
         self._store.put(state)
         md = (
             f"{question.question_md}\n\n"
-            f"`quiz_id`: {question.quiz_id} (제한시간 30분)\n"
+            f"`quiz_id`: **{question.quiz_id}** (제한시간 30분)\n"
             f"→ `submit_answer(quiz_id, answer)`로 정답을 제출하세요."
         )
-        mode = mode_override or {
+        mode = {
             QuizType.PRICE: QuizMode.PRICE,
             QuizType.GAINER: QuizMode.MARKET,
             QuizType.LOSER: QuizMode.MARKET,
             QuizType.COMPANY: QuizMode.STOCK,
         }[state.quiz_type]
         mode_intro = _MODE_INTRO[mode]
-        analysis_context = {
-            QuizMode.PRICE: "price",
-            QuizMode.MARKET: "market",
-            QuizMode.STOCK: "company",
-        }[mode]
-        reason = self._cache.reason(state.answer.ticker)
-        question_analysis = build_question_analysis(
-            state.answer,
-            analysis_context,
-            reason,
-        )
         if mode == QuizMode.PRICE:
             widget = widgets.price_quiz_widget(
-                question.quiz_id,
-                mode_intro,
-                question.question_md,
-                _EXPIRES_SEC,
-                question_analysis,
+                question.quiz_id, mode_intro, question.question_md, _EXPIRES_SEC
             )
         elif mode == QuizMode.MARKET:
             widget = widgets.market_quiz_widget(
@@ -202,22 +181,14 @@ class QuizHandlers:
                 question.question_md,
                 state.answer.change_pct,
                 _EXPIRES_SEC,
-                question_analysis,
             )
         else:  # QuizMode.STOCK
             widget = widgets.company_quiz_widget(
-                question.quiz_id,
-                mode_intro,
-                question.question_md,
-                _EXPIRES_SEC,
-                question_analysis,
+                question.quiz_id, mode_intro, question.question_md, _EXPIRES_SEC
             )
-        question_analysis_md = "\n".join(
-            f"{index}. {line}" for index, line in enumerate(question_analysis, start=1)
-        )
         return QuizOutcome(
             question.quiz_id,
-            f"{md}\n\n문제 분석\n{question_analysis_md}" + _as_of_footer(self._cache),
+            md + _as_of_footer(self._cache),
             widget,
         )
 
@@ -275,11 +246,10 @@ class QuizHandlers:
         self,
         quiz_id: str,
         answer: str,
-        nickname: str | None = None,
+        nickname: str,
         identity_key: str | None = None,
     ) -> SubmitOutcome:
         score_identity = self._score_identity(nickname, identity_key)
-        display_name = self._score_display_name(nickname, identity_key, score_identity)
         state, miss = self._store.get_state_or_verdict(quiz_id)
         if state is None:
             if miss == Verdict.EXPIRED:
@@ -287,12 +257,12 @@ class QuizHandlers:
                     Verdict.EXPIRED,
                     "⏰ 만료된 퀴즈입니다. 새 퀴즈를 출제해주세요.",
                     widget=widgets.expired_quiz_widget(),
-                ), score_identity, display_name)
+                ), score_identity)
             return self._with_submit_leaderboard(SubmitOutcome(
                 Verdict.NOT_FOUND,
                 "❓ 존재하지 않는 quiz_id 입니다.",
                 widget=widgets.quiz_not_found_widget(),
-            ), score_identity, display_name)
+            ), score_identity)
 
         aliases = self._cache.aliases()
         if is_correct(state, answer, aliases):
@@ -303,10 +273,9 @@ class QuizHandlers:
                     "🏁 이미 정답 처리된 퀴즈입니다.",
                     attempts=(solved_state.attempts if solved_state else 0),
                     widget=widgets.already_solved_widget(),
-                ), score_identity, display_name)
+                ), score_identity)
             reason = self._cache.reason(state.answer.ticker)
             analysis = build_analysis(state.answer, reason)
-            answer_analysis = build_answer_analysis_lines(state.answer, reason)
             attempts = (solved_state.attempts if solved_state else 0) + 1
             result = GradingResult(
                 verdict=Verdict.CORRECT,
@@ -318,12 +287,13 @@ class QuizHandlers:
             leaderboard = None
             earned_score = None
             if score_identity is not None:
+                display_name = nickname.strip() or score_identity
                 earned_score = await self._score_store.add_result(
-                    score_identity, display_name or score_identity, result.attempts
+                    score_identity, display_name, result.attempts
                 )
                 leaderboard = self._score_store.leaderboard(score_identity)
             md = self._render_correct(
-                state.answer.name, result, earned_score, leaderboard, answer_analysis
+                state.answer.name, result, earned_score, leaderboard
             )
             return SubmitOutcome(
                 Verdict.CORRECT,
@@ -340,7 +310,6 @@ class QuizHandlers:
                     earned_score,
                     leaderboard,
                     result.next_actions,
-                    answer_analysis,
                 ),
             )
 
@@ -351,11 +320,12 @@ class QuizHandlers:
         leaderboard = None
         penalty = None
         if score_identity is not None:
+            display_name = nickname.strip() or score_identity
             penalty = await self._score_store.add_penalty(score_identity, display_name)
             leaderboard = self._score_store.leaderboard(score_identity)
         md = (
             f"❌ 오답입니다. (시도 {attempts}회)\n\n"
-            f"💡 힌트: {hint.text}"
+            f"💡 힌트: **{hint.text}**"
             + self._render_score_delta(penalty, leaderboard)
             + _as_of_footer(self._cache)
         )
@@ -379,23 +349,6 @@ class QuizHandlers:
             return nickname.strip()
         return None
 
-    def _score_display_name(
-        self,
-        nickname: str | None,
-        identity_key: str | None,
-        score_identity: str | None,
-    ) -> str | None:
-        if score_identity is None:
-            return None
-        if identity_key is not None and identity_key.strip():
-            return (
-                self._score_store.display_name_for(score_identity)
-                or self._score_store.generated_display_name(score_identity)
-            )
-        if nickname is not None and nickname.strip():
-            return nickname.strip()
-        return None
-
     def _with_live_leaderboard(
         self,
         outcome: QuizOutcome,
@@ -403,18 +356,12 @@ class QuizHandlers:
         identity_key: str | None,
     ) -> QuizOutcome:
         score_identity = self._score_identity(nickname, identity_key)
-        display_name = self._score_display_name(nickname, identity_key, score_identity)
         if score_identity is None or outcome.widget is None:
             return outcome
-        if outcome.quiz_id:
-            self._score_store.record_quiz_started(score_identity)
-        leaderboard = self._score_store.leaderboard(score_identity, display_name=display_name)
-        markdown = outcome.markdown
-        if outcome.quiz_id:
-            markdown += self._render_score_delta(None, leaderboard)
+        leaderboard = self._score_store.leaderboard(score_identity)
         return QuizOutcome(
             outcome.quiz_id,
-            markdown,
+            outcome.markdown,
             widgets.with_leaderboard(outcome.widget, leaderboard),
         )
 
@@ -422,11 +369,10 @@ class QuizHandlers:
         self,
         outcome: SubmitOutcome,
         identity_key: str | None,
-        display_name: str | None = None,
     ) -> SubmitOutcome:
         if identity_key is None or outcome.widget is None or outcome.leaderboard is not None:
             return outcome
-        leaderboard = self._score_store.leaderboard(identity_key, display_name=display_name)
+        leaderboard = self._score_store.leaderboard(identity_key)
         outcome.leaderboard = leaderboard
         outcome.markdown += self._render_score_delta(None, leaderboard)
         outcome.widget = widgets.with_leaderboard(outcome.widget, leaderboard)
@@ -440,14 +386,13 @@ class QuizHandlers:
         if leaderboard is None:
             return "\n\n닉네임이 없어 점수와 랭킹은 반영하지 않았습니다."
         if delta is None:
-            lines = ["", "주간 TOP3"]
+            lines = ["", "**주간 TOP3**"]
             lines.extend(
                 f"{rank}. {entry.display_name} — {entry.score}점"
                 for rank, entry in enumerate(leaderboard.top[:3], start=1)
             )
             lines.append(
-                f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
-                f"· 닉네임 {leaderboard.my_entry.display_name}"
+                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
             )
             return "\n".join(lines)
         action = "획득" if delta > 0 else "감점"
@@ -456,15 +401,14 @@ class QuizHandlers:
             "",
             f"점수 {amount}점 {action}",
             "",
-            "주간 TOP3",
+            "**주간 TOP3**",
         ]
         lines.extend(
             f"{rank}. {entry.display_name} — {entry.score}점"
             for rank, entry in enumerate(leaderboard.top[:3], start=1)
         )
         lines.append(
-            f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
-            f"· 닉네임 {leaderboard.my_entry.display_name}"
+            f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
         )
         return "\n".join(lines)
 
@@ -474,27 +418,27 @@ class QuizHandlers:
         result: GradingResult,
         earned_score: int | None,
         leaderboard: LeaderboardSnapshot | None,
-        answer_analysis: list[str],
     ) -> str:
+        a = result.analysis
         lines = [
-            f"✅ 정답! {name}",
+            f"✅ 정답! **{name}**",
+            "",
+            "**미니분석**",
+            f"- {a.price_line}",
+            f"- {a.rank_line}",
+            f"- {a.reason_line}",
         ]
         if leaderboard is not None and earned_score is not None:
-            lines.extend(["", f"🎯 이번 정답으로 {earned_score}점 획득!", "", "주간 TOP3"])
+            lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!", "", "**주간 TOP3**"])
             lines.extend(
                 f"{rank}. {entry.display_name} — {entry.score}점"
                 for rank, entry in enumerate(leaderboard.top[:3], start=1)
             )
             lines.append(
-                f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
-                f"· 닉네임 {leaderboard.my_entry.display_name}"
+                f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
             )
         else:
             lines.extend(["", "닉네임이 없어 점수와 랭킹은 반영하지 않았습니다."])
-        lines.extend(["", "정답 분석"])
-        lines.extend(
-            f"{index}. {line}" for index, line in enumerate(answer_analysis[:5], start=1)
-        )
         lines.extend([
             "",
             "다음 중 선택: " + " / ".join(f"`{x}`" for x in result.next_actions),

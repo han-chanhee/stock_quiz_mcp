@@ -33,16 +33,12 @@ import json
 import time
 import base64
 import binascii
-import hashlib
 import hmac
-import zlib
-from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qs, parse_qsl, unquote
 
-import httpx
 from fastmcp.server.auth.auth import TokenHandler
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from mcp.server.auth.handlers.authorize import AuthorizationHandler
@@ -59,7 +55,7 @@ from mcp.server.auth.routes import cors_middleware
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Route
 
 if TYPE_CHECKING:
@@ -87,9 +83,6 @@ _DEFAULT_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaoclo
 _DEFAULT_OAUTH_SNAPSHOT_PATH = Path(__file__).parent.parent / "store" / "data" / "oauth.json"
 _DEFAULT_PLAYMCP_CLIENT_SECRET = "stockquiz_3221c246c3f3f4e0b9cd0235c2699c0f772165438b273780"
 _DEFAULT_PLAYMCP_BEARER_TOKEN = "stockquiz_preview_0c28879f772d4f17eb9dfa5f9b4c76de28a278720c57cdeb"
-_KAKAO_AUTHORIZE_URL = "https://kauth.kakao.com/oauth/authorize"
-_KAKAO_TOKEN_URL = "https://kauth.kakao.com/oauth/token"
-_KAKAO_USER_ME_URL = "https://kapi.kakao.com/v2/user/me"
 _PLAYMCP_CLIENT_ID_RE = re.compile(r"^stockquiz-playmcp-[0-9]+$")
 _PLAYMCP_CALLBACK_PATH_RE = re.compile(
     r"^/api/v1/applied-mcps/[0-9]+/authorize/oauth:callback$"
@@ -99,14 +92,6 @@ _PLAYMCP_CALLBACK_HOSTS = {
     "playmcp.kakao.com",
     "playmcp.kakaocloud.io",
 }
-_PLAYMCP_CALLBACK_HOST_CODES = {
-    "t": "tools.kakao.com",
-    "p": "playmcp.kakao.com",
-    "c": "playmcp.kakaocloud.io",
-}
-_PLAYMCP_CALLBACK_CODES_BY_HOST = {
-    host: code for code, host in _PLAYMCP_CALLBACK_HOST_CODES.items()
-}
 
 CONSENT_TEXT = {
     "제공받는 자": "(주) 카카오",
@@ -115,13 +100,6 @@ CONSENT_TEXT = {
     "제공 항목": "이용자 식별값 및 그에 연결된 점수·랭킹 정보",
     "보유 및 이용 기간": "연동 해제 시 지체없이 파기",
 }
-
-
-@dataclass(frozen=True)
-class KakaoLoginConfig:
-    rest_api_key: str
-    client_secret: str | None
-    redirect_uri: str
 
 
 class FlexibleStaticClientAuthenticator(ClientAuthenticator):
@@ -166,25 +144,6 @@ class FlexibleStaticClientAuthenticator(ClientAuthenticator):
 
 async def _normalize_token_grant_type(request: Request) -> Request:
     """카카오 콘솔 enum 대문자 grant_type을 표준 OAuth 값으로 정규화한다."""
-    return await _normalize_token_request(request)
-
-
-def _basic_auth_client_id(request: Request) -> str:
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Basic "):
-        return ""
-    try:
-        decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
-        client_id, _ = decoded.split(":", 1)
-    except (ValueError, UnicodeDecodeError, binascii.Error):
-        return ""
-    return unquote(client_id)
-
-
-async def _normalize_token_request(
-    request: Request, default_client_id: str | None = None
-) -> Request:
-    """PlayMCP token request variations를 SDK가 받는 표준 form으로 보정한다."""
     content_type = request.headers.get("content-type", "")
     if "application/x-www-form-urlencoded" not in content_type:
         return request
@@ -193,20 +152,12 @@ async def _normalize_token_request(
     form_items = parse_qsl(body.decode("utf-8"), keep_blank_values=True)
     changed = False
     normalized: list[tuple[str, str]] = []
-    has_client_id = False
     for key, value in form_items:
         if key == "grant_type" and value in {"AUTHORIZATION_CODE", "REFRESH_TOKEN"}:
             normalized.append((key, value.lower()))
             changed = True
         else:
             normalized.append((key, value))
-        if key == "client_id" and value:
-            has_client_id = True
-    if not has_client_id:
-        fallback_client_id = _basic_auth_client_id(request) or default_client_id or ""
-        if fallback_client_id:
-            normalized.append(("client_id", fallback_client_id))
-            changed = True
     if not changed:
         return request
 
@@ -234,27 +185,7 @@ class KakaoTokenHandler(TokenHandler):
     """Token endpoint wrapper for PlayMCP/Kakao console compatibility."""
 
     async def handle(self, request: Request):
-        provider = getattr(self, "provider", None)
-        request = await _normalize_token_request(
-            request,
-            getattr(provider, "_primary_static_client_id", None),
-        )
-        record = getattr(provider, "_record_oauth_event", None)
-        if callable(record):
-            body = await request.body()
-            form_items = parse_qsl(body.decode("utf-8"), keep_blank_values=True)
-            form = dict(form_items)
-            redirect_uri = form.get("redirect_uri", "")
-            redirect_parts = urlsplit(redirect_uri)
-            record(
-                "token_request_received",
-                client_id=form.get("client_id", ""),
-                grant_type=form.get("grant_type", ""),
-                code_present=bool(form.get("code")),
-                redirect_host=redirect_parts.netloc,
-                redirect_path=redirect_parts.path,
-            )
-        return await super().handle(request)
+        return await super().handle(await _normalize_token_grant_type(request))
 
 
 def _is_playmcp_client_id(client_id: str) -> bool:
@@ -304,41 +235,18 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         self,
         allowed_redirect_uris: tuple[str, ...],
         snapshot_path: Path | None = None,
-        kakao_login_config: KakaoLoginConfig | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.allowed_redirect_uris = allowed_redirect_uris
         self._snapshot_path = snapshot_path or _DEFAULT_OAUTH_SNAPSHOT_PATH
-        self.kakao_login_config = kakao_login_config
-        self._state_secret = (
-            os.environ.get("OAUTH_STATE_SECRET", "").strip()
-            or os.environ.get("OAUTH_PLAYMCP_CLIENT_SECRET", "").strip()
-            or _DEFAULT_PLAYMCP_CLIENT_SECRET
-        ).encode("utf-8")
         self._allowed_redirect_uri_set = set(allowed_redirect_uris)
         self._consented_clients: set[str] = set()
         self._static_client_ids: set[str] = set()
-        self._primary_static_client_id: str | None = None
         # 동의 대기 중인 요청: consent_token -> (client, params, user_subject)
         self._pending_consents: dict[
             str, tuple[OAuthClientInformationFull, AuthorizationParams, str]
         ] = {}
-        self._pending_kakao_logins: dict[
-            str, tuple[OAuthClientInformationFull, AuthorizationParams]
-        ] = {}
-        self._oauth_events: list[dict[str, object]] = []
-
-    def _record_oauth_event(self, event: str, **details: object) -> None:
-        scrubbed = {
-            key: value
-            for key, value in details.items()
-            if key not in {"code", "token", "access_token", "refresh_token", "secret"}
-        }
-        self._oauth_events.append(
-            {"at": int(time.time()), "event": event, **scrubbed}
-        )
-        self._oauth_events = self._oauth_events[-20:]
 
     def install_static_client(self, client_info: OAuthClientInformationFull) -> None:
         """콘솔 필수 입력형 OAuth client를 부팅 시 항상 등록한다."""
@@ -347,8 +255,6 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             raise ValueError("static client_id is required")
         self.clients[client_id] = client_info
         self._static_client_ids.add(client_id)
-        if self._primary_static_client_id is None:
-            self._primary_static_client_id = client_id
 
     def install_static_bearer_token(self, token: str, client_id: str) -> None:
         """PlayMCP 직접 입력 인증헤더 검사에 쓰는 고정 Bearer token을 등록한다."""
@@ -492,11 +398,6 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         authorization_code: AuthorizationCode,
     ) -> OAuthToken:
         subject = authorization_code.subject
-        self._record_oauth_event(
-            "token_exchange_started",
-            client_id=client.client_id,
-            subject_present=bool(subject),
-        )
         token = await super().exchange_authorization_code(client, authorization_code)
         if subject:
             access_token = self.access_tokens.get(token.access_token)
@@ -535,18 +436,13 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
     async def authorize(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
     ) -> str:
-        """이미 동의한 클라이언트만 실제 인가를 진행한다.
+        """인가 요청은 주식대결 인증서버의 자체 동의 화면으로 먼저 보낸다.
 
         동의 전이면 인가 코드를 발급하지 않고, /oauth/consent 화면으로 안내하는
         redirect URL을 대신 반환한다(authorize()의 반환 계약이 "리다이렉트할 URL
         문자열"이므로 그대로 재사용). 사용자가 동의 화면에서 승인하면
         _finish_authorize()가 실제 authorize()를 이어서 호출한다.
         """
-        if self.kakao_login_config is not None:
-            self._record_oauth_event("authorize_started", client_id=client.client_id)
-            login_state = self._encode_kakao_state(client, params)
-            self._pending_kakao_logins[login_state] = (client, params)
-            return self._kakao_authorize_redirect(login_state)
         return self.begin_local_consent(client, params)
 
     def begin_local_consent(
@@ -555,365 +451,10 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         params: AuthorizationParams,
         subject: str | None = None,
     ) -> str:
+        consent_token = secrets.token_urlsafe(16)
         user_subject = subject or f"playmcp-user-{secrets.token_urlsafe(18)}"
-        consent_token = self._encode_consent_token(client, params, user_subject)
         self._pending_consents[consent_token] = (client, params, user_subject)
         return f"/oauth/consent?token={consent_token}"
-
-    def _kakao_authorize_redirect(self, login_state: str) -> str:
-        config = self.kakao_login_config
-        if config is None:
-            raise RuntimeError("Kakao Login is not configured")
-        return _KAKAO_AUTHORIZE_URL + "?" + urlencode(
-            {
-                "response_type": "code",
-                "client_id": config.rest_api_key,
-                "redirect_uri": config.redirect_uri,
-                "state": login_state,
-            }
-        )
-
-    async def finish_kakao_login(self, login_state: str, code: str) -> str:
-        pending = self._pending_kakao_logins.pop(login_state, None)
-        if pending is None:
-            pending = await self._decode_kakao_state(login_state)
-        access_token = await self._exchange_kakao_code(code)
-        subject = await self._fetch_kakao_subject(access_token)
-        client, params = pending
-        return self.begin_local_consent(client, params, subject)
-
-    def _encode_kakao_state(
-        self,
-        client: OAuthClientInformationFull,
-        params: AuthorizationParams,
-    ) -> str:
-        payload = {
-            "v": 1,
-            "iat": int(time.time()),
-            "nonce": secrets.token_urlsafe(8),
-            "client_id": client.client_id or "",
-            "redirect_uri": str(params.redirect_uri),
-            "state": params.state,
-            "scopes": params.scopes or [],
-            "code_challenge": params.code_challenge,
-            "redirect_uri_provided_explicitly": params.redirect_uri_provided_explicitly,
-        }
-        encoded = _base64url_json(payload)
-        signature = hmac.new(
-            self._state_secret,
-            encoded.encode("ascii"),
-            hashlib.sha256,
-        ).digest()
-        encoded_signature = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
-        return f"{encoded}.{encoded_signature}"
-
-    async def _decode_kakao_state(
-        self, login_state: str
-    ) -> tuple[OAuthClientInformationFull, AuthorizationParams]:
-        try:
-            encoded, encoded_signature = login_state.split(".", 1)
-        except ValueError as exc:
-            raise ValueError("카카오 로그인 state 형식이 올바르지 않습니다.") from exc
-        expected = hmac.new(
-            self._state_secret,
-            encoded.encode("ascii"),
-            hashlib.sha256,
-        ).digest()
-        padding = "=" * (-len(encoded_signature) % 4)
-        try:
-            actual = base64.urlsafe_b64decode(
-                (encoded_signature + padding).encode("ascii")
-            )
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError("카카오 로그인 state 서명이 올바르지 않습니다.") from exc
-        if not hmac.compare_digest(expected, actual):
-            raise ValueError("카카오 로그인 state 서명이 일치하지 않습니다.")
-
-        payload = _unbase64url_json(encoded)
-        issued_at = int(payload.get("iat", 0))
-        if issued_at < int(time.time()) - 600:
-            raise ValueError("카카오 로그인 state가 만료되었습니다.")
-        client_id = str(payload.get("client_id") or "")
-        redirect_uri = str(payload.get("redirect_uri") or "")
-        code_challenge = str(payload.get("code_challenge") or "")
-        if not client_id or not redirect_uri or not code_challenge:
-            raise ValueError("카카오 로그인 state에 필수 값이 없습니다.")
-        client = await self.get_client(client_id)
-        if client is None:
-            raise ValueError("카카오 로그인 state의 OAuth client를 찾을 수 없습니다.")
-        registered = [str(uri) for uri in client.redirect_uris or []]
-        if redirect_uri not in registered and not _is_trusted_playmcp_redirect_uri(
-            redirect_uri
-        ):
-            raise ValueError("카카오 로그인 state의 redirect_uri가 허용되지 않았습니다.")
-        raw_scopes = payload.get("scopes")
-        scopes = raw_scopes if isinstance(raw_scopes, list) else []
-        params = AuthorizationParams(
-            state=str(payload.get("state") or ""),
-            scopes=[str(scope) for scope in scopes],
-            code_challenge=code_challenge,
-            redirect_uri=redirect_uri,
-            redirect_uri_provided_explicitly=bool(
-                payload.get("redirect_uri_provided_explicitly", True)
-            ),
-        )
-        return client, params
-
-    def _encode_consent_token(
-        self,
-        client: OAuthClientInformationFull,
-        params: AuthorizationParams,
-        subject: str,
-    ) -> str:
-        payload = {
-            "v": 1,
-            "iat": int(time.time()),
-            "nonce": secrets.token_urlsafe(8),
-            "client_id": client.client_id or "",
-            "redirect_uri": str(params.redirect_uri),
-            "state": params.state,
-            "scopes": params.scopes or [],
-            "code_challenge": params.code_challenge,
-            "redirect_uri_provided_explicitly": params.redirect_uri_provided_explicitly,
-            "subject": subject,
-        }
-        encoded = _base64url_json(payload)
-        signature = hmac.new(
-            self._state_secret,
-            encoded.encode("ascii"),
-            hashlib.sha256,
-        ).digest()
-        encoded_signature = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
-        return f"{encoded}.{encoded_signature}"
-
-    async def _decode_consent_token(
-        self, consent_token: str
-    ) -> tuple[OAuthClientInformationFull, AuthorizationParams, str]:
-        client, params, payload = await self._decode_signed_oauth_payload(consent_token)
-        subject = str(payload.get("subject") or "")
-        if not subject:
-            raise ValueError("동의 token에 사용자 식별값이 없습니다.")
-        return client, params, subject
-
-    def _encode_authorization_code(
-        self,
-        client: OAuthClientInformationFull,
-        params: AuthorizationParams,
-        subject: str,
-    ) -> str:
-        payload = {
-            "v": 2,
-            "exp": int(time.time()) + 300,
-            "c": client.client_id or "",
-            "cc": params.code_challenge,
-            "sub": subject,
-            "e": bool(params.redirect_uri_provided_explicitly),
-        }
-        scopes = params.scopes or []
-        if scopes:
-            payload["s"] = scopes
-        redirect_compact = _compact_playmcp_redirect_uri(str(params.redirect_uri))
-        if redirect_compact is None:
-            payload["r"] = str(params.redirect_uri)
-        else:
-            payload["pr"] = redirect_compact
-        raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
-            "utf-8"
-        )
-        encoded = (
-            base64.urlsafe_b64encode(zlib.compress(raw, 9))
-            .decode("ascii")
-            .rstrip("=")
-        )
-        signature = (
-            base64.urlsafe_b64encode(
-                hmac.new(
-                    self._state_secret,
-                    encoded.encode("ascii"),
-                    hashlib.sha256,
-                ).digest()[:16]
-            )
-            .decode("ascii")
-            .rstrip("=")
-        )
-        return f"sq1_{encoded}{signature}"
-
-    async def _decode_authorization_code(
-        self, client: OAuthClientInformationFull, authorization_code: str
-    ) -> AuthorizationCode:
-        if not authorization_code.startswith("sq1_"):
-            if authorization_code.startswith("sqc."):
-                return await self._decode_legacy_authorization_code(
-                    client, authorization_code
-                )
-            raise ValueError("인가 code 형식이 올바르지 않습니다.")
-        raw_code = authorization_code[4:]
-        if len(raw_code) <= 22:
-            raise ValueError("인가 code 길이가 올바르지 않습니다.")
-        encoded, actual_signature = raw_code[:-22], raw_code[-22:]
-        expected_signature = (
-            base64.urlsafe_b64encode(
-                hmac.new(
-                    self._state_secret,
-                    encoded.encode("ascii"),
-                    hashlib.sha256,
-                ).digest()[:16]
-            )
-            .decode("ascii")
-            .rstrip("=")
-        )
-        if not hmac.compare_digest(expected_signature, actual_signature):
-            raise ValueError("인가 code 서명이 일치하지 않습니다.")
-        padding = "=" * (-len(encoded) % 4)
-        try:
-            raw = zlib.decompress(
-                base64.urlsafe_b64decode((encoded + padding).encode("ascii"))
-            )
-            payload = json.loads(raw.decode("utf-8"))
-        except (binascii.Error, ValueError, zlib.error, json.JSONDecodeError) as exc:
-            raise ValueError("인가 code payload를 복원할 수 없습니다.") from exc
-        if not isinstance(payload, dict):
-            raise ValueError("인가 code payload가 올바르지 않습니다.")
-        if str(payload.get("c") or "") != client.client_id:
-            raise ValueError("인가 code의 client_id가 일치하지 않습니다.")
-        expires_at = float(payload.get("exp", 0))
-        if expires_at < time.time():
-            raise ValueError("인가 code가 만료되었습니다.")
-        redirect_uri = _expand_playmcp_redirect_uri(payload.get("pr"))
-        if redirect_uri is None:
-            redirect_uri = str(payload.get("r") or "")
-        if not redirect_uri:
-            raise ValueError("인가 code에 redirect_uri가 없습니다.")
-        raw_scopes = payload.get("s")
-        scopes = raw_scopes if isinstance(raw_scopes, list) else []
-        subject = str(payload.get("sub") or "")
-        return AuthorizationCode(
-            code=authorization_code,
-            scopes=[str(scope) for scope in scopes],
-            expires_at=expires_at,
-            client_id=client.client_id or "",
-            code_challenge=str(payload.get("cc") or ""),
-            redirect_uri=redirect_uri,
-            redirect_uri_provided_explicitly=bool(payload.get("e", True)),
-            subject=subject or None,
-        )
-
-    async def _decode_legacy_authorization_code(
-        self, client: OAuthClientInformationFull, authorization_code: str
-    ) -> AuthorizationCode:
-        signed_value = authorization_code[4:]
-        recovered_client, params, payload = await self._decode_signed_oauth_payload(
-            signed_value
-        )
-        if recovered_client.client_id != client.client_id:
-            raise ValueError("인가 code의 client_id가 일치하지 않습니다.")
-        expires_at = float(payload.get("exp", 0))
-        if expires_at < time.time():
-            raise ValueError("인가 code가 만료되었습니다.")
-        subject = str(payload.get("subject") or "")
-        return AuthorizationCode(
-            code=authorization_code,
-            scopes=params.scopes or [],
-            expires_at=expires_at,
-            client_id=client.client_id or "",
-            code_challenge=params.code_challenge,
-            redirect_uri=params.redirect_uri,
-            redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
-            subject=subject or None,
-        )
-
-    async def _decode_signed_oauth_payload(
-        self, value: str
-    ) -> tuple[OAuthClientInformationFull, AuthorizationParams, dict[str, object]]:
-        try:
-            encoded, encoded_signature = value.split(".", 1)
-        except ValueError as exc:
-            raise ValueError("서명 token 형식이 올바르지 않습니다.") from exc
-        expected = hmac.new(
-            self._state_secret,
-            encoded.encode("ascii"),
-            hashlib.sha256,
-        ).digest()
-        padding = "=" * (-len(encoded_signature) % 4)
-        try:
-            actual = base64.urlsafe_b64decode(
-                (encoded_signature + padding).encode("ascii")
-            )
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError("서명 token의 서명이 올바르지 않습니다.") from exc
-        if not hmac.compare_digest(expected, actual):
-            raise ValueError("서명 token의 서명이 일치하지 않습니다.")
-
-        payload = _unbase64url_json(encoded)
-        issued_at = int(payload.get("iat", 0))
-        if issued_at < int(time.time()) - 1800:
-            raise ValueError("서명 token이 만료되었습니다.")
-        client_id = str(payload.get("client_id") or "")
-        redirect_uri = str(payload.get("redirect_uri") or "")
-        code_challenge = str(payload.get("code_challenge") or "")
-        if not client_id or not redirect_uri or not code_challenge:
-            raise ValueError("서명 token에 필수 값이 없습니다.")
-        client = await self.get_client(client_id)
-        if client is None:
-            raise ValueError("서명 token의 OAuth client를 찾을 수 없습니다.")
-        registered = [str(uri) for uri in client.redirect_uris or []]
-        if redirect_uri not in registered and not _is_trusted_playmcp_redirect_uri(
-            redirect_uri
-        ):
-            raise ValueError("서명 token의 redirect_uri가 허용되지 않았습니다.")
-        raw_scopes = payload.get("scopes")
-        scopes = raw_scopes if isinstance(raw_scopes, list) else []
-        params = AuthorizationParams(
-            state=str(payload.get("state") or ""),
-            scopes=[str(scope) for scope in scopes],
-            code_challenge=code_challenge,
-            redirect_uri=redirect_uri,
-            redirect_uri_provided_explicitly=bool(
-                payload.get("redirect_uri_provided_explicitly", True)
-            ),
-        )
-        return client, params, payload
-
-    async def _exchange_kakao_code(self, code: str) -> str:
-        config = self.kakao_login_config
-        if config is None:
-            raise RuntimeError("Kakao Login is not configured")
-        data = {
-            "grant_type": "authorization_code",
-            "client_id": config.rest_api_key,
-            "redirect_uri": config.redirect_uri,
-            "code": code,
-        }
-        if config.client_secret:
-            data["client_secret"] = config.client_secret
-        response = await self._post_kakao_token(data)
-        if response.status_code == 401 and config.client_secret:
-            retry_data = dict(data)
-            retry_data.pop("client_secret", None)
-            response = await self._post_kakao_token(retry_data)
-        response.raise_for_status()
-        payload = response.json()
-        access_token = payload.get("access_token")
-        if not isinstance(access_token, str) or not access_token:
-            raise ValueError("카카오 token 응답에 access_token이 없습니다.")
-        return access_token
-
-    async def _post_kakao_token(self, data: dict[str, str]) -> httpx.Response:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            return await client.post(_KAKAO_TOKEN_URL, data=data)
-
-    async def _fetch_kakao_subject(self, access_token: str) -> str:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                _KAKAO_USER_ME_URL,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-        response.raise_for_status()
-        payload = response.json()
-        kakao_user_id = payload.get("id")
-        if kakao_user_id is None:
-            raise ValueError("카카오 사용자 응답에 id가 없습니다.")
-        return f"kakao:{kakao_user_id}"
 
     async def finish_authorize(
         self,
@@ -921,60 +462,13 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         params: AuthorizationParams,
         subject: str,
     ) -> str:
-        """동의 완료 후 복구 가능한 signed 인가 코드를 발급하고 subject를 연결한다."""
-        code = self._encode_authorization_code(client, params, subject)
-        auth_code = await self._decode_authorization_code(client, code)
-        self.auth_codes[code] = auth_code
-        redirect_parts = urlsplit(str(params.redirect_uri))
-        self._record_oauth_event(
-            "auth_code_issued",
-            client_id=client.client_id,
-            subject_present=bool(subject),
-            code_length=len(code),
-            redirect_host=redirect_parts.netloc,
-            redirect_path=redirect_parts.path,
-        )
-        self.snapshot_save()
-        return _with_query(str(params.redirect_uri), {"code": code, "state": params.state})
-
-    async def load_authorization_code(
-        self, client: OAuthClientInformationFull, authorization_code: str
-    ) -> AuthorizationCode | None:
-        self.snapshot_load()
-        auth_code = await super().load_authorization_code(client, authorization_code)
+        """동의 완료 후 인가 코드를 발급하고 사용자 subject를 코드에 연결한다."""
+        redirect_uri = await super().authorize(client, params)
+        code = parse_qs(urlsplit(redirect_uri).query).get("code", [""])[0]
+        auth_code = self.auth_codes.get(code)
         if auth_code is not None:
-            self._record_oauth_event(
-                "auth_code_loaded_from_memory",
-                client_id=client.client_id,
-            )
-            return auth_code
-        if not (
-            authorization_code.startswith("sq1_")
-            or authorization_code.startswith("sqc.")
-        ):
-            self._record_oauth_event(
-                "auth_code_missing",
-                client_id=client.client_id,
-            )
-            return None
-        try:
-            auth_code = await self._decode_authorization_code(
-                client, authorization_code
-            )
-        except ValueError as exc:
-            self._record_oauth_event(
-                "auth_code_restore_failed",
-                client_id=client.client_id,
-                reason=str(exc)[:120],
-            )
-            return None
-        self.auth_codes[authorization_code] = auth_code
-        self._record_oauth_event(
-            "auth_code_restored",
-            client_id=client.client_id,
-            subject_present=bool(auth_code.subject),
-        )
-        return auth_code
+            auth_code.subject = subject
+        return redirect_uri
 
     async def revoke_client_consent(self, client_id: str) -> None:
         """연동 해제: 동의 기록과 발급된 토큰/등록 정보를 모두 지운다."""
@@ -1035,11 +529,6 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             "access_to_refresh": dict(self._access_to_refresh_map),
             "refresh_to_access": dict(self._refresh_to_access_map),
             "consented_clients": sorted(self._consented_clients),
-            "auth_codes": {
-                code: info.model_dump(mode="json")
-                for code, info in self.auth_codes.items()
-                if info.expires_at >= time.time()
-            },
         }
         tmp = self._snapshot_path.with_suffix(self._snapshot_path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1062,11 +551,6 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             self.refresh_tokens = {
                 token: RefreshToken.model_validate(info)
                 for token, info in payload.get("refresh_tokens", {}).items()
-            }
-            self.auth_codes = {
-                str(code): AuthorizationCode.model_validate(info)
-                for code, info in payload.get("auth_codes", {}).items()
-                if AuthorizationCode.model_validate(info).expires_at >= time.time()
             }
             self._consented_clients = set(payload.get("consented_clients", []))
             self._access_to_refresh_map = {
@@ -1124,64 +608,12 @@ def _static_playmcp_bearer_token() -> str:
     )
 
 
-def _first_env(*names: str) -> str:
-    for name in names:
-        value = os.environ.get(name, "").strip()
-        if value:
-            return value
-    return ""
-
-
-def _kakao_login_config(base_url: str) -> KakaoLoginConfig | None:
-    rest_api_key = _first_env("KAKAO_REST_API_KEY", "KAKAO_LOGIN_REST_API_KEY")
-    if not rest_api_key:
-        return None
-    configured_redirect_uri = _first_env(
-        "KAKAO_REDIRECT_URI", "KAKAO_LOGIN_REDIRECT_URI"
-    )
-    redirect_uri = configured_redirect_uri or f"{base_url.rstrip('/')}/oauth/kakao/callback"
-    client_secret = _first_env("KAKAO_CLIENT_SECRET", "KAKAO_LOGIN_CLIENT_SECRET") or None
-    return KakaoLoginConfig(
-        rest_api_key=rest_api_key,
-        client_secret=client_secret,
-        redirect_uri=redirect_uri,
-    )
-
-
 def _with_query(url: str, values: dict[str, str | None]) -> str:
     """기존 query를 보존하면서 OAuth callback 파라미터를 덧붙인다."""
     parts = urlsplit(url)
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query.update({key: value for key, value in values.items() if value is not None})
     return urlunsplit(parts._replace(query=urlencode(query)))
-
-
-def _compact_playmcp_redirect_uri(uri: str) -> dict[str, str] | None:
-    parts = urlsplit(uri)
-    match = re.fullmatch(
-        r"/api/v1/applied-mcps/([0-9]+)/authorize/oauth:callback",
-        parts.path,
-    )
-    if (
-        parts.scheme != "https"
-        or parts.netloc not in _PLAYMCP_CALLBACK_HOSTS
-        or match is None
-        or parts.query
-        or parts.fragment
-    ):
-        return None
-    return {"h": _PLAYMCP_CALLBACK_CODES_BY_HOST[parts.netloc], "m": match.group(1)}
-
-
-def _expand_playmcp_redirect_uri(value: object) -> str | None:
-    if not isinstance(value, dict):
-        return None
-    host_code = str(value.get("h") or "")
-    host = _PLAYMCP_CALLBACK_HOST_CODES.get(host_code, host_code)
-    mcp_id = str(value.get("m") or "")
-    if host not in _PLAYMCP_CALLBACK_HOSTS or not re.fullmatch(r"[0-9]+", mcp_id):
-        return None
-    return f"https://{host}/api/v1/applied-mcps/{mcp_id}/authorize/oauth:callback"
 
 
 def _authorization_error_redirect(
@@ -1198,20 +630,6 @@ def _authorization_error_redirect(
             "state": params.state,
         },
     )
-
-
-def _base64url_json(payload: dict[str, object]) -> str:
-    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-
-
-def _unbase64url_json(value: str) -> dict[str, object]:
-    padding = "=" * (-len(value) % 4)
-    raw = base64.urlsafe_b64decode((value + padding).encode("ascii"))
-    payload = json.loads(raw.decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("state payload must be an object")
-    return payload
 
 
 def _consent_page_html(consent_token: str) -> str:
@@ -1252,6 +670,8 @@ def _consent_page_html(consent_token: str) -> str:
     th, td {{ border: 1px solid #d9dee7; padding: 11px 12px; vertical-align: top; }}
     th {{ width: 32%; background: #f9fafb; text-align: left; color: #303846; }}
     .notice {{ font-size: 13px; color: #596579; }}
+    .agree {{ display: flex; gap: 8px; align-items: flex-start; margin-top: 14px; font-size: 14px; line-height: 1.45; }}
+    .agree input {{ margin-top: 3px; }}
     .actions {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }}
     button {{
       min-height: 44px;
@@ -1280,8 +700,12 @@ def _consent_page_html(consent_token: str) -> str:
   <p class="notice">동의하지 않으면 연동은 취소됩니다. 연동 해제 화면에서 언제든 동의를 철회할 수 있습니다.</p>
   <form method="post" action="/oauth/consent">
     <input type="hidden" name="token" value="{token}">
+    <label class="agree">
+      <input type="checkbox" name="agree" value="yes" required>
+      <span>위 개인정보 제3자 제공 내용에 동의합니다.</span>
+    </label>
     <div class="actions">
-      <button type="submit" name="decision" value="allow">동의하고 계속</button>
+      <button type="submit" name="decision" value="allow">확인</button>
       <button type="submit" name="decision" value="deny">거부</button>
     </div>
   </form>
@@ -1308,21 +732,6 @@ def _disconnect_page_html(message: str | None = None) -> str:
 </html>"""
 
 
-def _oauth_runtime_diagnostics(provider: KakaoRestrictedOAuthProvider) -> dict[str, object]:
-    config = provider.kakao_login_config
-    rest_key = config.rest_api_key if config else ""
-    return {
-        "oauth_enabled": True,
-        "external_login_enabled": config is not None,
-        "external_key_present": bool(rest_key),
-        "external_key_suffix": rest_key[-6:] if rest_key else None,
-        "external_secret_present": bool(config and config.client_secret),
-        "external_redirect_uri": config.redirect_uri if config else None,
-        "authorization_code_format": "compact_signed_snapshot",
-        "recent_events": provider._oauth_events[-10:],
-    }
-
-
 def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider) -> None:
     """동의 화면(/oauth/consent)과 연동 해제 화면(/oauth/disconnect)을 등록한다.
 
@@ -1334,18 +743,7 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
     async def consent_get(request: Request) -> HTMLResponse:
         token = request.query_params.get("token", "")
         if token not in provider._pending_consents:
-            try:
-                await provider._decode_consent_token(token)
-            except ValueError as exc:
-                provider._record_oauth_event(
-                    "consent_token_invalid",
-                    reason=str(exc)[:120],
-                )
-                return HTMLResponse(
-                    f"만료되었거나 잘못된 동의 요청입니다: {escape(str(exc))}",
-                    status_code=400,
-                )
-        provider._record_oauth_event("consent_page_shown")
+            return HTMLResponse("만료되었거나 잘못된 동의 요청입니다.", status_code=400)
         return HTMLResponse(_consent_page_html(token))
 
     @mcp.custom_route("/oauth/consent", methods=["POST"])
@@ -1353,24 +751,13 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
         form = await request.form()
         token = str(form.get("token", ""))
         decision = str(form.get("decision", ""))
+        agreed = str(form.get("agree", ""))
         pending = provider._pending_consents.pop(token, None)
         if pending is None:
-            try:
-                pending = await provider._decode_consent_token(token)
-            except ValueError as exc:
-                provider._record_oauth_event(
-                    "consent_token_restore_failed",
-                    reason=str(exc)[:120],
-                )
-                return HTMLResponse(
-                    f"만료되었거나 잘못된 동의 요청입니다: {escape(str(exc))}",
-                    status_code=400,
-                )
-            provider._record_oauth_event("consent_token_restored")
+            return HTMLResponse("만료되었거나 잘못된 동의 요청입니다.", status_code=400)
 
         client, params, subject = pending
-        if decision != "allow":
-            provider._record_oauth_event("consent_denied", client_id=client.client_id)
+        if decision != "allow" or agreed != "yes":
             return RedirectResponse(
                 _authorization_error_redirect(params, "access_denied"),
                 status_code=302,
@@ -1380,76 +767,7 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
         provider._consented_clients.add(client_id)
         provider.snapshot_save()
         redirect_uri = await provider.finish_authorize(client, params, subject)
-        provider._record_oauth_event("consent_allowed", client_id=client_id)
         return RedirectResponse(redirect_uri, status_code=302)
-
-    @mcp.custom_route("/oauth/kakao/callback", methods=["GET"])
-    async def kakao_callback_get(request: Request):
-        state = request.query_params.get("state", "")
-        code = request.query_params.get("code", "")
-        error = request.query_params.get("error", "")
-        provider._record_oauth_event(
-            "kakao_callback_received",
-            code_present=bool(code),
-            error_present=bool(error),
-        )
-        pending = provider._pending_kakao_logins.get(state)
-        if pending is None:
-            try:
-                _, params = await provider._decode_kakao_state(state)
-            except ValueError as exc:
-                provider._record_oauth_event(
-                    "kakao_state_restore_failed",
-                    reason=str(exc)[:120],
-                )
-                return HTMLResponse(
-                    f"만료되었거나 잘못된 카카오 로그인 요청입니다: {escape(str(exc))}",
-                    status_code=400,
-                )
-            provider._record_oauth_event("kakao_state_restored")
-        else:
-            _, params = pending
-        if error:
-            provider._pending_kakao_logins.pop(state, None)
-            return RedirectResponse(
-                _authorization_error_redirect(
-                    params,
-                    "access_denied",
-                    "user denied or Kakao Login returned an authorization error",
-                ),
-                status_code=302,
-            )
-        if not code:
-            provider._pending_kakao_logins.pop(state, None)
-            return HTMLResponse("카카오 콜백에 code가 없습니다.", status_code=400)
-        try:
-            consent_url = await provider.finish_kakao_login(state, code)
-        except httpx.HTTPStatusError as exc:
-            provider._record_oauth_event(
-                "kakao_token_exchange_failed",
-                status_code=exc.response.status_code,
-                body=exc.response.text[:200],
-            )
-            return HTMLResponse(
-                f"카카오 토큰 교환이 실패했습니다. HTTP {exc.response.status_code}: "
-                f"{escape(exc.response.text[:500])}",
-                status_code=502,
-            )
-        except (httpx.HTTPError, ValueError, RuntimeError) as exc:
-            provider._record_oauth_event(
-                "kakao_login_failed",
-                reason=str(exc)[:120],
-            )
-            return RedirectResponse(
-                _authorization_error_redirect(params, "server_error", str(exc)[:200]),
-                status_code=302,
-            )
-        provider._record_oauth_event("kakao_login_finished")
-        return RedirectResponse(consent_url, status_code=302)
-
-    @mcp.custom_route("/oauth/runtime", methods=["GET"])
-    async def oauth_runtime_get(request: Request) -> JSONResponse:
-        return JSONResponse(_oauth_runtime_diagnostics(provider))
 
     @mcp.custom_route("/oauth/disconnect", methods=["GET"])
     async def disconnect_get(request: Request) -> HTMLResponse:
@@ -1506,7 +824,6 @@ def build_auth_provider() -> "AuthProvider | None":
             os.environ.get("OAUTH_SNAPSHOT_PATH", "").strip()
             or _DEFAULT_OAUTH_SNAPSHOT_PATH
         ),
-        kakao_login_config=_kakao_login_config(base_url),
         base_url=base_url,
         client_registration_options=ClientRegistrationOptions(enabled=True),
         revocation_options=RevocationOptions(enabled=True),

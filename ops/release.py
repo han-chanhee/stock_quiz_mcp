@@ -409,12 +409,16 @@ def remote_oauth_smoke(
         f"{base}{consent_location}",
         headers={"Accept": "text/html"},
     )
-    if status != 200 or "동의하고 계속" not in consent_html:
+    if (
+        status != 200
+        or 'name="agree"' not in consent_html
+        or ">확인</button>" not in consent_html
+    ):
         raise ReleaseError(f"/oauth/consent page invalid: {status}")
 
     token = urllib.parse.parse_qs(urllib.parse.urlsplit(consent_location).query)["token"][0]
     consent_body = urllib.parse.urlencode(
-        {"token": token, "decision": "allow"}
+        {"token": token, "decision": "allow", "agree": "yes"}
     ).encode("utf-8")
     status, raw, headers = http_text(
         f"{base}/oauth/consent",
@@ -500,7 +504,7 @@ def remote_oauth_smoke(
         "tools_status": 200,
         "tool_names": tool_names,
         "quiz_status": 200,
-        "quiz_has_chart_image": "/quiz/chart/" in quiz_raw,
+        "quiz_has_chart_hint": "차트형 힌트" in quiz_raw,
         "quiz_has_leaderboard": "주간 TOP3" in quiz_raw,
         "ctx_exposed": '"ctx"' in raw or '"ctx"' in quiz_raw,
     }

@@ -15,10 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import contextvars
 import datetime as _dt
 import functools
-import hashlib
 import json
 import os
 from collections.abc import AsyncIterator
@@ -34,41 +32,26 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from contracts.schemas import Market, Period, Sector
 
 from clients.base import MarketClient
 from services.quiz_bank import QuizBank
-from store import (
-    DEFAULT_SQLITE_PATH,
-    RedisQuizStore,
-    RedisScoreStore,
-    QuizStore,
-    SQLiteQuizStore,
-    SQLiteScoreStore,
-    ScoreStore,
-)
+from store import QuizStore, ScoreStore
 
 from .cache import QuizCache
 from .auth import (
-    _DEFAULT_PLAYMCP_BEARER_TOKEN,
     build_auth_provider,
     register_auth_routes,
     register_oauth_protocol_routes,
 )
-from .chart_images import chart_png
 from .handlers import QuizHandlers, QuizMode
 from . import widgets
 
 _KST = timezone(_dt.timedelta(hours=9))
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_DATA_DIR = _PROJECT_ROOT / "batch" / "data"
-_ASSET_PATHS = {
-    "logo.png": _PROJECT_ROOT / "assets" / "logo.png",
-    "logo-banner.png": _PROJECT_ROOT / "assets" / "logo-banner.png",
-}
+_DATA_DIR = Path(__file__).resolve().parent.parent / "batch" / "data"
 
 # 장중에 한해 1분 간격으로 시세 캐시를 갱신한다.
 _REFRESH_INTERVAL_SEC: int = 60
@@ -76,10 +59,6 @@ _WEEKLY_RESET_INTERVAL_SEC: int = 60
 _SNAPSHOT_INTERVAL_SEC: int = 300
 _MARKET_OPEN = (9, 0)  # KST
 _MARKET_CLOSE = (15, 30)  # KST
-_APP_REVISION = "ranking-no-login-v3"
-_request_identity_key_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "stockquiz_request_identity_key", default=None
-)
 
 _COMMON_ANN = dict(
     readOnlyHint=True,
@@ -90,38 +69,6 @@ _COMMON_ANN = dict(
 
 _SAFE_ERROR = "잠시 후 다시 시도해주세요."
 _OPTIONAL_AUTH_PROVIDER: Any | None = None
-
-
-def _runtime_state_db_path() -> Path:
-    """운영 퀴즈/랭킹 상태 DB 경로.
-
-    PlayMCP 컨테이너 안에서는 기본적으로 프로젝트 내부 ignored data 경로를 쓴다.
-    별도 서버로 뺄 때는 STATE_DB_PATH만 바꾸면 같은 코드가 다른 볼륨을 사용할 수 있다.
-    """
-    return Path(os.environ.get("STATE_DB_PATH", str(DEFAULT_SQLITE_PATH)))
-
-
-def _runtime_stores() -> tuple[QuizStore, ScoreStore]:
-    """운영 저장소 선택.
-
-    - STATE_BACKEND=redis: 다중 컨테이너 공유 상태
-    - STATE_BACKEND 미설정 또는 sqlite: 단일 컨테이너 내구성용 SQLite WAL
-    """
-    backend = os.environ.get("STATE_BACKEND", "sqlite").strip().lower()
-    redis_url = os.environ.get("REDIS_URL", "").strip()
-    if backend == "redis":
-        if not redis_url:
-            raise RuntimeError("STATE_BACKEND=redis requires REDIS_URL")
-        prefix = os.environ.get("REDIS_KEY_PREFIX", "stockquiz")
-        return (
-            RedisQuizStore(redis_url, key_prefix=prefix),
-            RedisScoreStore(redis_url, key_prefix=prefix),
-        )
-    if backend not in {"", "sqlite"}:
-        raise RuntimeError(f"Unsupported STATE_BACKEND: {backend}")
-
-    state_db_path = _runtime_state_db_path()
-    return SQLiteQuizStore(state_db_path), SQLiteScoreStore(state_db_path)
 
 
 def _public_https_url(request: Request, path: str) -> str:
@@ -143,7 +90,7 @@ class ForwardedHttpsRedirectMiddleware(BaseHTTPMiddleware):
 
 
 class MCPSelectiveAuthMiddleware:
-    """MCP 호출을 막지 않고, Bearer가 있으면 사용자 식별 컨텍스트만 보강한다."""
+    """도구 목록은 공개하고 실제 tools/call만 OAuth Bearer를 요구한다."""
 
     _PUBLIC_METHODS = {"initialize", "tools/list", "ping"}
 
@@ -152,45 +99,35 @@ class MCPSelectiveAuthMiddleware:
         self.provider = provider
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        path = scope.get("path")
         if (
             scope["type"] != "http"
-            or path not in {"/mcp", "/mcp/"}
+            or scope.get("path") != "/mcp"
             or scope.get("method") != "POST"
         ):
             await self.app(scope, receive, send)
             return
-        app_scope = self._canonical_mcp_scope(scope) if path == "/mcp/" else scope
 
         body = await self._read_body(receive)
+        methods = self._jsonrpc_methods(body)
+        needs_auth = bool(methods) and any(
+            method not in self._PUBLIC_METHODS for method in methods
+        )
         token = await self._access_token(scope)
+
+        if needs_auth and token is None:
+            await self._unauthorized(scope, send)
+            return
 
         replay = self._replay_body(body)
         if token is None:
-            identity_token = _request_identity_key_var.set(
-                _anonymous_request_identity_key(scope)
-            )
-            try:
-                await self.app(app_scope, replay, send)
-            finally:
-                _request_identity_key_var.reset(identity_token)
+            await self.app(scope, replay, send)
             return
 
         context_token = auth_context_var.set(AuthenticatedUser(token))
-        identity_token = _request_identity_key_var.set(_access_token_identity_key(token))
         try:
-            await self.app(app_scope, replay, send)
+            await self.app(scope, replay, send)
         finally:
-            _request_identity_key_var.reset(identity_token)
             auth_context_var.reset(context_token)
-
-    def _canonical_mcp_scope(self, scope: Scope) -> Scope:
-        """`/mcp/` 요청을 내부에서 `/mcp`로 처리해 인증 컨텍스트를 보존한다."""
-        result = dict(scope)
-        result["path"] = "/mcp"
-        if result.get("raw_path") == b"/mcp/":
-            result["raw_path"] = b"/mcp"
-        return result
 
     async def _read_body(self, receive: Receive) -> bytes:
         chunks: list[bytes] = []
@@ -267,52 +204,6 @@ class MCPSelectiveAuthMiddleware:
         await send({"type": "http.response.body", "body": b""})
 
 
-def _access_token_identity_key(access_token: Any | None) -> str | None:
-    """OAuth 토큰에서 사용자 랭킹 키를 뽑는다. 원본 토큰 문자열은 노출하지 않는다."""
-    if access_token is None:
-        return None
-
-    subject = getattr(access_token, "subject", None)
-    if isinstance(subject, str) and subject.strip():
-        return subject.strip()
-
-    claims = getattr(access_token, "claims", None)
-    if isinstance(claims, dict):
-        for name in ("sub", "subject", "user_id"):
-            value = claims.get(name)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-    raw_token = getattr(access_token, "token", None)
-    if isinstance(raw_token, str) and raw_token.strip():
-        digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()[:24]
-        return f"oauth-token:{digest}"
-    return None
-
-
-def _anonymous_request_identity_key(scope: Scope) -> str:
-    """로그인 없이 호출될 때 가능한 요청 단서로 익명 랭킹 키를 만든다."""
-    headers = {
-        key.decode("latin1").lower(): value.decode("latin1")
-        for key, value in scope.get("headers", [])
-    }
-    for name in (
-        "x-playmcp-user-id",
-        "x-user-id",
-        "mcp-session-id",
-        "x-session-id",
-        "x-forwarded-for",
-        "user-agent",
-    ):
-        value = headers.get(name, "").strip()
-        if value:
-            digest = hashlib.sha256(f"{name}:{value}".encode("utf-8")).hexdigest()[:24]
-            return f"guest:{digest}"
-    client = scope.get("client")
-    digest = hashlib.sha256(repr(client).encode("utf-8")).hexdigest()[:24]
-    return f"guest:{digest}"
-
-
 def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
     """툴 호출 컨텍스트에서 점수용 식별자를 뽑는다.
 
@@ -321,18 +212,13 @@ def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
     핸들러가 닉네임 fallback을 쓴다.
     """
     access_token = get_access_token()
-    identity_key = _access_token_identity_key(access_token)
-    if identity_key is not None:
-        return identity_key
-
-    request_identity_key = _request_identity_key_var.get()
-    if request_identity_key is not None:
-        return request_identity_key
+    if access_token and access_token.subject:
+        return access_token.subject
 
     if ctx is None:
         return None
     meta = getattr(ctx.request_context, "meta", None) if ctx.request_context else None
-    for name in ("subject", "user_id"):
+    for name in ("subject", "user_id", "client_id"):
         value = getattr(meta, name, None) if meta is not None else None
         if value is None and isinstance(meta, dict):
             value = meta.get(name)
@@ -407,9 +293,9 @@ def _build_app(
         name="help",
         description=(
             "Shows how to play 주식대결 (Stock Quiz Battle / 주식사전 퀴즈): the three "
-            "quiz modes (주가/시장/종목), automatic ranking nickname behavior, "
-            "and example phrases to start. Call this when the user asks how the quiz "
-            "works, what modes exist, or seems unsure how to start."
+            "quiz modes (주가/시장/종목), why a nickname is needed for the weekly "
+            "ranking, and example phrases to start. Call this when the user asks how "
+            "the quiz works, what modes exist, or seems unsure how to start."
         ),
         annotations=ToolAnnotations(title="How to Play", **_COMMON_ANN),
     )
@@ -421,15 +307,13 @@ def _build_app(
         name="quiz",
         description=(
             "Starts a stock quiz for 주식대결 (Stock Quiz Battle / 주식사전 퀴즈). "
-            "Requires only mode; authenticated users are ranked with a stable "
-            "server-assigned display name. If mode is missing, call this "
-            "tool anyway with what you have; it replies with a short guide instead of erroring. "
-            "Pick one of three modes: '주가' (guess a random stock's current price "
-            "rounded to 10,000 KRW), '시장' (guess the biggest gainer or loser over a period; "
+            "Requires mode and nickname — if either is missing, call this tool anyway "
+            "with what you have; it replies with a short guide instead of erroring. "
+            "Pick one of three modes: '주가' (guess a random stock's current price, "
+            "±3% correct), '시장' (guess the biggest gainer or loser over a period; "
             "direction is random), '종목' (guess the company from sector/price/market-cap "
-            "hints). Every quiz includes a rendered one-week hourly-shape chart clue. "
-            "The reply includes a short mode intro, the quiz, a distinct 5-line "
-            "problem analysis, live ranking, and a quiz_id; grade answers with submit_answer. "
+            "hints). The reply includes a short mode intro plus the quiz and a quiz_id; "
+            "grade answers with submit_answer. nickname (닉네임) is required for scoring. "
             "Korean market only for now."
         ),
         annotations=ToolAnnotations(title="Stock Quiz", **_COMMON_ANN),
@@ -437,6 +321,7 @@ def _build_app(
     @_safe
     def quiz(
         mode: QuizMode | None = None,
+        nickname: str | None = None,
         market: Market = Market.KR,
         period: Period = Period.TODAY,
         sector: Sector | None = None,
@@ -444,11 +329,11 @@ def _build_app(
     ) -> str:
         outcome = handlers.quiz(
             mode,
-            None,
+            nickname,
             market,
             period,
             sector,
-            identity_key=_tool_identity_key(None, ctx),
+            identity_key=_tool_identity_key(nickname, ctx),
         )
         if outcome.widget is not None:
             return widgets.to_content_text(outcome.widget)
@@ -459,24 +344,24 @@ def _build_app(
         description=(
             "Grades an answer for a 주식대결 (Stock Quiz Battle / 주식사전 퀴즈) quiz. "
             "Give the quiz_id and your answer (stock name or price number). "
-            "Authenticated users keep their server-assigned display name automatically. "
-            "Wrong answers return a staged hint and live ranking; a correct answer returns "
-            "a different fact-only 5-line answer analysis, score delta, live ranking, and "
-            "next actions. Never gives buy/sell advice."
+            "nickname (닉네임) is required for scoring and ranking. "
+            "Wrong answers return a staged hint; a correct answer returns a fact-only "
+            "mini-analysis. Never gives buy/sell advice."
         ),
         annotations=ToolAnnotations(title="Submit Answer", **_COMMON_ANN),
     )
     async def submit_answer(
         quiz_id: str,
         answer: str,
+        nickname: str,
         ctx: Context | None = None,
     ) -> str:
         try:
             outcome = await handlers.submit_answer(
                 quiz_id,
                 answer,
-                None,
-                identity_key=_tool_identity_key(None, ctx),
+                nickname,
+                identity_key=_tool_identity_key(nickname, ctx),
             )
             if outcome.widget is not None:
                 return widgets.to_content_text(outcome.widget)
@@ -490,7 +375,6 @@ def _build_app(
         return JSONResponse(
             {
                 "status": "ok",
-                "revision": _APP_REVISION,
                 "stale": cache.stale,
                 "data_as_of": (
                     cache.data_as_of.isoformat() if cache.data_as_of else None
@@ -498,62 +382,11 @@ def _build_app(
             }
         )
 
-    @mcp.custom_route("/ops/stats", methods=["GET"])
-    async def ops_stats(request: Request) -> JSONResponse:
-        score_store.snapshot_load()
-        return JSONResponse(
-            {
-                "status": "ok",
-                "linked_oauth_users": _linked_oauth_users(_OPTIONAL_AUTH_PROVIDER),
-                "scoreboard": score_store.stats(),
-            }
-        )
-
-    @mcp.custom_route("/quiz/chart/{quiz_id}.png", methods=["GET"])
-    async def chart_image_get(request: Request) -> Response:
-        quiz_id = request.path_params.get("quiz_id", "")
-        state = store.get(str(quiz_id))
-        if state is None:
-            return PlainTextResponse("chart not found", status_code=404)
-        return Response(
-            chart_png(state.answer),
-            media_type="image/png",
-            headers={"Cache-Control": "no-store"},
-        )
-
-    @mcp.custom_route("/assets/{asset_name}", methods=["GET"])
-    async def logo_asset_get(request: Request) -> Response:
-        asset_name = str(request.path_params.get("asset_name", ""))
-        asset_path = _ASSET_PATHS.get(asset_name)
-        if asset_path is None or not asset_path.exists():
-            return PlainTextResponse("asset not found", status_code=404)
-        return Response(
-            asset_path.read_bytes(),
-            media_type="image/png",
-            headers={"Cache-Control": "public, max-age=86400"},
-        )
-
     @mcp.custom_route("/mcp/", methods=["POST", "DELETE"], include_in_schema=False)
     async def mcp_trailing_slash(request: Request):
         return RedirectResponse(_public_https_url(request, "/mcp"), status_code=307)
 
     return mcp
-
-
-def _linked_oauth_users(provider: Any | None) -> int:
-    if provider is None:
-        return 0
-    snapshot_load = getattr(provider, "snapshot_load", None)
-    if callable(snapshot_load):
-        snapshot_load()
-    subjects = set()
-    for collection_name in ("access_tokens", "refresh_tokens"):
-        collection = getattr(provider, collection_name, {})
-        for token in collection.values():
-            subject = getattr(token, "subject", None)
-            if isinstance(subject, str) and subject.strip():
-                subjects.add(subject.strip())
-    return len(subjects)
 
 
 async def _refresh_today(cache: QuizCache, client: MarketClient) -> None:
@@ -612,7 +445,8 @@ def create_server() -> FastMCP:
     from clients.kis import KISClient
 
     cache = QuizCache(_DATA_DIR).load()  # 검증 실패 시 여기서 기동 중단
-    store, score_store = _runtime_stores()
+    store = QuizStore()
+    score_store = ScoreStore()
     score_store.snapshot_load()
     client = KISClient()
     auth = build_auth_provider()
@@ -652,7 +486,6 @@ def _runtime_middleware() -> list[Middleware]:
 if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
-    mcp_server = create_server()
     run_kwargs: dict = {
         "transport": "streamable-http",
         "host": host,
@@ -672,4 +505,4 @@ if __name__ == "__main__":
         run_kwargs["allowed_hosts"] = [h.strip() for h in allowed.split(",") if h.strip()]
     if os.environ.get("DISABLE_HOST_PROTECTION") == "1":
         run_kwargs["host_origin_protection"] = False
-    mcp_server.run(**run_kwargs)
+    create_server().run(**run_kwargs)

@@ -1,7 +1,7 @@
 """모듈 C: quiz_id 인메모리 TTL 스토어.
 
-단일 인스턴스/단일 이벤트루프 전제의 로컬 구현이다.
-운영 다중 인스턴스 공유 상태는 redis_store.RedisQuizStore가 담당한다.
+단일 인스턴스/단일 이벤트루프 전제. Redis 금지(루트 규칙 — 오버엔지니어링).
+동시 제출/중복 제출에 대비해 asyncio.Lock으로 보호한다.
 """
 
 from __future__ import annotations

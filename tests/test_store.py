@@ -8,13 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from contracts.schemas import Market, QuizState, QuizType, StockSnapshot, Verdict
-from store import (
-    DEFAULT_MAX_ENTRIES,
-    DEFAULT_SQLITE_MAX_QUIZZES,
-    QuizStore,
-    SQLiteQuizStore,
-    new_quiz_id,
-)
+from store import QuizStore, new_quiz_id
 
 _KST = timezone(timedelta(hours=9))
 
@@ -134,56 +128,3 @@ async def test_concurrent_record_attempt_no_lost_update():
     store.put(_state(qid))
     await asyncio.gather(*[store.record_attempt(qid) for _ in range(20)])
     assert store.get(qid).attempts == 20
-
-
-def test_sqlite_store_persists_quiz_state(tmp_path):
-    path = tmp_path / "runtime.sqlite3"
-    qid = new_quiz_id()
-    first = SQLiteQuizStore(path)
-    first.put(_state(qid))
-
-    restored = SQLiteQuizStore(path)
-
-    assert restored.get(qid).quiz_id == qid
-
-
-def test_sqlite_store_default_capacity_exceeds_memory_store():
-    assert DEFAULT_SQLITE_MAX_QUIZZES > DEFAULT_MAX_ENTRIES
-
-
-def test_sqlite_store_eviction_is_configurable(tmp_path):
-    store = SQLiteQuizStore(tmp_path / "runtime.sqlite3", max_entries=12)
-    ids = [new_quiz_id() for _ in range(15)]
-
-    for qid in ids:
-        store.put(_state(qid))
-
-    assert len(store) == 12
-    assert store.get(ids[0]) is None
-    assert store.get(ids[-1]) is not None
-
-
-@pytest.mark.asyncio
-async def test_sqlite_concurrent_solve_only_one_winner(tmp_path):
-    store = SQLiteQuizStore(tmp_path / "runtime.sqlite3")
-    qid = new_quiz_id()
-    store.put(_state(qid))
-
-    async def attempt():
-        _, was_first = await store.compare_and_solve(qid)
-        return was_first
-
-    results = await asyncio.gather(*[attempt() for _ in range(200)])
-
-    assert sum(results) == 1
-
-
-@pytest.mark.asyncio
-async def test_sqlite_concurrent_record_attempt_no_lost_update(tmp_path):
-    store = SQLiteQuizStore(tmp_path / "runtime.sqlite3")
-    qid = new_quiz_id()
-    store.put(_state(qid))
-
-    await asyncio.gather(*[store.record_attempt(qid) for _ in range(200)])
-
-    assert store.get(qid).attempts == 200

@@ -3,28 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from contracts.schemas import LeaderboardSnapshot
-
-
-_DEFAULT_PUBLIC_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
-_LOGO_ASSET_PATH = "/assets/logo-banner.png"
-_CARD_BACKGROUND = "#f8fafc"
-_CARD_PADDING = 10
-_DIVIDER_SPACING = 6
-_SECTION_SPACING = 8
-_COMPACT_GAP = 4
-
-
-def _public_base_url() -> str:
-    return (
-        os.environ.get("PUBLIC_BASE_URL", "").strip()
-        or os.environ.get("OAUTH_BASE_URL", "").strip()
-        or _DEFAULT_PUBLIC_BASE_URL
-    ).rstrip("/")
 
 
 def _text_lines(value: str, **properties: object) -> dict:
@@ -32,49 +14,9 @@ def _text_lines(value: str, **properties: object) -> dict:
     return {
         "type": "Col",
         "children": [
-            {"type": "Text", "value": _without_bold(line), **properties}
+            {"type": "Text", "value": line, **properties}
             for line in value.splitlines()
         ],
-    }
-
-
-def _without_bold(value: str) -> str:
-    """ChatKit Text에서 그대로 노출되는 Markdown 굵게 표시를 제거한다."""
-    return value.replace("**", "")
-
-
-def _brand_header() -> dict:
-    return {
-        "type": "Col",
-        "children": [
-            {
-                "type": "Markdown",
-                "value": f"![주식대결 로고]({_public_base_url()}{_LOGO_ASSET_PATH})",
-            },
-        ],
-    }
-
-
-def _card_payload(
-    *,
-    copy_text: str,
-    name: str,
-    children: list[dict],
-) -> dict:
-    return {
-        "widget": {
-            "type": "Card",
-            "size": "full",
-            "padding": _CARD_PADDING,
-            "background": _CARD_BACKGROUND,
-            "children": [
-                _brand_header(),
-                {"type": "Divider", "spacing": _DIVIDER_SPACING},
-                *children,
-            ],
-        },
-        "copy_text": copy_text,
-        "name": name,
     }
 
 
@@ -85,38 +27,20 @@ def _quiz_frame(
     expires_in_sec: int,
     name: str,
     copy_body: str,
-    analysis_lines: list[str] | None = None,
 ) -> dict:
-    """출제 모드가 공유하는 공통 틀. 바디만 모드별 함수가 채워 넣는다."""
+    """3개 출제 모드가 공유하는 공통 틀. 바디만 모드별 함수가 채워 넣는다."""
     expires_in_min = expires_in_sec // 60
-    image_url = f"{_public_base_url()}/quiz/chart/{quiz_id}.png"
-    chart_children = [
-        {"type": "Divider", "spacing": _SECTION_SPACING},
-        {"type": "Text", "value": "차트 힌트", "weight": "bold", "size": "sm"},
-        {"type": "Markdown", "value": f"![차트 힌트]({image_url})"},
-    ]
-    analysis_copy = ""
-    analysis_children: list[dict] = []
-    if analysis_lines:
-        analysis_children = [
-            {"type": "Divider", "spacing": _SECTION_SPACING},
-            {"type": "Text", "value": "문제 분석", "weight": "bold", "size": "sm"},
-            _analysis_list(analysis_lines),
-        ]
-        analysis_copy = "\n\n문제 분석\n" + "\n".join(
-            f"{index}. {line}" for index, line in enumerate(analysis_lines, start=1)
-        )
     children = [
         {
             "type": "Row",
             "align": "center",
-            "gap": _COMPACT_GAP,
+            "gap": 6,
             "children": [
                 {
                     "type": "Icon",
                     "name": "circle-question",
                     "color": "info",
-                    "size": "sm",
+                    "size": "md",
                 },
                 {
                     "type": "Badge",
@@ -127,93 +51,38 @@ def _quiz_frame(
                 },
             ],
         },
+        {"type": "Spacer", "minSize": 8},
         {
             "type": "Title",
             "value": "주식대결 퀴즈",
-            "size": "md",
+            "size": "lg",
             "weight": "bold",
         },
-        _text_lines(mode_intro, size="sm", maxLines=2),
-        {"type": "Divider", "spacing": _SECTION_SPACING},
+        _text_lines(mode_intro, size="md", maxLines=3),
+        {"type": "Divider", "spacing": 12},
         *body_children,
-        *chart_children,
-        *analysis_children,
-        {"type": "Divider", "spacing": _SECTION_SPACING},
+        {"type": "Divider", "spacing": 12},
         {"type": "Markdown", "value": f"정답 제출용 ID: `{quiz_id}`"},
         {
             "type": "Caption",
-            "value": f"{expires_in_min}분 안에 ID와 정답을 함께 말해주세요",
+            "value": f"위 ID와 정답을 {expires_in_min}분 안에 함께 말해주세요",
             "size": "sm",
         },
     ]
     copy_text = (
-        f"주식대결 퀴즈\n\n{_without_bold(mode_intro)}\n\n{_without_bold(copy_body)}\n\n"
-        f"차트 힌트: {image_url}{analysis_copy}\n\n"
+        f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}\n\n"
         f"제출 ID: `{quiz_id}`"
     )
-    return _card_payload(copy_text=copy_text, name=name, children=children)
-
-
-def _analysis_list(lines: list[str]) -> dict:
     return {
-        "type": "Col",
-        "gap": _COMPACT_GAP,
-        "children": [
-            {
-                "type": "Row",
-                "align": "start",
-                "gap": 6,
-                "children": [
-                    {
-                        "type": "Badge",
-                        "label": str(index),
-                        "color": "info",
-                        "variant": "soft",
-                        "pill": True,
-                        "size": "sm",
-                    },
-                    {"type": "Text", "value": line, "flex": 1, "size": "sm"},
-                ],
-            }
-            for index, line in enumerate(lines[:5], start=1)
-        ],
+        "widget": {
+            "type": "Card",
+            "size": "full",
+            "padding": 16,
+            "children": children,
+        },
+        "copy_text": copy_text,
+        "name": name,
     }
-
-
-def _my_rank_text(leaderboard: "LeaderboardSnapshot") -> str:
-    return f"내 {leaderboard.my_rank}위 · {leaderboard.my_entry.score}점"
-
-
-def _leaderboard_panel(leaderboard: "LeaderboardSnapshot") -> list[dict]:
-    return [
-        {
-            "type": "Row",
-            "align": "center",
-            "gap": _COMPACT_GAP,
-            "children": [
-                {
-                    "type": "Text",
-                    "value": "주간 TOP3",
-                    "weight": "bold",
-                    "size": "sm",
-                    "flex": 1,
-                },
-                {
-                    "type": "Badge",
-                    "label": _my_rank_text(leaderboard),
-                    "color": "info",
-                    "variant": "soft",
-                    "size": "sm",
-                },
-            ],
-        },
-        leaderboard_listview_rows(leaderboard),
-        {
-            "type": "Caption",
-            "value": f"닉네임 {leaderboard.my_entry.display_name}",
-            "size": "sm",
-        },
-    ]
 
 
 def price_quiz_widget(
@@ -221,11 +90,10 @@ def price_quiz_widget(
     mode_intro: str,
     question_md: str,
     expires_in_sec: int = 1800,
-    analysis_lines: list[str] | None = None,
 ) -> dict:
     """주가 퀴즈 출제 위젯. 숫자 입력을 강조하는 바디."""
     body = [
-        {"type": "Markdown", "value": _without_bold(question_md)},
+        {"type": "Markdown", "value": question_md},
         {
             "type": "Badge",
             "label": "숫자만 입력하세요",
@@ -235,7 +103,7 @@ def price_quiz_widget(
         },
     ]
     return _quiz_frame(
-        quiz_id, mode_intro, body, expires_in_sec, "price_quiz", question_md, analysis_lines
+        quiz_id, mode_intro, body, expires_in_sec, "price_quiz", question_md
     )
 
 
@@ -245,13 +113,17 @@ def market_quiz_widget(
     question_md: str,
     change_pct: float,
     expires_in_sec: int = 1800,
-    analysis_lines: list[str] | None = None,
 ) -> dict:
-    """시장 퀴즈 출제 위젯. 등락률 방향은 배지로만 보여준다."""
+    """시장 퀴즈 출제 위젯. 등락률 방향에 따라 배지 색과 차트형 힌트를 다르게 준다."""
     direction_color = "success" if change_pct >= 0 else "danger"
     direction_label = f"{change_pct:+.2f}%"
+    sparkline = _change_sparkline(change_pct)
     body = [
-        {"type": "Markdown", "value": _without_bold(question_md)},
+        {"type": "Markdown", "value": question_md},
+        {
+            "type": "Markdown",
+            "value": f"**차트형 힌트** `{sparkline}`",
+        },
         {
             "type": "Badge",
             "label": direction_label,
@@ -266,9 +138,20 @@ def market_quiz_widget(
         body,
         expires_in_sec,
         "market_quiz",
-        question_md,
-        analysis_lines,
+        f"{question_md}\n\n차트형 힌트: `{sparkline}`",
     )
+
+
+def _change_sparkline(change_pct: float) -> str:
+    """등락 방향과 강도를 한 줄 차트 모양으로 표현한다."""
+    if change_pct >= 0:
+        levels = "▁▂▃▄▅"
+        arrow = "↗"
+    else:
+        levels = "▅▄▃▂▁"
+        arrow = "↘"
+    strength = min(5, max(1, int(abs(change_pct) // 2) + 1))
+    return f"{levels} {arrow} {change_pct:+.2f}% · 강도 {strength}/5"
 
 
 def company_quiz_widget(
@@ -276,27 +159,29 @@ def company_quiz_widget(
     mode_intro: str,
     question_md: str,
     expires_in_sec: int = 1800,
-    analysis_lines: list[str] | None = None,
 ) -> dict:
     """종목 퀴즈 출제 위젯. 힌트 목록(섹터/현재가/시총순위)을 그대로 표시."""
-    body = [{"type": "Markdown", "value": _without_bold(question_md)}]
+    body = [{"type": "Markdown", "value": question_md}]
     return _quiz_frame(
-        quiz_id, mode_intro, body, expires_in_sec, "company_quiz", question_md, analysis_lines
+        quiz_id, mode_intro, body, expires_in_sec, "company_quiz", question_md
     )
 
 
 def wrong_answer_widget(hint_text: str, attempts: int) -> dict:
     """오답 응답 위젯. 간단한 Card + Text 구성.
     {"widget": {...}, "copy_text": "...", "name": "wrong_answer"}"""
-    copy_text = f"❌ 오답입니다. (시도 {attempts}회)\n\n💡 힌트: {hint_text}"
-    return _card_payload(
-        children=[
-            {"type": "Text", "value": f"오답입니다. (시도 {attempts}회)"},
-            {"type": "Badge", "label": hint_text, "color": "warning"},
-        ],
-        copy_text=copy_text,
-        name="wrong_answer",
-    )
+    copy_text = f"❌ 오답입니다. (시도 {attempts}회)\n\n💡 힌트: **{hint_text}**"
+    return {
+        "widget": {
+            "type": "Card",
+            "children": [
+                {"type": "Text", "value": f"오답입니다. (시도 {attempts}회)"},
+                {"type": "Badge", "label": hint_text, "color": "warning"},
+            ],
+        },
+        "copy_text": copy_text,
+        "name": "wrong_answer",
+    }
 
 
 def correct_answer_widget(
@@ -307,16 +192,23 @@ def correct_answer_widget(
     earned_score: int | None,
     leaderboard: "LeaderboardSnapshot | None",
     next_actions: list[str],
-    analysis_lines: list[str] | None = None,
 ) -> dict:
     """정답 응답 위젯. 미니분석 + (있으면) 점수·TOP3 랭킹 + 다음 액션.
     {"widget": {...}, "copy_text": "...", "name": "correct_answer"}"""
-    detail_lines = analysis_lines or [price_line, rank_line, reason_line]
     children: list[dict] = [
         {"type": "Title", "value": f"정답! {answer_name}", "size": "lg", "weight": "bold"},
+        {"type": "Text", "value": price_line},
+        {"type": "Text", "value": rank_line},
+        {"type": "Text", "value": reason_line},
+        {"type": "Divider", "spacing": 12},
     ]
     copy_lines = [
-        f"✅ 정답! {answer_name}",
+        f"✅ 정답! **{answer_name}**",
+        "",
+        "**미니분석**",
+        f"- {price_line}",
+        f"- {rank_line}",
+        f"- {reason_line}",
     ]
 
     if leaderboard is not None:
@@ -326,52 +218,38 @@ def correct_answer_widget(
                     "type": "Badge",
                     "label": f"이번 정답으로 {earned_score}점 획득!",
                     "color": "success",
-                    "size": "sm",
                 }
             )
-            copy_lines.extend(["", f"🎯 이번 정답으로 {earned_score}점 획득!"])
-        children.extend(_leaderboard_panel(leaderboard))
-        children.append({"type": "Divider", "spacing": _SECTION_SPACING})
-        copy_lines.extend(["", "주간 TOP3"])
+            copy_lines.extend(["", f"🎯 이번 정답으로 **{earned_score}점** 획득!"])
+        children.append(leaderboard_listview_rows(leaderboard))
+        children.append(
+            {
+                "type": "Text",
+                "value": f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위",
+                "weight": "bold",
+            }
+        )
+        copy_lines.extend(["", "**주간 TOP3**"])
         copy_lines.extend(
             f"{rank}. {entry.display_name} — {entry.score}점"
             for rank, entry in enumerate(leaderboard.top[:3], start=1)
         )
         copy_lines.append(
-            f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
-            f"· 닉네임 {leaderboard.my_entry.display_name}"
+            f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
         )
 
-    copy_lines.extend(
-        [
-            "",
-            "정답 분석",
-            *(
-                f"{index}. {line}"
-                for index, line in enumerate(detail_lines[:5], start=1)
-            ),
-        ]
-    )
-
-    children.extend(
-        [
-            {"type": "Text", "value": "정답 분석", "weight": "bold", "size": "sm"},
-            _analysis_list(detail_lines),
-            {"type": "Divider", "spacing": _SECTION_SPACING},
-        ]
-    )
-
     if next_actions:
+        children.append({"type": "Divider", "spacing": 12})
         children.extend({"type": "Button", "label": action} for action in next_actions)
         copy_lines.extend(
             ["", "다음 중 선택: " + " / ".join(f"`{action}`" for action in next_actions)]
         )
 
-    return _card_payload(
-        children=children,
-        copy_text="\n".join(copy_lines),
-        name="correct_answer",
-    )
+    return {
+        "widget": {"type": "Card", "size": "full", "padding": 16, "children": children},
+        "copy_text": "\n".join(copy_lines),
+        "name": "correct_answer",
+    }
 
 
 def with_leaderboard(
@@ -388,12 +266,18 @@ def with_leaderboard(
 
     widget = dict(payload["widget"])
     children = list(widget.get("children", []))
-    ranking_children = [
-        *_leaderboard_panel(leaderboard),
-        {"type": "Divider", "spacing": _SECTION_SPACING},
-    ]
-    insert_at = 2 if len(children) >= 2 else 0
-    children[insert_at:insert_at] = ranking_children
+    children.extend(
+        [
+            {"type": "Divider", "spacing": 12},
+            {"type": "Title", "value": "주간 랭킹", "size": "md", "weight": "bold"},
+            leaderboard_listview_rows(leaderboard),
+            {
+                "type": "Text",
+                "value": f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위",
+                "weight": "bold",
+            },
+        ]
+    )
     widget["children"] = children
 
     copy_text = payload["copy_text"]
@@ -402,14 +286,13 @@ def with_leaderboard(
         action = "획득" if score_delta > 0 else "감점"
         ranking_lines.append(f"점수 {abs(score_delta)}점 {action}")
         ranking_lines.append("")
-    ranking_lines.append("주간 TOP3")
+    ranking_lines.append("**주간 TOP3**")
     ranking_lines.extend(
         f"{rank}. {entry.display_name} — {entry.score}점"
         for rank, entry in enumerate(leaderboard.top[:3], start=1)
     )
     ranking_lines.append(
-        f"내 순위 {leaderboard.my_rank}위 · 내 점수 {leaderboard.my_entry.score}점 "
-        f"· 닉네임 {leaderboard.my_entry.display_name}"
+        f"내 점수 {leaderboard.my_entry.score}점 · {leaderboard.my_rank}위"
     )
     return {
         "widget": widget,
@@ -472,7 +355,7 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
         return {
             "type": "Row",
             "align": "center",
-            "gap": 6,
+            "gap": 8,
             "children": [
                 {
                     "type": "Badge",
@@ -488,7 +371,6 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
                     "weight": "semibold",
                     "flex": 1,
                     "truncate": True,
-                    "size": "sm",
                 },
                 {
                     "type": "Text",
@@ -496,7 +378,6 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
                     "weight": "bold",
                     "textAlign": "end",
                     "color": "success",
-                    "size": "sm",
                 },
             ],
         }
@@ -505,80 +386,84 @@ def leaderboard_listview_rows(leaderboard: "LeaderboardSnapshot") -> dict:
         row(rank, entry.display_name, entry.score)
         for rank, entry in enumerate(leaderboard.top[:3], start=1)
     ]
-    return {"type": "Col", "gap": _COMPACT_GAP, "children": rows}
+    return {"type": "Col", "gap": 6, "children": rows}
 
 
 # ── 웰컴 / 모드 선택 안내 ─────────────────────────────────────
 
 
 def welcome_widget() -> dict:
-    """help 툴 응답 위젯. 서비스 소개 + 3모드 + 자동 닉네임 안내 + 발화 예시."""
+    """help 툴 응답 위젯. 서비스 소개 + 3모드 + 닉네임 필요성 + 발화 예시."""
     mode_rows = [
         {
             "type": "Row",
             "align": "center",
-            "gap": 6,
+            "gap": 8,
             "children": [
                 {"type": "Icon", "name": "chart", "color": "info", "size": "sm"},
-                {"type": "Text", "value": "주가 — 현재가를 1만원 단위로 맞히기", "flex": 1, "size": "sm"},
+                {"type": "Text", "value": "주가 — 종목 현재가 맞히기(±3%)", "flex": 1},
             ],
         },
         {
             "type": "Row",
             "align": "center",
-            "gap": 6,
+            "gap": 8,
             "children": [
                 {"type": "Icon", "name": "analytics", "color": "info", "size": "sm"},
-                {"type": "Text", "value": "시장 — 가장 오르거나 떨어진 종목 맞히기", "flex": 1, "size": "sm"},
+                {"type": "Text", "value": "시장 — 가장 오르거나 떨어진 종목 맞히기", "flex": 1},
             ],
         },
         {
             "type": "Row",
             "align": "center",
-            "gap": 6,
+            "gap": 8,
             "children": [
                 {"type": "Icon", "name": "sparkle", "color": "info", "size": "sm"},
-                {"type": "Text", "value": "종목 — 섹터·가격·시총 힌트로 회사 맞히기", "flex": 1, "size": "sm"},
+                {"type": "Text", "value": "종목 — 섹터·가격·시총 힌트로 회사 맞히기", "flex": 1},
             ],
         },
     ]
     children = [
-        {"type": "Title", "value": "주식대결에 오신 걸 환영해요!", "size": "md", "weight": "bold"},
+        {"type": "Title", "value": "주식대결에 오신 걸 환영해요!", "size": "lg", "weight": "bold"},
         {
             "type": "Text",
-            "value": "코스피/코스닥 종목으로 즐기는 주식 퀴즈예요. 모든 문제에 차트 힌트가 함께 나와요.",
-            "size": "sm",
+            "value": "코스피/코스닥 종목으로 즐기는 주식 퀴즈예요.",
+            "size": "md",
         },
-        {"type": "Divider", "spacing": _SECTION_SPACING},
-        {"type": "Col", "gap": _COMPACT_GAP, "children": mode_rows},
-        {"type": "Divider", "spacing": _SECTION_SPACING},
+        {"type": "Divider", "spacing": 12},
+        {"type": "Col", "gap": 8, "children": mode_rows},
+        {"type": "Divider", "spacing": 12},
         {
             "type": "Text",
-            "value": "로그인한 사용자는 자동 닉네임으로 주간 랭킹(매주 초기화)에 참여해요.",
+            "value": "닉네임을 알려주면 정답 시 주간 랭킹(매주 초기화)에 참여할 수 있어요.",
             "size": "sm",
         },
         {
             "type": "Caption",
-            "value": '예: "주가 모드로 퀴즈 내줘."',
+            "value": '예: "주가 모드로 퀴즈 내줘. 닉네임은 찬희야."',
             "size": "sm",
         },
     ]
     copy_text = (
-        "주식대결에 오신 걸 환영해요!\n\n"
-        "코스피/코스닥 종목으로 즐기는 주식 퀴즈입니다. 모든 문제에 차트 힌트가 함께 나옵니다.\n\n"
-        "- 📈 주가 — 현재가를 1만원 단위로 맞히기\n"
+        "**주식대결에 오신 걸 환영해요!**\n\n"
+        "코스피/코스닥 종목으로 즐기는 주식 퀴즈입니다.\n\n"
+        "- 📈 주가 — 종목 현재가 맞히기(±3%)\n"
         "- 📊 시장 — 가장 오르거나 떨어진 종목 맞히기\n"
         "- 🏢 종목 — 섹터·가격·시총 힌트로 회사 맞히기\n\n"
-        "로그인한 사용자는 자동 닉네임으로 주간 랭킹(매주 초기화)에 참여합니다.\n\n"
-        '예: "주가 모드로 퀴즈 내줘."'
+        "닉네임을 알려주면 정답 시 주간 랭킹(매주 초기화)에 참여할 수 있어요.\n\n"
+        '예: "주가 모드로 퀴즈 내줘. 닉네임은 찬희야."'
     )
-    return _card_payload(children=children, copy_text=copy_text, name="welcome")
+    return {
+        "widget": {"type": "Card", "size": "full", "padding": 16, "children": children},
+        "copy_text": copy_text,
+        "name": "welcome",
+    }
 
 
 def mode_selection_widget() -> dict:
-    """quiz가 mode 없이 호출됐을 때 반환하는 안내 위젯."""
+    """quiz가 mode/nickname 없이 호출됐을 때 반환하는 안내 위젯."""
     children = [
-        {"type": "Text", "value": "모드를 골라주세요.", "weight": "semibold"},
+        {"type": "Text", "value": "모드와 닉네임을 알려주세요.", "weight": "semibold"},
         {
             "type": "Row",
             "gap": 6,
@@ -590,20 +475,20 @@ def mode_selection_widget() -> dict:
         },
         {
             "type": "Caption",
-            "value": '예: "종목 모드로 퀴즈 내줘."',
+            "value": '예: "종목 모드로 퀴즈 내줘. 닉네임은 찬희야."',
             "size": "sm",
         },
     ]
     copy_text = (
-        "모드를 골라주세요.\n\n"
+        "모드와 닉네임을 알려주세요.\n\n"
         "주가 / 시장 / 종목 중 하나를 골라주세요.\n\n"
-        '예: "종목 모드로 퀴즈 내줘."'
+        '예: "종목 모드로 퀴즈 내줘. 닉네임은 찬희야."'
     )
-    return _card_payload(
-        children=children,
-        copy_text=copy_text,
-        name="mode_selection",
-    )
+    return {
+        "widget": {"type": "Card", "children": children},
+        "copy_text": copy_text,
+        "name": "mode_selection",
+    }
 
 
 # ── 안내 / 오류 위젯 (quiz_id 없는 경로) ───────────────────────
@@ -615,11 +500,11 @@ def _notice_widget(text: str, caption: str, name: str) -> dict:
         {"type": "Text", "value": text},
         {"type": "Caption", "value": caption, "size": "sm"},
     ]
-    return _card_payload(
-        children=children,
-        copy_text=f"{text}\n\n{caption}",
-        name=name,
-    )
+    return {
+        "widget": {"type": "Card", "children": children},
+        "copy_text": f"{text}\n\n{caption}",
+        "name": name,
+    }
 
 
 def already_solved_widget() -> dict:
@@ -673,7 +558,7 @@ def company_pool_empty_widget() -> dict:
 def mode_unknown_widget() -> dict:
     return _notice_widget(
         "주가 / 시장 / 종목 중에서 골라주세요.",
-        '예: "종목 모드로 퀴즈 내줘."',
+        '예: "주가 모드로 퀴즈 내줘."',
         "mode_unknown",
     )
 

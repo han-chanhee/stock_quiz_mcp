@@ -10,7 +10,6 @@ import argparse
 import asyncio
 import json
 import random
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,17 +22,12 @@ from server import widgets
 from server.cache import QuizCache
 from server.handlers import QuizHandlers, QuizMode
 from services.quiz_bank import QuizBank
-from store import (
-    DEFAULT_SQLITE_MAX_QUIZZES,
-    QuizStore,
-    ScoreStore,
-    SQLiteQuizStore,
-    SQLiteScoreStore,
-)
+from store import QuizStore, ScoreStore
+from store.quiz_store import DEFAULT_MAX_ENTRIES
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "batch" / "data"
 _EXPECTED_TOOLS = {"help", "quiz", "submit_answer"}
-_FORBIDDEN_WIDGET_TYPES = {"Box", "Image", "Table"}
+_FORBIDDEN_WIDGET_TYPES = {"Table"}
 
 
 def sample_leaderboard() -> LeaderboardSnapshot:
@@ -57,36 +51,12 @@ def sample_leaderboard() -> LeaderboardSnapshot:
 
 def collect_widget_payloads() -> dict[str, dict]:
     leaderboard = sample_leaderboard()
-    question_analysis = [
-        "정답 종목명은 아직 공개하지 않습니다.",
-        "등락 흐름과 가격대를 함께 봅니다.",
-        "섹터 단서는 문제 난도를 낮춥니다.",
-        "데이터 랭킹 단서는 보조 정보입니다.",
-        "공개된 단서만 조합해 정답을 좁힙니다.",
-    ]
-    answer_analysis = [
-        "삼성전자 현재가는 80,000원이고 등락률은 +1.20%입니다.",
-        "출제 시점 기준 흐름은 상승으로 분류됩니다.",
-        "섹터는 반도체, 가격대는 3만~10만원입니다.",
-        "데이터 랭킹 단서는 1위권입니다.",
-        "확인된 재료: 특별한 재료 확인 안 됨",
-    ]
     payloads = {
         "welcome": widgets.welcome_widget(),
         "mode_selection": widgets.mode_selection_widget(),
-        "price_quiz": widgets.price_quiz_widget(
-            "QZ-TEST", "주가 퀴즈", "현재가는?", analysis_lines=question_analysis
-        ),
-        "market_quiz": widgets.market_quiz_widget(
-            "QZ-MARKET",
-            "시장 퀴즈",
-            "가장 오른 종목은?",
-            5.2,
-            analysis_lines=question_analysis,
-        ),
-        "company_quiz": widgets.company_quiz_widget(
-            "QZ-COMPANY", "종목 퀴즈", "이 회사는?", analysis_lines=question_analysis
-        ),
+        "price_quiz": widgets.price_quiz_widget("QZ-TEST", "주가 퀴즈", "현재가는?"),
+        "market_quiz": widgets.market_quiz_widget("QZ-MARKET", "시장 퀴즈", "가장 오른 종목은?", 5.2),
+        "company_quiz": widgets.company_quiz_widget("QZ-COMPANY", "종목 퀴즈", "이 회사는?"),
         "wrong_answer": widgets.wrong_answer_widget("UP", 1),
         "correct_answer": widgets.correct_answer_widget(
             "삼성전자",
@@ -96,7 +66,6 @@ def collect_widget_payloads() -> dict[str, dict]:
             3,
             leaderboard,
             ["다음 퀴즈", "종료"],
-            answer_analysis,
         ),
         "already_solved": widgets.already_solved_widget(),
         "expired_quiz": widgets.expired_quiz_widget(),
@@ -146,48 +115,30 @@ async def _load_cache(data_dir: Path = _DATA_DIR) -> QuizCache:
 
 async def load_smoke(requests: int = 200, concurrency: int = 20) -> dict[str, Any]:
     cache = await _load_cache()
-    with tempfile.TemporaryDirectory(prefix="stock-quiz-load-") as tmp:
-        db_path = Path(tmp) / "runtime.sqlite3"
-        store = SQLiteQuizStore(db_path)
-        score_store = SQLiteScoreStore(db_path)
-        handlers = QuizHandlers(
-            cache,
-            store,
-            score_store,
-            QuizBank(rng=random.Random(0)),
-            rng=random.Random(0),
-        )
-        sem = asyncio.Semaphore(concurrency)
+    store = QuizStore()
+    score_store = ScoreStore()
+    handlers = QuizHandlers(cache, store, score_store, QuizBank(rng=random.Random(0)), rng=random.Random(0))
+    sem = asyncio.Semaphore(concurrency)
 
-        async def one(index: int) -> None:
-            async with sem:
-                nickname = f"부하{index % 25}"
-                outcome = handlers.quiz(
-                    QuizMode.PRICE,
-                    nickname,
-                    Market.KR,
-                    Period.TODAY,
-                )
-                state = store.get(outcome.quiz_id)
-                await handlers.submit_answer(
-                    outcome.quiz_id,
-                    str(state.answer.price * 0.5),
-                    nickname,
-                )
+    async def one(index: int) -> None:
+        async with sem:
+            nickname = f"부하{index % 25}"
+            outcome = handlers.quiz(QuizMode.PRICE, nickname, Market.KR, Period.TODAY)
+            state = store.get(outcome.quiz_id)
+            await handlers.submit_answer(outcome.quiz_id, str(state.answer.price * 0.5), nickname)
 
-        start = time.perf_counter()
-        await asyncio.gather(*(one(index) for index in range(requests)))
-        elapsed = time.perf_counter() - start
-        return {
-            "backend": "sqlite",
-            "requests": requests,
-            "concurrency": concurrency,
-            "elapsed_sec": round(elapsed, 4),
-            "rps": round(requests / elapsed, 2) if elapsed else requests,
-            "stored_quizzes": len(store),
-            "max_active_quizzes": DEFAULT_SQLITE_MAX_QUIZZES,
-            "cap_reached": len(store) == DEFAULT_SQLITE_MAX_QUIZZES,
-        }
+    start = time.perf_counter()
+    await asyncio.gather(*(one(index) for index in range(requests)))
+    elapsed = time.perf_counter() - start
+    return {
+        "requests": requests,
+        "concurrency": concurrency,
+        "elapsed_sec": round(elapsed, 4),
+        "rps": round(requests / elapsed, 2) if elapsed else requests,
+        "stored_quizzes": len(store),
+        "max_active_quizzes": DEFAULT_MAX_ENTRIES,
+        "cap_reached": len(store) == DEFAULT_MAX_ENTRIES,
+    }
 
 
 async def conflict_report() -> dict[str, Any]:

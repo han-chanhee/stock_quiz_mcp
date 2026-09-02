@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from contracts.schemas import ScoreEntry
-from store import SQLiteScoreStore
 from store.score_store import ScoreStore
 
 _KST = timezone(timedelta(hours=9))
@@ -32,29 +31,6 @@ async def test_wrong_answer_penalty_decrements_score(tmp_path):
     assert store.leaderboard("wrong").my_entry.score == -1
     assert await store.add_result("wrong", "오답자", 1) == 3
     assert store.leaderboard("wrong").my_entry.score == 2
-
-
-@pytest.mark.asyncio
-async def test_score_store_stats_track_play_counts(tmp_path):
-    store = ScoreStore(snapshot_path=tmp_path / "scores.json")
-    store.record_quiz_started("u1")
-    store.record_quiz_started("u1")
-    store.record_quiz_started("u2")
-    await store.add_penalty("u1", "주식러1")
-    await store.add_result("u1", "주식러1", 1)
-    await store.snapshot_save()
-
-    restored = ScoreStore(snapshot_path=tmp_path / "scores.json")
-    restored.snapshot_load()
-    stats = restored.stats()
-
-    assert stats["participants"] == 1
-    assert stats["quiz_players"] == 2
-    assert stats["quiz_starts"] == 3
-    assert stats["submitted_answers"] == 2
-    assert stats["correct_answers"] == 1
-    assert stats["wrong_answers"] == 1
-    assert stats["top"][0]["display_name"] == "주식러1"
 
 
 @pytest.mark.asyncio
@@ -178,65 +154,3 @@ def test_corrupt_snapshot_is_quarantined_instead_of_crashing(tmp_path):
     assert not path.exists()
     assert list(tmp_path.glob("scores.json.corrupt.*"))
     assert store.leaderboard("unknown").my_entry.score == 0
-
-
-@pytest.mark.asyncio
-async def test_sqlite_score_store_persists_scores_and_ranks(tmp_path):
-    path = tmp_path / "runtime.sqlite3"
-    first = SQLiteScoreStore(path, snapshot_path=tmp_path / "scores.json")
-    await first.add_result("alpha", "알파", 1)
-    await first.add_result("beta", "베타", 2)
-
-    restored = SQLiteScoreStore(path, snapshot_path=tmp_path / "scores.json")
-
-    assert restored.leaderboard("alpha").my_entry.score == 3
-    assert restored.leaderboard("beta").my_rank == 2
-    assert [entry.display_name for entry in restored.leaderboard("alpha").top] == [
-        "알파",
-        "베타",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_sqlite_score_store_persists_stats(tmp_path):
-    path = tmp_path / "runtime.sqlite3"
-    first = SQLiteScoreStore(path, snapshot_path=tmp_path / "scores.json")
-    first.record_quiz_started("u1")
-    first.record_quiz_started("u1")
-    first.record_quiz_started("u2")
-    await first.add_penalty("u1", "주식러1")
-    await first.add_result("u1", "주식러1", 1)
-
-    restored = SQLiteScoreStore(path, snapshot_path=tmp_path / "scores.json")
-    stats = restored.stats()
-
-    assert stats["participants"] == 1
-    assert stats["quiz_players"] == 2
-    assert stats["quiz_starts"] == 3
-    assert stats["submitted_answers"] == 2
-    assert stats["correct_answers"] == 1
-    assert stats["wrong_answers"] == 1
-
-
-@pytest.mark.asyncio
-async def test_sqlite_snapshot_load_imports_all_legacy_entries(tmp_path):
-    path = tmp_path / "legacy.json"
-    entries = [
-        ScoreEntry(
-            identity_key=f"user-{index}",
-            display_name=f"사용자 {index}",
-            score=index,
-            updated_at=datetime(2026, 8, 17, index, tzinfo=_KST),
-        )
-        for index in range(5)
-    ]
-    path.write_text(
-        "[" + ",".join(entry.model_dump_json() for entry in entries) + "]",
-        encoding="utf-8",
-    )
-
-    store = SQLiteScoreStore(tmp_path / "runtime.sqlite3", snapshot_path=path)
-    store.snapshot_load()
-
-    assert store.leaderboard("user-4").my_entry.score == 4
-    assert len(store.leaderboard("user-0", top_n=5).top) == 5

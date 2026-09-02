@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from ops import testbed
-from store import DEFAULT_SQLITE_MAX_QUIZZES
 
 
 def test_widget_testbed_validates_representative_payloads() -> None:
@@ -40,8 +39,7 @@ async def test_load_testbed_runs_in_process_smoke() -> None:
     report = await testbed.load_smoke(requests=12, concurrency=4)
 
     assert report["requests"] == 12
-    assert report["backend"] == "sqlite"
     assert report["stored_quizzes"] == 12
-    assert report["max_active_quizzes"] == DEFAULT_SQLITE_MAX_QUIZZES
+    assert report["max_active_quizzes"] == 10_000
     assert report["cap_reached"] is False
     assert report["rps"] > 0

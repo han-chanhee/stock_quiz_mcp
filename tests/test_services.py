@@ -1,4 +1,4 @@
-"""모듈 B 테스트: 출제 3종/초성/가격 판정/별칭 정규화/reason 없음/Reason 검증."""
+"""모듈 B 테스트: 출제 4종/초성/±3% property/별칭 정규화/reason 없음/Reason 검증."""
 
 from __future__ import annotations
 
@@ -16,23 +16,20 @@ from contracts.schemas import (
     QuizQuestion,
     QuizType,
     Reason,
+    Sector,
     StockSnapshot,
 )
 from services import (
     NO_REASON,
     QuizBank,
     build_analysis,
-    build_answer_analysis_lines,
-    build_question_analysis,
     chosung,
     first_letter_hint,
     is_correct,
     judge_price,
     normalize_name,
-    parse_price,
     resolve_alias,
 )
-from services.quiz_bank import chart_points_for_snapshot
 
 _KST = timezone(timedelta(hours=9))
 
@@ -45,7 +42,7 @@ def _snap(name="삼성전자", price=78500.0, market=Market.KR, sector=None, ran
     )
 
 
-# ── 출제 3종: 스키마 유효 + 정답 미포함 ──────────────────────
+# ── 출제 4종: 스키마 유효 + 정답 미포함 ──────────────────────
 
 def _pool():
     return [
@@ -62,8 +59,6 @@ def test_price_quiz_valid_and_no_answer_leak():
     QuizQuestion.model_validate(q.model_dump())  # 스키마 유효
     # price 퀴즈는 이름을 보여주고 가격을 묻는다 → 가격(정답값)은 노출 안 됨
     assert str(int(state.answer.price)) not in q.question_md
-    assert "1만원 단위" in q.question_md
-    assert "±3%" not in q.question_md
     assert q.hint_policy == "updown"
 
 
@@ -78,14 +73,6 @@ def test_movers_quiz_hides_name():
         q, state = bank.movers_quiz(ranking, qtype, Market.KR)
         assert state.answer.name not in q.question_md  # 정답 미노출
         assert len(state.hints_precomputed) == 2       # 초성/첫글자 precompute
-
-
-def test_chart_points_use_one_week_hourly_shape():
-    snap = _pool()[0]
-    points = chart_points_for_snapshot(snap)
-
-    assert len(points) == 35
-    assert all(0.05 <= point <= 0.95 for point in points)
 
 
 def test_precomputed_hints_never_leak_full_name():
@@ -119,6 +106,18 @@ def test_company_quiz_hides_name_shows_hints():
     assert "현재가" in q.question_md
 
 
+def test_company_quiz_forces_kakao_when_available():
+    kakao = _snap("카카오", 58200, sector=Sector.INTERNET_GAME, rank=22)
+    kakao.ticker = "035720"
+    pool = [_snap("삼성전자", 78500, sector=Sector.SEMICONDUCTOR, rank=1), kakao]
+
+    for seed in range(10):
+        q, state = QuizBank(rng=random.Random(seed)).company_quiz(pool, Sector.BIO)
+        assert state.answer.name == "카카오"
+        assert state.answer.ticker == "035720"
+        assert state.answer.name not in q.question_md
+
+
 # ── 초성 변환 ────────────────────────────────────────────────
 
 @pytest.mark.parametrize(
@@ -139,38 +138,27 @@ def test_first_letter_hint():
     assert first_letter_hint("Tesla") == "T____ (5글자)"
 
 
-# ── 가격 판정 (KR 만원 단위 / 비원화 ±3%) ────────────────────
+# ── ±3% 판정 (hypothesis property) ───────────────────────────
 
 @given(
     price=st.floats(min_value=1.0, max_value=1e7, allow_nan=False, allow_infinity=False),
     ratio=st.floats(min_value=-0.10, max_value=0.10, allow_nan=False),
 )
 def test_price_tolerance_property(price, ratio):
-    # US 등 비원화 시장은 기존 ±3% 판정 유지. 경계 모호구간은 제외한다.
+    # 경계(정확히 3%)의 부동소수 모호구간은 제외하고 성질만 검증
     assume(abs(abs(ratio) - 0.03) > 1e-4)
-    answer = _snap(price=price, market=Market.US)
+    answer = _snap(price=price)
     submitted = price * (1 + ratio)
     expected = abs(ratio) <= 0.03
     assert judge_price(answer, str(submitted)) is expected
 
 
-def test_price_tolerance_exact_boundary_is_correct_for_non_kr():
-    answer = _snap(price=100000.0, market=Market.US)
+def test_price_tolerance_exact_boundary_is_correct():
+    answer = _snap(price=100000.0)
     assert judge_price(answer, "103000") is True   # 정확히 +3.0%
     assert judge_price(answer, "97000") is True     # 정확히 -3.0%
     assert judge_price(answer, "103100") is False    # +3.1%
     assert judge_price(answer, "abc") is None        # 파싱 실패
-
-
-def test_kr_price_quiz_uses_ten_thousand_won_bucket():
-    answer = _snap(price=78500.0, market=Market.KR)
-
-    assert parse_price("8만원") == 80000
-    assert judge_price(answer, "8") is True
-    assert judge_price(answer, "8만원") is True
-    assert judge_price(answer, "80000원") is True
-    assert judge_price(answer, "7") is False
-    assert judge_price(answer, "abc") is None
 
 
 # ── 별칭/정규화 (hypothesis 불변성) ──────────────────────────
@@ -222,42 +210,6 @@ def test_analysis_uses_reason_when_present():
     )
     ana = build_analysis(_snap(), reason=r)
     assert ana.reason_line == "HBM 수요 강세 보도"
-
-
-def test_question_analysis_is_five_lines_and_hides_answer_for_name_quizzes():
-    snap = _snap("삼성전자", rank=1)
-    reason = Reason(
-        ticker="005930",
-        text="삼성전자 HBM 수요 강세 보도",
-        source_url="https://x.example/n",
-        published_at=datetime.now(_KST),
-    )
-    hidden = build_question_analysis(snap, "chart", reason)
-    public = build_question_analysis(snap, "price", reason)
-
-    assert len(hidden) == 5
-    assert len(public) == 5
-    assert all(snap.name not in line for line in hidden)
-    assert any(snap.name in line for line in public)
-    assert hidden[-1] == "검색으로 확인한 특징: 해당 종목 HBM 수요 강세 보도"
-    assert public[-1] == "검색으로 확인한 특징: 삼성전자 HBM 수요 강세 보도"
-
-
-def test_answer_analysis_is_five_lines_and_differs_from_question_analysis():
-    snap = _snap("삼성전자", rank=1)
-    reason = Reason(
-        ticker="005930",
-        text="HBM 수요 강세 보도",
-        source_url="https://x.example/n",
-        published_at=datetime.now(_KST),
-    )
-    question_lines = build_question_analysis(snap, "company")
-    answer_lines = build_answer_analysis_lines(snap, reason)
-
-    assert len(answer_lines) == 5
-    assert answer_lines != question_lines
-    assert any(snap.name in line for line in answer_lines)
-    assert answer_lines[-1] == "확인된 공개 이슈: HBM 수요 강세 보도"
 
 
 def test_reason_without_source_url_raises():

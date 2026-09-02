@@ -18,7 +18,7 @@ from clients import MockMarketClient
 from batch import DailyBatch, MockReasonProvider
 from contracts.schemas import Market, Period, Verdict
 from server.cache import DataValidationError, QuizCache
-from server.handlers import DISCLAIMER, QuizHandlers, QuizMode
+from server.handlers import DISCLAIMER, QuizHandlers
 from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
 
@@ -131,30 +131,18 @@ async def test_quiz_modes_route_and_show_intro(cache):
     # 주가 모드
     p = handlers.quiz(QuizMode.PRICE, "테스터", Market.KR)
     assert "주가 퀴즈" in p.markdown and p.quiz_id
-    assert "문제 분석" in p.markdown
-    assert p.widget is not None
-    assert f"/quiz/chart/{p.quiz_id}.png" in json.dumps(p.widget, ensure_ascii=False)
     assert store.get(p.quiz_id).quiz_type.value == "price"
 
     # 종목 모드
     s = handlers.quiz(QuizMode.STOCK, "테스터", Market.KR)
     assert "종목 퀴즈" in s.markdown and s.quiz_id
-    assert "문제 분석" in s.markdown
-    assert "5." in s.markdown
-    assert s.widget is not None
-    assert f"/quiz/chart/{s.quiz_id}.png" in json.dumps(s.widget, ensure_ascii=False)
     assert store.get(s.quiz_id).quiz_type.value == "company"
     assert store.get(s.quiz_id).answer.name not in s.markdown  # 정답 미노출
 
     # 시장 모드 (방향 랜덤) — gainer/loser 중 하나
     m = handlers.quiz(QuizMode.MARKET, "테스터", Market.KR, Period.WEEK)
     assert "시장 퀴즈" in m.markdown and m.quiz_id
-    assert "문제 분석" in m.markdown
-    assert "5." in m.markdown
-    assert m.widget is not None
-    assert f"/quiz/chart/{m.quiz_id}.png" in json.dumps(m.widget, ensure_ascii=False)
     assert store.get(m.quiz_id).quiz_type.value in ("gainer", "loser")
-    assert store.get(m.quiz_id).answer.name not in m.markdown
 
     # US는 모드와 무관하게 차단
     from server.handlers import _US_BLOCKED_MD
@@ -194,13 +182,12 @@ async def test_full_scenario_price_quiz(cache):
     assert wrong.widget is not None
     assert wrong.widget["name"] == "wrong_answer"
 
-    # 정답 → 5줄 정답 분석 + 3택 + 면책 문구
+    # 정답 → 미니분석 + 2택 + 면책 문구
     correct = await handlers.submit_answer(out.quiz_id, str(state.answer.price), "테스터")
     assert correct.verdict == Verdict.CORRECT
     assert correct.analysis is not None
     assert DISCLAIMER in correct.markdown
-    assert "정답 분석" in correct.markdown
-    assert "5. 확인된 공개 이슈" in correct.markdown
+    assert "미니분석" in correct.markdown          # 미니분석 자동 표시
     assert correct.next_actions == ["다음 퀴즈", "다른 퀴즈", "종료"]
     assert correct.widget is not None
     assert correct.widget["name"] == "correct_answer"
@@ -221,7 +208,7 @@ async def test_first_try_correct_adds_three_points_and_ranking(cache):
 
     assert "3점" in correct.markdown
     assert "주간 TOP3" in correct.markdown
-    assert "내 순위 1위 · 내 점수 3점" in correct.markdown
+    assert "내 점수 3점 · 1위" in correct.markdown
     assert correct.leaderboard is not None
     assert correct.leaderboard.my_rank == 1
 
@@ -299,7 +286,7 @@ async def test_wrong_then_correct_applies_penalty_then_reward(cache):
 
     assert wrong.leaderboard.my_entry.score == -1
     assert "점수 1점 감점" in wrong.markdown
-    assert "이번 정답으로 2점 획득" in correct.markdown
+    assert "이번 정답으로 **2점** 획득" in correct.markdown
     assert correct.leaderboard.my_entry.score == 1
     assert "내 점수 1점" in correct.markdown
 
@@ -317,15 +304,13 @@ async def test_quiz_widget_shows_live_leaderboard(cache):
     out = handlers.quiz(QuizMode.PRICE, "랭커", Market.KR)
 
     assert out.widget is not None
-    assert "주간 TOP3" in out.markdown
-    assert "내 점수 3점" in out.markdown
     assert "주간 TOP3" in out.widget["copy_text"]
     assert "내 점수 3점" in out.widget["copy_text"]
 
 
 @pytest.mark.asyncio
 async def test_oauth_identity_key_scores_under_stable_identity(cache):
-    """OAuth/플랫폼 식별자가 있으면 자동 닉네임을 표시명, subject를 점수 키로 쓴다."""
+    """OAuth/플랫폼 식별자가 있으면 닉네임은 표시명, 점수 키는 식별자로 쓴다."""
     store = QuizStore()
     score_store = ScoreStore()
     handlers = QuizHandlers(cache, store, score_store)
@@ -341,65 +326,9 @@ async def test_oauth_identity_key_scores_under_stable_identity(cache):
 
     assert correct.leaderboard is not None
     assert correct.leaderboard.my_entry.identity_key == "oauth-user-1"
-    assert correct.leaderboard.my_entry.display_name.startswith("주식러")
+    assert correct.leaderboard.my_entry.display_name == "화면닉"
     assert score_store.leaderboard("oauth-user-1").my_entry.score == 3
     assert score_store.leaderboard("화면닉").my_entry.score == 0
-
-
-@pytest.mark.asyncio
-async def test_oauth_identity_keeps_one_entry_when_nickname_changes(cache):
-    """같은 OAuth subject는 사용자가 다른 닉네임을 말해도 한 랭킹 엔트리로 합산된다."""
-    store = QuizStore()
-    score_store = ScoreStore()
-    handlers = QuizHandlers(cache, store, score_store)
-    first = handlers.price_quiz(Market.KR)
-    first_state = store.get(first.quiz_id)
-
-    wrong = await handlers.submit_answer(
-        first.quiz_id,
-        str(first_state.answer.price * 0.5),
-        "바보",
-        identity_key="oauth-user-same",
-    )
-    second = handlers.price_quiz(Market.KR)
-    second_state = store.get(second.quiz_id)
-    correct = await handlers.submit_answer(
-        second.quiz_id,
-        str(second_state.answer.price),
-        "보바",
-        identity_key="oauth-user-same",
-    )
-
-    assert wrong.leaderboard is not None
-    assert correct.leaderboard is not None
-    assert correct.leaderboard.my_entry.identity_key == "oauth-user-same"
-    assert correct.leaderboard.my_entry.score == 2
-    assert correct.leaderboard.my_entry.display_name == wrong.leaderboard.my_entry.display_name
-    assert score_store.leaderboard("바보").my_entry.score == 0
-    assert score_store.leaderboard("보바").my_entry.score == 0
-
-
-@pytest.mark.asyncio
-async def test_oauth_identity_can_score_without_nickname(cache):
-    """로그인 사용자는 닉네임을 입력하지 않아도 자동 닉네임으로 점수와 랭킹을 받는다."""
-    store = QuizStore()
-    score_store = ScoreStore()
-    handlers = QuizHandlers(cache, store, score_store)
-    out = handlers.quiz(None, None, identity_key="oauth-no-name")
-    assert out.widget is not None
-    assert "주식러" in out.widget["copy_text"]
-
-    quiz = handlers.quiz(QuizMode.PRICE, None, identity_key="oauth-no-name")
-    state = store.get(quiz.quiz_id)
-    correct = await handlers.submit_answer(
-        quiz.quiz_id,
-        str(state.answer.price),
-        identity_key="oauth-no-name",
-    )
-
-    assert correct.leaderboard is not None
-    assert correct.leaderboard.my_entry.score == 3
-    assert correct.leaderboard.my_entry.display_name.startswith("주식러")
 
 
 @pytest.mark.asyncio
@@ -573,9 +502,7 @@ async def test_tool_returns_widget_json_and_markdown_fallback(cache):
 
     quiz_tool = await app.get_tool("quiz")
     submit_tool = await app.get_tool("submit_answer")
-    assert "nickname" not in quiz_tool.parameters["properties"]
-    assert "nickname" not in submit_tool.parameters["properties"]
-    quiz_result = quiz_tool.fn(mode="주가")
+    quiz_result = quiz_tool.fn(mode="주가", nickname="테스터")
     quiz_payload = json.loads(quiz_result)
     assert quiz_payload["name"] == "price_quiz"
 
@@ -584,20 +511,21 @@ async def test_tool_returns_widget_json_and_markdown_fallback(cache):
     wrong_result = await submit_tool.fn(
         quiz_id=quiz_id,
         answer=str(state.answer.price * 0.5),
+        nickname="테스터",
     )
     wrong_payload = json.loads(wrong_result)
     assert wrong_payload["name"] == "wrong_answer"
 
     # US 차단도 이제 위젯으로 반환된다(더 이상 마크다운 폴백 아님).
-    us_result = quiz_tool.fn(mode="주가", market="US")
+    us_result = quiz_tool.fn(mode="주가", nickname="테스터", market="US")
     us_payload = json.loads(us_result)
     assert us_payload["name"] == "us_blocked"
     assert _US_BLOCKED_MD in us_payload["copy_text"] or "해외" in us_payload["copy_text"]
 
 
 @pytest.mark.asyncio
-async def test_tool_does_not_score_without_user_subject(cache):
-    """OAuth subject/user_id가 없으면 툴 스키마가 닉네임을 받지 않아 점수를 쌓지 않는다."""
+async def test_tool_scoring_ignores_oauth_client_id_without_user_subject(cache):
+    """OAuth client_id만 있으면 앱 ID라서 사용자 점수 키로 쓰지 않고 닉네임을 쓴다."""
     from server.main import build_app
 
     class FakeContext:
@@ -610,70 +538,24 @@ async def test_tool_does_not_score_without_user_subject(cache):
 
     quiz_tool = await app.get_tool("quiz")
     submit_tool = await app.get_tool("submit_answer")
-    quiz_tool.fn(mode="주가", ctx=FakeContext())
+    quiz_tool.fn(mode="주가", nickname="개인A", ctx=FakeContext())
 
     quiz_id = next(iter(store._data))
     state = store.get(quiz_id)
     await submit_tool.fn(
         quiz_id=quiz_id,
         answer=str(state.answer.price),
+        nickname="개인A",
         ctx=FakeContext(),
     )
 
-    assert score_store.leaderboard("개인A").my_entry.score == 0
+    assert score_store.leaderboard("개인A").my_entry.score == 3
     assert score_store.leaderboard("stockquiz-playmcp-87440044842919710").my_entry.score == 0
-
-
-def test_tool_identity_ignores_oauth_client_id_meta():
-    """PlayMCP client_id는 앱 식별자라 사용자 랭킹 키로 쓰지 않는다."""
-    from server.main import _tool_identity_key
-
-    class RequestContext:
-        meta = {"client_id": "stockquiz-playmcp-87440044842919710"}
-
-    class ClientOnlyContext:
-        request_context = RequestContext()
-
-    class SubjectContext:
-        request_context = type(
-            "RequestContext",
-            (),
-            {"meta": {"subject": "kakao:real-user", "client_id": "stockquiz-playmcp-1"}},
-        )()
-
-    assert _tool_identity_key(None, ClientOnlyContext()) is None
-    assert _tool_identity_key(None, SubjectContext()) == "kakao:real-user"
-
-
-def test_tool_identity_uses_hashed_oauth_token_without_subject(monkeypatch):
-    """subject가 없는 OAuth 토큰도 토큰 해시 기반 자동 닉네임 경로를 탄다."""
-    import server.main as main
-
-    class UserAccessToken:
-        subject = None
-        claims = None
-        token = "issued-user-access-token"
-
-    class StaticPreviewToken:
-        subject = None
-        claims = None
-        token = "stockquiz-preview-token"
-
-    monkeypatch.setattr(main, "get_access_token", lambda: UserAccessToken())
-    identity_key = main._tool_identity_key(None, None)
-    assert identity_key is not None
-    assert identity_key.startswith("oauth-token:")
-    assert "issued-user-access-token" not in identity_key
-
-    monkeypatch.setattr(main, "get_access_token", lambda: StaticPreviewToken())
-    static_identity_key = main._tool_identity_key(None, None)
-    assert static_identity_key is not None
-    assert static_identity_key.startswith("oauth-token:")
 
 
 @pytest.mark.asyncio
 async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
-    """OAuth subject가 있으면 닉네임 없이도 subject 기준으로 점수를 적립한다."""
+    """OAuth subject가 있으면 닉네임이 아니라 subject 기준으로 점수를 적립한다."""
     import server.main as main
 
     class FakeAccessToken:
@@ -687,51 +569,18 @@ async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
 
     quiz_tool = await app.get_tool("quiz")
     submit_tool = await app.get_tool("submit_answer")
-    quiz_tool.fn(mode="주가")
+    quiz_tool.fn(mode="주가", nickname="같은닉네임")
 
     quiz_id = next(iter(store._data))
     state = store.get(quiz_id)
     await submit_tool.fn(
         quiz_id=quiz_id,
         answer=str(state.answer.price),
+        nickname="같은닉네임",
     )
 
     assert score_store.leaderboard("playmcp-user-subject-1").my_entry.score == 3
-    assert score_store.leaderboard("playmcp-user-subject-1").my_entry.display_name.startswith("주식러")
-
-
-@pytest.mark.asyncio
-async def test_tool_scoring_uses_automatic_nickname_for_subjectless_oauth_token(
-    cache, monkeypatch
-):
-    """subject가 없어도 OAuth 토큰별 자동 닉네임으로 점수와 순위를 보여준다."""
-    import server.main as main
-
-    class FakeAccessToken:
-        subject = None
-        claims = None
-        token = "issued-user-access-token"
-
-    monkeypatch.setattr(main, "get_access_token", lambda: FakeAccessToken())
-
-    store = QuizStore()
-    score_store = ScoreStore()
-    app = main.build_app(cache, store, score_store, QuizBank(rng=random.Random(0)))
-
-    quiz_tool = await app.get_tool("quiz")
-    submit_tool = await app.get_tool("submit_answer")
-    quiz_text = quiz_tool.fn(mode="주가")
-
-    quiz_id = next(iter(store._data))
-    state = store.get(quiz_id)
-    answer_text = await submit_tool.fn(
-        quiz_id=quiz_id,
-        answer=str(state.answer.price),
-    )
-
-    assert "내 순위 1위 · 내 점수 0점" in quiz_text
-    assert "내 순위 1위 · 내 점수 3점" in answer_text
-    assert "주식러" in answer_text
+    assert score_store.leaderboard("같은닉네임").my_entry.score == 0
 
 
 def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
@@ -754,350 +603,12 @@ def test_mcp_trailing_slash_redirect_keeps_forwarded_https(cache):
             "/mcp/",
             json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
             follow_redirects=False,
-            headers={"Accept": "application/json, text/event-stream"},
         )
 
     assert response.status_code == 307
     assert response.headers["location"] == (
         "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/mcp"
     )
-
-
-@pytest.mark.asyncio
-async def test_mcp_trailing_slash_bearer_preserves_auth_subject():
-    """`/mcp/` tools/call에서도 OAuth subject가 툴 컨텍스트까지 유지된다."""
-    from mcp.server.auth.middleware.auth_context import get_access_token
-    from mcp.server.auth.provider import AccessToken
-    from server.main import MCPSelectiveAuthMiddleware
-
-    token = AccessToken(
-        token="tok",
-        client_id="stockquiz-playmcp-87440044842919710",
-        scopes=[],
-        subject="kakao:rank-user",
-    )
-
-    class Provider:
-        async def verify_token(self, raw: str):
-            assert raw == "tok"
-            return token
-
-    seen = {}
-
-    async def app(scope, receive, send):
-        access_token = get_access_token()
-        seen["path"] = scope["path"]
-        seen["subject"] = access_token.subject if access_token else None
-        await send({"type": "http.response.start", "status": 204, "headers": []})
-        await send({"type": "http.response.body", "body": b""})
-
-    middleware = MCPSelectiveAuthMiddleware(app, Provider())
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call"}).encode()
-    sent = False
-
-    async def receive():
-        nonlocal sent
-        if sent:
-            return {"type": "http.request", "body": b"", "more_body": False}
-        sent = True
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    messages = []
-
-    async def send(message):
-        messages.append(message)
-
-    await middleware(
-        {
-            "type": "http",
-            "method": "POST",
-            "path": "/mcp/",
-            "raw_path": b"/mcp/",
-            "headers": [(b"authorization", b"Bearer tok")],
-        },
-        receive,
-        send,
-    )
-
-    assert messages[0]["status"] == 204
-    assert seen == {"path": "/mcp", "subject": "kakao:rank-user"}
-
-
-@pytest.mark.asyncio
-async def test_mcp_bearer_without_subject_preserves_hashed_identity():
-    """FastMCP 컨텍스트가 subject를 주지 않아도 검증된 Bearer 토큰으로 랭킹 키를 만든다."""
-    from mcp.server.auth.provider import AccessToken
-    from server.main import MCPSelectiveAuthMiddleware, _tool_identity_key
-
-    token = AccessToken(
-        token="subjectless-user-token",
-        client_id="stockquiz-playmcp-87440044842919710",
-        scopes=[],
-        subject=None,
-    )
-
-    class Provider:
-        async def verify_token(self, raw: str):
-            assert raw == "subjectless-user-token"
-            return token
-
-    seen = {}
-
-    async def app(scope, receive, send):
-        seen["path"] = scope["path"]
-        seen["identity"] = _tool_identity_key(None, None)
-        await send({"type": "http.response.start", "status": 204, "headers": []})
-        await send({"type": "http.response.body", "body": b""})
-
-    middleware = MCPSelectiveAuthMiddleware(app, Provider())
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call"}).encode()
-    sent = False
-
-    async def receive():
-        nonlocal sent
-        if sent:
-            return {"type": "http.request", "body": b"", "more_body": False}
-        sent = True
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    messages = []
-
-    async def send(message):
-        messages.append(message)
-
-    await middleware(
-        {
-            "type": "http",
-            "method": "POST",
-            "path": "/mcp",
-            "raw_path": b"/mcp",
-            "headers": [(b"authorization", b"Bearer subjectless-user-token")],
-        },
-        receive,
-        send,
-    )
-
-    assert messages[0]["status"] == 204
-    assert seen["path"] == "/mcp"
-    assert seen["identity"].startswith("oauth-token:")
-    assert "subjectless-user-token" not in seen["identity"]
-
-
-def test_chart_image_route_renders_png(cache):
-    from server.main import _runtime_middleware, build_app
-
-    store = QuizStore()
-    app = build_app(
-        cache,
-        store,
-        ScoreStore(),
-        QuizBank(rng=random.Random(0)),
-    ).http_app(
-        transport="streamable-http",
-        stateless_http=True,
-        json_response=True,
-        middleware=_runtime_middleware(),
-    )
-    handlers = QuizHandlers(cache, store, ScoreStore(), QuizBank(rng=random.Random(0)))
-    outcome = handlers.price_quiz(Market.KR)
-
-    with TestClient(
-        app,
-        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
-    ) as client:
-        response = client.get(f"/quiz/chart/{outcome.quiz_id}.png")
-
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "image/png"
-    assert response.content.startswith(b"\x89PNG")
-
-
-def test_logo_asset_route_serves_png(cache):
-    from server.main import _runtime_middleware, build_app
-
-    app = build_app(
-        cache,
-        QuizStore(),
-        ScoreStore(),
-        QuizBank(rng=random.Random(0)),
-    ).http_app(
-        transport="streamable-http",
-        stateless_http=True,
-        json_response=True,
-        middleware=_runtime_middleware(),
-    )
-
-    with TestClient(
-        app,
-        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
-    ) as client:
-        responses = [
-            client.get("/assets/logo.png"),
-            client.get("/assets/logo-banner.png"),
-        ]
-
-    for response in responses:
-        assert response.status_code == 200
-        assert response.headers["content-type"] == "image/png"
-        assert response.content.startswith(b"\x89PNG")
-
-
-def test_health_route_reports_revision(cache):
-    from server.main import _runtime_middleware, build_app
-
-    app = build_app(
-        cache,
-        QuizStore(),
-        ScoreStore(),
-        QuizBank(rng=random.Random(0)),
-    ).http_app(
-        transport="streamable-http",
-        stateless_http=True,
-        json_response=True,
-        middleware=_runtime_middleware(),
-    )
-
-    with TestClient(
-        app,
-        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
-    ) as client:
-        response = client.get("/health")
-
-    assert response.status_code == 200
-    assert response.json()["revision"] == "ranking-no-login-v3"
-
-
-def test_runtime_requirements_include_chart_renderer():
-    requirements = Path("requirements.txt").read_text(encoding="utf-8")
-
-    assert "matplotlib" in requirements
-
-
-def test_create_server_uses_sqlite_runtime_state(monkeypatch, tmp_path):
-    from server.main import create_server
-
-    state_db = tmp_path / "runtime.sqlite3"
-    monkeypatch.setenv("OAUTH_ENABLED", "0")
-    monkeypatch.setenv("STATE_DB_PATH", str(state_db))
-
-    create_server()
-
-    assert state_db.exists()
-
-
-def test_create_server_enables_auth_middleware_before_runtime_run(
-    monkeypatch, tmp_path
-):
-    from server import main
-
-    monkeypatch.setenv("OAUTH_ENABLED", "1")
-    monkeypatch.setenv("STATE_DB_PATH", str(tmp_path / "runtime.sqlite3"))
-    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
-
-    main.create_server()
-    middleware_classes = [item.cls for item in main._runtime_middleware()]
-
-    assert main.MCPSelectiveAuthMiddleware in middleware_classes
-
-
-def test_create_server_can_select_redis_runtime_state(monkeypatch):
-    from server import main
-
-    calls: list[tuple[str, str, str]] = []
-
-    class FakeRedisQuizStore(QuizStore):
-        def __init__(self, redis_url: str, *, key_prefix: str):
-            calls.append(("quiz", redis_url, key_prefix))
-            super().__init__()
-
-    class FakeRedisScoreStore(ScoreStore):
-        def __init__(self, redis_url: str, *, key_prefix: str):
-            calls.append(("score", redis_url, key_prefix))
-            super().__init__()
-
-    monkeypatch.setenv("OAUTH_ENABLED", "0")
-    monkeypatch.setenv("STATE_BACKEND", "redis")
-    monkeypatch.setenv("REDIS_URL", "redis://example.internal:6379/0")
-    monkeypatch.setenv("REDIS_KEY_PREFIX", "stockquiz-prod")
-    monkeypatch.setattr(main, "RedisQuizStore", FakeRedisQuizStore)
-    monkeypatch.setattr(main, "RedisScoreStore", FakeRedisScoreStore)
-
-    main.create_server()
-
-    assert calls == [
-        ("quiz", "redis://example.internal:6379/0", "stockquiz-prod"),
-        ("score", "redis://example.internal:6379/0", "stockquiz-prod"),
-    ]
-
-
-def test_sqlite_runtime_is_default_even_if_redis_url_exists(monkeypatch, tmp_path):
-    from server.main import create_server
-
-    state_db = tmp_path / "runtime.sqlite3"
-    monkeypatch.setenv("OAUTH_ENABLED", "0")
-    monkeypatch.delenv("STATE_BACKEND", raising=False)
-    monkeypatch.setenv("REDIS_URL", "redis://example.internal:6379/0")
-    monkeypatch.setenv("STATE_DB_PATH", str(state_db))
-
-    create_server()
-
-    assert state_db.exists()
-
-
-def test_redis_runtime_state_requires_url(monkeypatch):
-    from server.main import _runtime_stores
-
-    monkeypatch.setenv("STATE_BACKEND", "redis")
-    monkeypatch.delenv("REDIS_URL", raising=False)
-
-    with pytest.raises(RuntimeError, match="REDIS_URL"):
-        _runtime_stores()
-
-
-def test_ops_stats_reports_aggregate_counts(cache, monkeypatch, tmp_path):
-    from server.main import _runtime_middleware, build_app
-
-    path = tmp_path / "scores.json"
-    store = QuizStore()
-    score_store = ScoreStore(snapshot_path=path)
-    app = build_app(
-        cache,
-        store,
-        score_store,
-        QuizBank(rng=random.Random(0)),
-    ).http_app(
-        transport="streamable-http",
-        stateless_http=True,
-        json_response=True,
-        middleware=_runtime_middleware(),
-    )
-    handlers = QuizHandlers(cache, store, score_store, QuizBank(rng=random.Random(0)))
-    outcome = handlers.quiz(QuizMode.PRICE, None, identity_key="oauth-stats")
-    state = store.get(outcome.quiz_id)
-
-    async def answer():
-        await handlers.submit_answer(
-            outcome.quiz_id,
-            str(state.answer.price * 0.5),
-            identity_key="oauth-stats",
-        )
-        await score_store.snapshot_save()
-
-    asyncio.run(answer())
-
-    with TestClient(
-        app,
-        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
-    ) as client:
-        response = client.get("/ops/stats")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "ok"
-    assert payload["scoreboard"]["quiz_players"] == 1
-    assert payload["scoreboard"]["quiz_starts"] == 1
-    assert payload["scoreboard"]["submitted_answers"] == 1
-    assert payload["scoreboard"]["wrong_answers"] == 1
 
 
 def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, tmp_path):
@@ -1147,7 +658,7 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
             )["token"][0]
             response = client.post(
                 "/oauth/consent",
-                data={"token": token, "decision": "allow"},
+                data={"token": token, "decision": "allow", "agree": "yes"},
                 follow_redirects=False,
             )
             location = response.headers["location"]
@@ -1240,34 +751,25 @@ def test_static_oauth_client_accepts_post_and_basic_secret(cache, monkeypatch, t
     assert post_response.status_code == 200
     assert no_secret_response.status_code == 200
     assert revoke_response.status_code == 200
-    assert revoked_tools_response.status_code == 200
-    assert "www-authenticate" not in revoked_tools_response.headers
+    assert revoked_tools_response.status_code == 401
     assert basic_response.status_code == 200
     assert upper_basic_response.status_code == 200
 
 
-def test_oauth_can_delegate_user_login_to_kakao(cache, monkeypatch, tmp_path):
-    """KAKAO_REST_API_KEY가 있으면 Kakao Login 후 자체 동의와 token 발급을 이어간다."""
+def test_oauth_uses_local_consent_even_when_kakao_login_env_exists(
+    cache, monkeypatch, tmp_path
+):
+    """카카오 인증서버를 쓰지 않고 주식대결 인증서버가 동의와 token 발급을 모두 처리한다."""
     import base64
     import hashlib
     import urllib.parse
 
-    from server.auth import KakaoRestrictedOAuthProvider
     from server.main import _runtime_middleware, create_server
-
-    async def exchange_stub(self, code):
-        assert code == "kakao-code"
-        return "kakao-access-token"
-
-    async def subject_stub(self, access_token):
-        assert access_token == "kakao-access-token"
-        return "kakao:12345"
 
     monkeypatch.setenv("OAUTH_ENABLED", "1")
     monkeypatch.setenv("KAKAO_REST_API_KEY", "rest-api-key")
+    monkeypatch.setenv("KAKAO_CLIENT_SECRET", "client-secret")
     monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
-    monkeypatch.setattr(KakaoRestrictedOAuthProvider, "_exchange_kakao_code", exchange_stub)
-    monkeypatch.setattr(KakaoRestrictedOAuthProvider, "_fetch_kakao_subject", subject_stub)
     client_id = "stockquiz-playmcp-87440044842919710"
     redirect_uri = (
         "https://playmcp.kakao.com/api/v1/applied-mcps/"
@@ -1300,20 +802,13 @@ def test_oauth_can_delegate_user_login_to_kakao(cache, monkeypatch, tmp_path):
             },
             follow_redirects=False,
         )
-        kakao_location = authorize_response.headers["location"]
-        kakao_query = urllib.parse.parse_qs(urllib.parse.urlsplit(kakao_location).query)
-        callback_response = client.get(
-            "/oauth/kakao/callback",
-            params={"code": "kakao-code", "state": kakao_query["state"][0]},
-            follow_redirects=False,
-        )
-        consent_location = callback_response.headers["location"]
+        consent_location = authorize_response.headers["location"]
         consent_token = urllib.parse.parse_qs(
             urllib.parse.urlsplit(consent_location).query
         )["token"][0]
         consent_response = client.post(
             "/oauth/consent",
-            data={"token": consent_token, "decision": "allow"},
+            data={"token": consent_token, "decision": "allow", "agree": "yes"},
             follow_redirects=False,
         )
         callback = consent_response.headers["location"]
@@ -1329,20 +824,16 @@ def test_oauth_can_delegate_user_login_to_kakao(cache, monkeypatch, tmp_path):
             },
         )
 
-    assert kakao_location.startswith("https://kauth.kakao.com/oauth/authorize?")
-    assert kakao_query["client_id"] == ["rest-api-key"]
-    assert kakao_query["redirect_uri"] == [
-        "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/oauth/kakao/callback"
-    ]
+    assert authorize_response.status_code == 302
     assert consent_location.startswith("/oauth/consent?token=")
     assert callback.startswith(redirect_uri)
     assert token_response.status_code == 200
 
 
-def test_mcp_tools_list_and_call_do_not_require_verification_header(
+def test_mcp_tools_list_does_not_require_verification_header(
     cache, monkeypatch, tmp_path
 ):
-    """PlayMCP는 Header Name/Value 없이 tools/list와 tools/call을 조회할 수 있다."""
+    """PlayMCP 정보 불러오기는 Header Name/Value 없이 tools/list를 조회할 수 있다."""
     from server.main import _runtime_middleware, create_server
 
     monkeypatch.setenv("OAUTH_ENABLED", "1")
@@ -1375,8 +866,8 @@ def test_mcp_tools_list_and_call_do_not_require_verification_header(
         )
 
     assert tools_response.status_code == 200
-    assert call_response.status_code == 200
-    assert "www-authenticate" not in call_response.headers
+    assert call_response.status_code == 401
+    assert "www-authenticate" in call_response.headers
 
 
 def test_static_oauth_accepts_future_playmcp_id_without_code_change(
@@ -1430,7 +921,7 @@ def test_static_oauth_accepts_future_playmcp_id_without_code_change(
         )["token"][0]
         response = client.post(
             "/oauth/consent",
-            data={"token": token, "decision": "allow"},
+            data={"token": token, "decision": "allow", "agree": "yes"},
             follow_redirects=False,
         )
         callback = response.headers["location"]
@@ -1502,7 +993,7 @@ def test_static_oauth_client_accepts_kakaocloud_console_redirect(
             )["token"][0]
             response = client.post(
                 "/oauth/consent",
-                data={"token": token, "decision": "allow"},
+                data={"token": token, "decision": "allow", "agree": "yes"},
                 follow_redirects=False,
             )
             location = response.headers["location"]
@@ -1530,87 +1021,6 @@ def test_static_oauth_client_accepts_kakaocloud_console_redirect(
     assert location.startswith(redirect_uri)
     assert token_response.status_code == 200
     assert tools_response.status_code == 200
-
-
-def test_runtime_mcp_call_with_static_bearer_shows_ranking(
-    cache, monkeypatch, tmp_path
-):
-    """운영 MCP 경로에서 subject 없는 Bearer 토큰도 자동 랭킹을 보여준다."""
-    from server.auth import _DEFAULT_PLAYMCP_BEARER_TOKEN
-    from server.main import _runtime_middleware, create_server
-
-    monkeypatch.setenv("OAUTH_ENABLED", "1")
-    monkeypatch.setenv("STATE_DB_PATH", str(tmp_path / "state.sqlite3"))
-    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
-
-    app = create_server().http_app(
-        transport="streamable-http",
-        stateless_http=True,
-        json_response=True,
-        middleware=_runtime_middleware(),
-    )
-
-    with TestClient(
-        app,
-        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
-    ) as client:
-        response = client.post(
-            "/mcp",
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": "quiz", "arguments": {"mode": "종목"}},
-            },
-            headers={
-                "Accept": "application/json, text/event-stream",
-                "Authorization": f"Bearer {_DEFAULT_PLAYMCP_BEARER_TOKEN}",
-            },
-        )
-
-    assert response.status_code == 200
-    assert "주간 TOP3" in response.text
-    assert "내 순위 1위 · 내 점수 0점" in response.text
-    assert "차트형 힌트" not in response.text
-
-
-def test_runtime_mcp_call_without_bearer_shows_guest_ranking(
-    cache, monkeypatch, tmp_path
-):
-    """로그인 없는 MCP 호출도 막지 않고 익명 랭킹을 보여준다."""
-    from server.main import _runtime_middleware, create_server
-
-    monkeypatch.setenv("OAUTH_ENABLED", "1")
-    monkeypatch.setenv("STATE_DB_PATH", str(tmp_path / "state.sqlite3"))
-    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
-
-    app = create_server().http_app(
-        transport="streamable-http",
-        stateless_http=True,
-        json_response=True,
-        middleware=_runtime_middleware(),
-    )
-
-    with TestClient(
-        app,
-        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
-    ) as client:
-        response = client.post(
-            "/mcp",
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": "quiz", "arguments": {"mode": "시장"}},
-            },
-            headers={"Accept": "application/json, text/event-stream"},
-        )
-
-    assert response.status_code == 200
-    assert "www-authenticate" not in response.headers
-    assert "주간 TOP3" in response.text
-    assert "내 순위 1위 · 내 점수 0점" in response.text
-    assert "차트형 힌트" not in response.text
 
 
 @pytest.mark.asyncio
