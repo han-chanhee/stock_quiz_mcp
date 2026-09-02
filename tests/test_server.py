@@ -823,11 +823,54 @@ def test_oauth_uses_local_consent_even_when_kakao_login_env_exists(
                 "code_verifier": verifier,
             },
         )
+        first_access_token = token_response.json()["access_token"]
+
+        second_verifier = "codex-repeat-login-verifier-012345678901234567890123456789"
+        second_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(second_verifier.encode()).digest()
+        ).decode().rstrip("=")
+        second_authorize_response = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": "playmcp-state-2",
+                "code_challenge": second_challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        second_callback = second_authorize_response.headers["location"]
+        second_code = urllib.parse.parse_qs(
+            urllib.parse.urlsplit(second_callback).query
+        )["code"][0]
+        second_token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "AUTHORIZATION_CODE",
+                "code": second_code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": second_verifier,
+            },
+        )
 
     assert authorize_response.status_code == 302
     assert consent_location.startswith("/oauth/consent?token=")
     assert callback.startswith(redirect_uri)
     assert token_response.status_code == 200
+    assert second_authorize_response.status_code == 302
+    assert second_callback.startswith(redirect_uri)
+    assert second_token_response.status_code == 200
+
+    from server import main
+
+    provider = main._OPTIONAL_AUTH_PROVIDER
+    first_token = provider.access_tokens[first_access_token]
+    second_token = provider.access_tokens[second_token_response.json()["access_token"]]
+    assert first_token.subject == second_token.subject
+    assert first_token.subject.startswith("stockquiz-user-")
 
 
 def test_mcp_tools_list_does_not_require_verification_header(

@@ -26,6 +26,7 @@ FastMCP의 custom_route로 등록한다. 카카오 요구사항(개발 가이드
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 import os
 import re
 import secrets
@@ -83,6 +84,10 @@ _DEFAULT_BASE_URL = "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaoclo
 _DEFAULT_OAUTH_SNAPSHOT_PATH = Path(__file__).parent.parent / "store" / "data" / "oauth.json"
 _DEFAULT_PLAYMCP_CLIENT_SECRET = "stockquiz_3221c246c3f3f4e0b9cd0235c2699c0f772165438b273780"
 _DEFAULT_PLAYMCP_BEARER_TOKEN = "stockquiz_preview_0c28879f772d4f17eb9dfa5f9b4c76de28a278720c57cdeb"
+_SESSION_COOKIE_NAME = "stockquiz_session"
+_SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+_SESSION_ID_RE = re.compile(r"^sq_[A-Za-z0-9_-]{32,}$")
+_SUBJECT_PREFIX = "stockquiz-user-"
 _PLAYMCP_CLIENT_ID_RE = re.compile(r"^stockquiz-playmcp-[0-9]+$")
 _PLAYMCP_CALLBACK_PATH_RE = re.compile(
     r"^/api/v1/applied-mcps/[0-9]+/authorize/oauth:callback$"
@@ -100,6 +105,11 @@ CONSENT_TEXT = {
     "제공 항목": "이용자 식별값 및 그에 연결된 점수·랭킹 정보",
     "보유 및 이용 기간": "연동 해제 시 지체없이 파기",
 }
+
+_REQUEST_SUBJECT: ContextVar[str | None] = ContextVar(
+    "stockquiz_oauth_request_subject",
+    default=None,
+)
 
 
 class FlexibleStaticClientAuthenticator(ClientAuthenticator):
@@ -219,7 +229,24 @@ class PlayMCPAuthorizationHandler(AuthorizationHandler):
         redirect_uri = str(params.get("redirect_uri") or "")
         if client_id and _is_trusted_playmcp_redirect_uri(redirect_uri):
             await self.provider.ensure_redirect_uri_for_client(client_id, redirect_uri)
-        return await super().handle(request)
+
+        session_id, subject, issue_cookie = self.provider.local_user_for_request(request)
+        subject_token = _REQUEST_SUBJECT.set(subject)
+        try:
+            response = await super().handle(request)
+        finally:
+            _REQUEST_SUBJECT.reset(subject_token)
+
+        if issue_cookie:
+            response.set_cookie(
+                _SESSION_COOKIE_NAME,
+                session_id,
+                max_age=_SESSION_COOKIE_MAX_AGE,
+                httponly=True,
+                secure=True,
+                samesite="lax",
+            )
+        return response
 
 
 class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
@@ -242,6 +269,8 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         self._snapshot_path = snapshot_path or _DEFAULT_OAUTH_SNAPSHOT_PATH
         self._allowed_redirect_uri_set = set(allowed_redirect_uris)
         self._consented_clients: set[str] = set()
+        self._consented_subjects: set[str] = set()
+        self._session_subjects: dict[str, str] = {}
         self._static_client_ids: set[str] = set()
         # 동의 대기 중인 요청: consent_token -> (client, params, user_subject)
         self._pending_consents: dict[
@@ -266,6 +295,22 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             scopes=[],
             expires_at=None,
         )
+
+    def local_user_for_request(self, request: Request) -> tuple[str, str, bool]:
+        """Return a stable first-party anonymous subject for this browser session."""
+        cookie_session = request.cookies.get(_SESSION_COOKIE_NAME, "")
+        if (
+            isinstance(cookie_session, str)
+            and _SESSION_ID_RE.fullmatch(cookie_session)
+            and cookie_session in self._session_subjects
+        ):
+            return cookie_session, self._session_subjects[cookie_session], False
+
+        session_id = f"sq_{secrets.token_urlsafe(32)}"
+        subject = f"{_SUBJECT_PREFIX}{secrets.token_urlsafe(18)}"
+        self._session_subjects[session_id] = subject
+        self.snapshot_save()
+        return session_id, subject, True
 
     def _static_client_for_id(self, client_id: str) -> OAuthClientInformationFull | None:
         if not _is_playmcp_client_id(client_id):
@@ -443,7 +488,10 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         문자열"이므로 그대로 재사용). 사용자가 동의 화면에서 승인하면
         _finish_authorize()가 실제 authorize()를 이어서 호출한다.
         """
-        return self.begin_local_consent(client, params)
+        subject = _REQUEST_SUBJECT.get() or f"{_SUBJECT_PREFIX}{secrets.token_urlsafe(18)}"
+        if subject in self._consented_subjects:
+            return await self.finish_authorize(client, params, subject)
+        return self.begin_local_consent(client, params, subject)
 
     def begin_local_consent(
         self,
@@ -529,6 +577,8 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             "access_to_refresh": dict(self._access_to_refresh_map),
             "refresh_to_access": dict(self._refresh_to_access_map),
             "consented_clients": sorted(self._consented_clients),
+            "consented_subjects": sorted(self._consented_subjects),
+            "session_subjects": dict(self._session_subjects),
         }
         tmp = self._snapshot_path.with_suffix(self._snapshot_path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -553,6 +603,17 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
                 for token, info in payload.get("refresh_tokens", {}).items()
             }
             self._consented_clients = set(payload.get("consented_clients", []))
+            self._consented_subjects = set(payload.get("consented_subjects", []))
+            self._session_subjects = {
+                session_id: subject
+                for session_id, subject in payload.get("session_subjects", {}).items()
+                if (
+                    isinstance(session_id, str)
+                    and _SESSION_ID_RE.fullmatch(session_id)
+                    and isinstance(subject, str)
+                    and subject.startswith(_SUBJECT_PREFIX)
+                )
+            }
             self._access_to_refresh_map = {
                 access: refresh
                 for access, refresh in payload.get("access_to_refresh", {}).items()
@@ -563,8 +624,37 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
                 for refresh, access in payload.get("refresh_to_access", {}).items()
                 if refresh in self.refresh_tokens and access in self.access_tokens
             }
+            self._drop_external_subject_tokens()
         except (json.JSONDecodeError, ValueError, TypeError):
             self._quarantine_snapshot()
+
+    def _drop_external_subject_tokens(self) -> None:
+        stale_access = [
+            token
+            for token, info in self.access_tokens.items()
+            if isinstance(info.subject, str) and info.subject.startswith("kakao:")
+        ]
+        for token in stale_access:
+            self.access_tokens.pop(token, None)
+
+        stale_refresh = [
+            token
+            for token, info in self.refresh_tokens.items()
+            if isinstance(info.subject, str) and info.subject.startswith("kakao:")
+        ]
+        for token in stale_refresh:
+            self.refresh_tokens.pop(token, None)
+
+        self._access_to_refresh_map = {
+            access: refresh
+            for access, refresh in self._access_to_refresh_map.items()
+            if access in self.access_tokens and refresh in self.refresh_tokens
+        }
+        self._refresh_to_access_map = {
+            refresh: access
+            for refresh, access in self._refresh_to_access_map.items()
+            if refresh in self.refresh_tokens and access in self.access_tokens
+        }
 
 
 def _static_playmcp_client(
@@ -765,6 +855,7 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
 
         client_id = client.client_id or ""
         provider._consented_clients.add(client_id)
+        provider._consented_subjects.add(subject)
         provider.snapshot_save()
         redirect_uri = await provider.finish_authorize(client, params, subject)
         return RedirectResponse(redirect_uri, status_code=302)

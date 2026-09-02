@@ -3,7 +3,7 @@
 import pytest
 from urllib.parse import parse_qs, urlsplit
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
-from mcp.server.auth.provider import AccessToken, RegistrationError
+from mcp.server.auth.provider import AccessToken, RefreshToken, RegistrationError
 from mcp.shared.auth import OAuthClientInformationFull
 
 from server.auth import (
@@ -202,6 +202,40 @@ def test_oauth_provider_loads_configured_snapshot(monkeypatch, tmp_path):
     assert restored is not None
     assert "c-load" in restored.clients
     assert "c-load" in restored._consented_clients
+
+
+def test_oauth_snapshot_drops_legacy_kakao_subject_tokens(tmp_path):
+    path = tmp_path / "oauth.json"
+    original = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
+    )
+    original.access_tokens["old-access"] = AccessToken(
+        token="old-access",
+        client_id="c-kakao",
+        scopes=[],
+        subject="kakao:12345",
+    )
+    original.refresh_tokens["old-refresh"] = RefreshToken(
+        token="old-refresh",
+        client_id="c-kakao",
+        scopes=[],
+        subject="kakao:12345",
+    )
+    original._access_to_refresh_map["old-access"] = "old-refresh"
+    original._refresh_to_access_map["old-refresh"] = "old-access"
+    original.snapshot_save()
+
+    restored = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",),
+        snapshot_path=path,
+    )
+    restored.snapshot_load()
+
+    assert "old-access" not in restored.access_tokens
+    assert "old-refresh" not in restored.refresh_tokens
+    assert restored._access_to_refresh_map == {}
+    assert restored._refresh_to_access_map == {}
 
 
 def _params():
