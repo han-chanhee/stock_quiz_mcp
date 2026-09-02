@@ -269,7 +269,7 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         self._snapshot_path = snapshot_path or _DEFAULT_OAUTH_SNAPSHOT_PATH
         self._allowed_redirect_uri_set = set(allowed_redirect_uris)
         self._consented_clients: set[str] = set()
-        self._consented_subjects: set[str] = set()
+        self._consented_grants: set[str] = set()
         self._session_subjects: dict[str, str] = {}
         self._static_client_ids: set[str] = set()
         # 동의 대기 중인 요청: consent_token -> (client, params, user_subject)
@@ -489,7 +489,7 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         _finish_authorize()가 실제 authorize()를 이어서 호출한다.
         """
         subject = _REQUEST_SUBJECT.get() or f"{_SUBJECT_PREFIX}{secrets.token_urlsafe(18)}"
-        if subject in self._consented_subjects:
+        if self._consent_grant_key(client, params, subject) in self._consented_grants:
             return await self.finish_authorize(client, params, subject)
         return self.begin_local_consent(client, params, subject)
 
@@ -500,7 +500,7 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         subject: str | None = None,
     ) -> str:
         consent_token = secrets.token_urlsafe(16)
-        user_subject = subject or f"playmcp-user-{secrets.token_urlsafe(18)}"
+        user_subject = subject or f"{_SUBJECT_PREFIX}{secrets.token_urlsafe(18)}"
         self._pending_consents[consent_token] = (client, params, user_subject)
         return f"/oauth/consent?token={consent_token}"
 
@@ -521,6 +521,11 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
     async def revoke_client_consent(self, client_id: str) -> None:
         """연동 해제: 동의 기록과 발급된 토큰/등록 정보를 모두 지운다."""
         self._consented_clients.discard(client_id)
+        self._consented_grants = {
+            grant
+            for grant in self._consented_grants
+            if not self._consent_grant_belongs_to_client(grant, client_id)
+        }
         if client_id not in self._static_client_ids:
             self.clients.pop(client_id, None)
         stale_access = [
@@ -548,6 +553,31 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             if refresh in self.refresh_tokens and access in self.access_tokens
         }
         self.snapshot_save()
+
+    def _consent_grant_key(
+        self,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+        subject: str,
+    ) -> str:
+        return json.dumps(
+            {
+                "client_id": client.client_id or "",
+                "resource": params.resource,
+                "scopes": sorted(params.scopes or []),
+                "subject": subject,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    def _consent_grant_belongs_to_client(self, grant: str, client_id: str) -> bool:
+        try:
+            payload = json.loads(grant)
+        except json.JSONDecodeError:
+            return False
+        return isinstance(payload, dict) and payload.get("client_id") == client_id
 
     def _quarantine_snapshot(self) -> None:
         if not self._snapshot_path.exists():
@@ -577,7 +607,7 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
             "access_to_refresh": dict(self._access_to_refresh_map),
             "refresh_to_access": dict(self._refresh_to_access_map),
             "consented_clients": sorted(self._consented_clients),
-            "consented_subjects": sorted(self._consented_subjects),
+            "consented_grants": sorted(self._consented_grants),
             "session_subjects": dict(self._session_subjects),
         }
         tmp = self._snapshot_path.with_suffix(self._snapshot_path.suffix + ".tmp")
@@ -603,7 +633,11 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
                 for token, info in payload.get("refresh_tokens", {}).items()
             }
             self._consented_clients = set(payload.get("consented_clients", []))
-            self._consented_subjects = set(payload.get("consented_subjects", []))
+            self._consented_grants = {
+                grant
+                for grant in payload.get("consented_grants", [])
+                if isinstance(grant, str)
+            }
             self._session_subjects = {
                 session_id: subject
                 for session_id, subject in payload.get("session_subjects", {}).items()
@@ -855,7 +889,9 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
 
         client_id = client.client_id or ""
         provider._consented_clients.add(client_id)
-        provider._consented_subjects.add(subject)
+        provider._consented_grants.add(
+            provider._consent_grant_key(client, params, subject)
+        )
         provider.snapshot_save()
         redirect_uri = await provider.finish_authorize(client, params, subject)
         return RedirectResponse(redirect_uri, status_code=302)

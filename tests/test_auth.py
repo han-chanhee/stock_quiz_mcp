@@ -8,6 +8,7 @@ from mcp.shared.auth import OAuthClientInformationFull
 
 from server.auth import (
     KakaoRestrictedOAuthProvider,
+    _REQUEST_SUBJECT,
     _authorization_error_redirect,
     _consent_page_html,
     _disconnect_page_html,
@@ -306,6 +307,45 @@ async def test_authorize_after_consent_issues_real_redirect():
 
 
 @pytest.mark.asyncio
+async def test_authorize_reuses_consent_only_for_same_subject_client_and_scope():
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+    )
+    client = OAuthClientInformationFull(
+        client_id="c-consent",
+        redirect_uris=["https://allowed.example/oauth/callback"],
+    )
+    other_client = OAuthClientInformationFull(
+        client_id="c-other",
+        redirect_uris=["https://allowed.example/oauth/callback"],
+    )
+    await provider.register_client(client)
+    await provider.register_client(other_client)
+    subject_token = _REQUEST_SUBJECT.set("stockquiz-user-stable")
+    try:
+        first = await provider.authorize(client, _params())
+        consent_token = parse_qs(urlsplit(first).query)["token"][0]
+        stored_client, stored_params, subject = provider._pending_consents.pop(
+            consent_token
+        )
+        provider._consented_grants.add(
+            provider._consent_grant_key(stored_client, stored_params, subject)
+        )
+
+        second = await provider.authorize(client, _params())
+        other_client_result = await provider.authorize(other_client, _params())
+        other_scope_params = _params()
+        other_scope_params.scopes = ["ranking"]
+        other_scope_result = await provider.authorize(client, other_scope_params)
+    finally:
+        _REQUEST_SUBJECT.reset(subject_token)
+
+    assert second.startswith("https://allowed.example/oauth/callback")
+    assert other_client_result.startswith("/oauth/consent?token=")
+    assert other_scope_result.startswith("/oauth/consent?token=")
+
+
+@pytest.mark.asyncio
 async def test_oauth_snapshot_round_trip_after_token_issue(tmp_path):
     path = tmp_path / "oauth.json"
     provider = KakaoRestrictedOAuthProvider(
@@ -413,6 +453,9 @@ async def test_revoke_client_consent_clears_tokens_and_consent():
     )
     await provider.register_client(client)
     provider._consented_clients.add("c3")
+    provider._consented_grants.add(
+        provider._consent_grant_key(client, _params(), "stockquiz-user-c3")
+    )
     provider.access_tokens["tok1"] = type(
         "T", (), {"client_id": "c3"}
     )()  # 최소 스텁, client_id 속성만 필요
@@ -420,6 +463,7 @@ async def test_revoke_client_consent_clears_tokens_and_consent():
     await provider.revoke_client_consent("c3")
 
     assert "c3" not in provider._consented_clients
+    assert provider._consented_grants == set()
     assert "c3" not in provider.clients
     assert "tok1" not in provider.access_tokens
 

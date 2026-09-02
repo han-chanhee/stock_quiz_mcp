@@ -559,7 +559,7 @@ async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
     import server.main as main
 
     class FakeAccessToken:
-        subject = "playmcp-user-subject-1"
+        subject = "stockquiz-user-subject-1"
 
     monkeypatch.setattr(main, "get_access_token", lambda: FakeAccessToken())
 
@@ -579,7 +579,7 @@ async def test_tool_scoring_prefers_oauth_subject(cache, monkeypatch):
         nickname="같은닉네임",
     )
 
-    assert score_store.leaderboard("playmcp-user-subject-1").my_entry.score == 3
+    assert score_store.leaderboard("stockquiz-user-subject-1").my_entry.score == 3
     assert score_store.leaderboard("같은닉네임").my_entry.score == 0
 
 
