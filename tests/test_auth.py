@@ -51,12 +51,15 @@ def test_oauth_provider_uses_injected_mcp_id(monkeypatch):
         "https://tools.kakao.com/api/v1/applied-mcps/test-id/authorize/oauth:callback",
         "https://playmcp.kakao.com/api/v1/applied-mcps/test-id/authorize/oauth:callback",
         "https://playmcp.kakaocloud.io/api/v1/applied-mcps/test-id/authorize/oauth:callback",
+        "http://tools.onkakao.net/v1/applied-mcps/test-id/authorize/oauth:callback",
         "https://tools.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
         "https://playmcp.kakao.com/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
         "https://playmcp.kakaocloud.io/api/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
+        "http://tools.onkakao.net/v1/applied-mcps/83185073570028966/authorize/oauth:callback",
         "https://tools.kakao.com/api/v1/applied-mcps/3606/authorize/oauth:callback",
         "https://playmcp.kakao.com/api/v1/applied-mcps/3606/authorize/oauth:callback",
         "https://playmcp.kakaocloud.io/api/v1/applied-mcps/3606/authorize/oauth:callback",
+        "http://tools.onkakao.net/v1/applied-mcps/3606/authorize/oauth:callback",
     )
     static = provider.clients["stockquiz-playmcp-test-id"]
     assert static.client_secret == _DEFAULT_PLAYMCP_CLIENT_SECRET
@@ -430,6 +433,8 @@ def test_disconnect_page_escapes_message():
 
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "client_id" not in html
+    assert ">연동 해제</button>" in html
 
 
 def test_authorization_error_redirect_preserves_state_and_query():
@@ -468,6 +473,46 @@ async def test_revoke_client_consent_clears_tokens_and_consent():
     assert provider._consented_grants == set()
     assert "c3" not in provider.clients
     assert "tok1" not in provider.access_tokens
+
+
+@pytest.mark.asyncio
+async def test_revoke_subject_consent_clears_user_tokens_and_session():
+    provider = KakaoRestrictedOAuthProvider(
+        allowed_redirect_uris=("https://allowed.example/oauth/callback",)
+    )
+    client = OAuthClientInformationFull(
+        client_id="c-subject", redirect_uris=["https://allowed.example/oauth/callback"]
+    )
+    await provider.register_client(client)
+    provider._session_subjects["sq_" + "a" * 32] = "stockquiz-user-subject"
+    provider._consented_grants.add(
+        provider._consent_grant_key(client, _params(), "stockquiz-user-subject")
+    )
+    provider.access_tokens["access"] = AccessToken(
+        token="access",
+        client_id="c-subject",
+        scopes=[],
+        expires_at=None,
+        subject="stockquiz-user-subject",
+    )
+    provider.refresh_tokens["refresh"] = RefreshToken(
+        token="refresh",
+        client_id="c-subject",
+        scopes=[],
+        expires_at=None,
+        subject="stockquiz-user-subject",
+    )
+    provider._access_to_refresh_map["access"] = "refresh"
+    provider._refresh_to_access_map["refresh"] = "access"
+
+    await provider.revoke_subject_consent("stockquiz-user-subject")
+
+    assert provider._consented_grants == set()
+    assert provider._session_subjects == {}
+    assert "access" not in provider.access_tokens
+    assert "refresh" not in provider.refresh_tokens
+    assert provider._access_to_refresh_map == {}
+    assert provider._refresh_to_access_map == {}
 
 
 @pytest.mark.asyncio

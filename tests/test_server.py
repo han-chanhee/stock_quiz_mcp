@@ -1089,6 +1089,80 @@ def test_static_oauth_client_accepts_kakaocloud_console_redirect(
     assert tools_response.status_code == 200
 
 
+def test_token_accepts_onkakao_callback_without_client_id(
+    cache, monkeypatch, tmp_path
+):
+    """PlayMCP token 요청이 client_id를 생략하고 canonical redirect_uri를 보내도 허용한다."""
+    import base64
+    import hashlib
+    import urllib.parse
+
+    from server.main import _runtime_middleware, create_server
+
+    monkeypatch.setenv("OAUTH_ENABLED", "1")
+    monkeypatch.setenv("OAUTH_SNAPSHOT_PATH", str(tmp_path / "oauth.json"))
+    client_id = "stockquiz-playmcp-87440044842919710"
+    authorize_redirect_uri = (
+        "http://tools.onkakao.net/v1/applied-mcps/"
+        "87440044842919710/authorize/oauth:callback"
+    )
+    token_redirect_uri = (
+        "https://tools.kakao.com/api/v1/applied-mcps/"
+        "87440044842919710/authorize/oauth:callback"
+    )
+    verifier = "codex-onkakao-verifier-012345678901234567890123456789"
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).decode().rstrip("=")
+    app = create_server().http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": authorize_redirect_uri,
+                "state": "onkakao",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        location = response.headers["location"]
+        token = urllib.parse.parse_qs(
+            urllib.parse.urlsplit(location).query
+        )["token"][0]
+        response = client.post(
+            "/oauth/consent",
+            data={"token": token, "decision": "allow", "agree": "yes"},
+            follow_redirects=False,
+        )
+        callback = response.headers["location"]
+        code = urllib.parse.parse_qs(urllib.parse.urlsplit(callback).query)["code"][0]
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": token_redirect_uri,
+                "code_verifier": verifier,
+                "resource": "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io/mcp",
+            },
+        )
+
+    assert callback.startswith(authorize_redirect_uri)
+    assert token_response.status_code == 200
+
+
 @pytest.mark.asyncio
 async def test_weekly_reset_loop_checks_every_minute(monkeypatch):
     """주간 리셋 루프는 현재 KST 시각을 1분마다 확인한다."""

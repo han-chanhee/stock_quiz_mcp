@@ -68,6 +68,7 @@ _REDIRECT_URI_TEMPLATES = (
     "https://tools.kakao.com/api/v1/applied-mcps/{mcp_id}/authorize/oauth:callback",
     "https://playmcp.kakao.com/api/v1/applied-mcps/{mcp_id}/authorize/oauth:callback",
     "https://playmcp.kakaocloud.io/api/v1/applied-mcps/{mcp_id}/authorize/oauth:callback",
+    "http://tools.onkakao.net/v1/applied-mcps/{mcp_id}/authorize/oauth:callback",
 )
 
 # PlayMCP in KC 콘솔에서 기존 등록된 서버의 환경변수를 편집할 방법을 찾지
@@ -91,6 +92,12 @@ _SUBJECT_PREFIX = "stockquiz-user-"
 _PLAYMCP_CLIENT_ID_RE = re.compile(r"^stockquiz-playmcp-[0-9]+$")
 _PLAYMCP_CALLBACK_PATH_RE = re.compile(
     r"^/api/v1/applied-mcps/[0-9]+/authorize/oauth:callback$"
+)
+_PLAYMCP_ONKAKAO_CALLBACK_PATH_RE = re.compile(
+    r"^/v1/applied-mcps/[0-9]+/authorize/oauth:callback$"
+)
+_PLAYMCP_CALLBACK_MCP_ID_RE = re.compile(
+    r"/(?:api/)?v1/applied-mcps/([0-9]+)/authorize/oauth:callback$"
 )
 _PLAYMCP_CALLBACK_HOSTS = {
     "tools.kakao.com",
@@ -152,8 +159,56 @@ class FlexibleStaticClientAuthenticator(ClientAuthenticator):
             return client
 
 
-async def _normalize_token_grant_type(request: Request) -> Request:
-    """카카오 콘솔 enum 대문자 grant_type을 표준 OAuth 값으로 정규화한다."""
+def _first_form_value(items: list[tuple[str, str]], name: str) -> str:
+    for key, value in items:
+        if key == name:
+            return value
+    return ""
+
+
+def _set_form_value(items: list[tuple[str, str]], name: str, value: str) -> bool:
+    next_items = [(key, current) for key, current in items if key != name]
+    next_items.append((name, value))
+    if next_items == items:
+        return False
+    items[:] = next_items
+    return True
+
+
+def _playmcp_callback_mcp_id(uri: str) -> str | None:
+    parts = urlsplit(uri)
+    if (
+        parts.scheme == "https"
+        and parts.netloc in _PLAYMCP_CALLBACK_HOSTS
+        and _PLAYMCP_CALLBACK_PATH_RE.fullmatch(parts.path)
+        and not parts.fragment
+    ):
+        match = _PLAYMCP_CALLBACK_MCP_ID_RE.search(parts.path)
+        return match.group(1) if match else None
+    if (
+        parts.scheme == "http"
+        and parts.netloc == "tools.onkakao.net"
+        and _PLAYMCP_ONKAKAO_CALLBACK_PATH_RE.fullmatch(parts.path)
+        and not parts.fragment
+    ):
+        match = _PLAYMCP_CALLBACK_MCP_ID_RE.search(parts.path)
+        return match.group(1) if match else None
+    return None
+
+
+def _redirect_uris_equivalent(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    left_mcp_id = _playmcp_callback_mcp_id(left)
+    right_mcp_id = _playmcp_callback_mcp_id(right)
+    return left_mcp_id is not None and left_mcp_id == right_mcp_id
+
+
+async def _normalize_token_request(
+    request: Request,
+    provider: "KakaoRestrictedOAuthProvider",
+) -> Request:
+    """PlayMCP token 요청의 enum/누락 client_id/내부 callback URI를 보정한다."""
     content_type = request.headers.get("content-type", "")
     if "application/x-www-form-urlencoded" not in content_type:
         return request
@@ -161,17 +216,36 @@ async def _normalize_token_grant_type(request: Request) -> Request:
     body = await request.body()
     form_items = parse_qsl(body.decode("utf-8"), keep_blank_values=True)
     changed = False
-    normalized: list[tuple[str, str]] = []
-    for key, value in form_items:
+    for index, (key, value) in enumerate(form_items):
         if key == "grant_type" and value in {"AUTHORIZATION_CODE", "REFRESH_TOKEN"}:
-            normalized.append((key, value.lower()))
+            form_items[index] = (key, value.lower())
             changed = True
-        else:
-            normalized.append((key, value))
+
+    grant_type = _first_form_value(form_items, "grant_type")
+    if grant_type == "authorization_code":
+        code = _first_form_value(form_items, "code")
+        auth_code = provider.auth_codes.get(code)
+        if auth_code is not None:
+            if not _first_form_value(form_items, "client_id"):
+                changed |= _set_form_value(form_items, "client_id", auth_code.client_id)
+            submitted_redirect = _first_form_value(form_items, "redirect_uri")
+            auth_redirect = str(auth_code.redirect_uri)
+            if (
+                submitted_redirect
+                and submitted_redirect != auth_redirect
+                and _redirect_uris_equivalent(submitted_redirect, auth_redirect)
+            ):
+                changed |= _set_form_value(form_items, "redirect_uri", auth_redirect)
+    elif grant_type == "refresh_token":
+        refresh_value = _first_form_value(form_items, "refresh_token")
+        refresh_token = provider.refresh_tokens.get(refresh_value)
+        if refresh_token is not None and not _first_form_value(form_items, "client_id"):
+            changed |= _set_form_value(form_items, "client_id", refresh_token.client_id)
+
     if not changed:
         return request
 
-    normalized_body = urlencode(normalized).encode("utf-8")
+    normalized_body = urlencode(form_items).encode("utf-8")
     headers = []
     for key, value in request.scope.get("headers", []):
         if key == b"content-length":
@@ -195,7 +269,7 @@ class KakaoTokenHandler(TokenHandler):
     """Token endpoint wrapper for PlayMCP/Kakao console compatibility."""
 
     async def handle(self, request: Request):
-        return await super().handle(await _normalize_token_grant_type(request))
+        return await super().handle(await _normalize_token_request(request, self.provider))
 
 
 def _is_playmcp_client_id(client_id: str) -> bool:
@@ -203,13 +277,7 @@ def _is_playmcp_client_id(client_id: str) -> bool:
 
 
 def _is_trusted_playmcp_redirect_uri(uri: str) -> bool:
-    parts = urlsplit(uri)
-    return (
-        parts.scheme == "https"
-        and parts.netloc in _PLAYMCP_CALLBACK_HOSTS
-        and bool(_PLAYMCP_CALLBACK_PATH_RE.fullmatch(parts.path))
-        and not parts.fragment
-    )
+    return _playmcp_callback_mcp_id(uri) is not None
 
 
 def _copy_client_with_redirects(
@@ -560,6 +628,44 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         }
         self.snapshot_save()
 
+    async def revoke_subject_consent(self, subject: str) -> None:
+        """일반 사용자 연동 해제: 현재 사용자 subject의 동의와 토큰을 지운다."""
+        self._consented_grants = {
+            grant
+            for grant in self._consented_grants
+            if not self._consent_grant_belongs_to_subject(grant, subject)
+        }
+        stale_access = [
+            token
+            for token, info in self.access_tokens.items()
+            if info.subject == subject
+        ]
+        for token in stale_access:
+            self.access_tokens.pop(token, None)
+        stale_refresh = [
+            token
+            for token, info in self.refresh_tokens.items()
+            if info.subject == subject
+        ]
+        for token in stale_refresh:
+            self.refresh_tokens.pop(token, None)
+        self._session_subjects = {
+            session_id: stored_subject
+            for session_id, stored_subject in self._session_subjects.items()
+            if stored_subject != subject
+        }
+        self._access_to_refresh_map = {
+            access: refresh
+            for access, refresh in self._access_to_refresh_map.items()
+            if access in self.access_tokens and refresh in self.refresh_tokens
+        }
+        self._refresh_to_access_map = {
+            refresh: access
+            for refresh, access in self._refresh_to_access_map.items()
+            if refresh in self.refresh_tokens and access in self.access_tokens
+        }
+        self.snapshot_save()
+
     def _consent_grant_key(
         self,
         client: OAuthClientInformationFull,
@@ -584,6 +690,13 @@ class KakaoRestrictedOAuthProvider(InMemoryOAuthProvider):
         except json.JSONDecodeError:
             return False
         return isinstance(payload, dict) and payload.get("client_id") == client_id
+
+    def _consent_grant_belongs_to_subject(self, grant: str, subject: str) -> bool:
+        try:
+            payload = json.loads(grant)
+        except json.JSONDecodeError:
+            return False
+        return isinstance(payload, dict) and payload.get("subject") == subject
 
     def _quarantine_snapshot(self) -> None:
         if not self._snapshot_path.exists():
@@ -854,8 +967,6 @@ def _disconnect_page_html(message: str | None = None) -> str:
   <p>연동을 해제하면 카카오에 전달된 인증 정보가 즉시 파기됩니다.</p>
   {notice}
   <form method="post" action="/oauth/disconnect">
-    <input type="text" name="client_id" placeholder="연동 시 발급된 client_id" required
-      style="width:100%;padding:8px;margin-bottom:8px;">
     <button type="submit" style="padding:8px 16px;">연동 해제</button>
   </form>
 </body>
@@ -909,11 +1020,19 @@ def register_auth_routes(mcp: "FastMCP", provider: KakaoRestrictedOAuthProvider)
     @mcp.custom_route("/oauth/disconnect", methods=["POST"])
     async def disconnect_post(request: Request) -> HTMLResponse:
         form = await request.form()
+        session_id = request.cookies.get(_SESSION_COOKIE_NAME, "")
+        subject = provider._session_subjects.get(session_id)
+        if subject:
+            await provider.revoke_subject_consent(subject)
+            response = HTMLResponse(_disconnect_page_html("연동이 해제되었습니다."))
+            response.delete_cookie(_SESSION_COOKIE_NAME)
+            return response
+
         client_id = str(form.get("client_id", "")).strip()
-        if not client_id:
-            return HTMLResponse(_disconnect_page_html("client_id를 입력해주세요."))
-        await provider.revoke_client_consent(client_id)
-        return HTMLResponse(_disconnect_page_html("연동이 해제되었습니다."))
+        if client_id:
+            await provider.revoke_client_consent(client_id)
+            return HTMLResponse(_disconnect_page_html("연동이 해제되었습니다."))
+        return HTMLResponse(_disconnect_page_html("현재 브라우저에서 확인되는 연동 정보가 없습니다."))
 
 
 def register_oauth_protocol_routes(
