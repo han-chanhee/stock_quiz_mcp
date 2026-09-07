@@ -205,25 +205,7 @@ class MCPSelectiveAuthMiddleware:
 
 
 def _tool_identity_key(nickname: str | None, ctx: Context | None) -> str | None:
-    """툴 호출 컨텍스트에서 점수용 식별자를 뽑는다.
-
-    OAuth client_id는 PlayMCP 앱 식별자이지 최종 사용자가 아니므로 점수 키로 쓰지
-    않는다. 플랫폼이 subject/user_id 메타를 제공하면 그 값만 사용하고, 없으면
-    핸들러가 닉네임 fallback을 쓴다.
-    """
-    access_token = get_access_token()
-    if access_token and access_token.subject:
-        return access_token.subject
-
-    if ctx is None:
-        return None
-    meta = getattr(ctx.request_context, "meta", None) if ctx.request_context else None
-    for name in ("subject", "user_id", "client_id"):
-        value = getattr(meta, name, None) if meta is not None else None
-        if value is None and isinstance(meta, dict):
-            value = meta.get(name)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    """비인증 본선 운영에서는 사용자가 입력한 닉네임만 점수 키로 쓴다."""
     return None
 
 
@@ -449,23 +431,15 @@ def create_server() -> FastMCP:
     score_store = ScoreStore()
     score_store.snapshot_load()
     client = KISClient()
-    auth = build_auth_provider()
     global _OPTIONAL_AUTH_PROVIDER
-    _OPTIONAL_AUTH_PROVIDER = auth
+    _OPTIONAL_AUTH_PROVIDER = None
 
-    # PlayMCP의 "정보 불러오기"는 검증용 인증헤더 없이 tools/list를 호출한다.
-    # 따라서 MCP transport는 공개로 두고, OAuth 라우트와 선택 Bearer 검증만 붙인다.
     mcp = _build_app(
         cache,
         store,
         score_store,
         refresh_client=client,
     )
-
-    # OAuth 활성화 시(OAUTH_ENABLED=1)만 표준 OAuth 라우트와 동의/연동해제 화면을 등록한다.
-    if auth is not None:
-        register_oauth_protocol_routes(mcp, auth)
-        register_auth_routes(mcp, auth)
 
     @mcp.custom_route("/", methods=["GET"])
     async def root(request: Request) -> PlainTextResponse:

@@ -94,21 +94,34 @@ def test_commit_and_push_stages_only_requested_paths(tmp_path):
     assert "ship only" in log
 
 
-def test_verify_remote_accepts_oauth_challenge(monkeypatch):
+def test_verify_remote_requires_public_tools_list(monkeypatch):
     calls = []
 
     def fake_http_json(url: str, *, method: str = "GET", body: dict | None = None):
         calls.append((url, method, body))
         if url.endswith("/health"):
             return 200, {"status": "ok"}, {}
-        return 401, "unauthorized", {"WWW-Authenticate": "Bearer resource_metadata=x"}
+        return 200, {"result": {"tools": []}}, {}
 
     monkeypatch.setattr(release, "http_json", fake_http_json)
 
     result = release.verify_remote("https://example.test/")
 
-    assert result["oauth_challenge"] is True
+    assert result["tools_status"] == 200
+    assert result["oauth_challenge"] is False
     assert calls[1][2] == {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+
+
+def test_verify_remote_rejects_oauth_challenge(monkeypatch):
+    def fake_http_json(url: str, *, method: str = "GET", body: dict | None = None):
+        if url.endswith("/health"):
+            return 200, {"status": "ok"}, {}
+        return 401, "unauthorized", {"WWW-Authenticate": "Bearer resource_metadata=x"}
+
+    monkeypatch.setattr(release, "http_json", fake_http_json)
+
+    with pytest.raises(release.ReleaseError, match="tools/list returned 401"):
+        release.verify_remote("https://example.test/")
 
 
 def test_cli_verify_remote_prints_json(monkeypatch, capsys):

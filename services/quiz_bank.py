@@ -38,10 +38,6 @@ _PERIOD_LABEL = {
 }
 
 _MARKET_LABEL = {Market.KR: "코스피/코스닥", Market.US: "미국 증시"}
-_FORCED_COMPANY_TICKER = "035720"
-_FORCED_COMPANY_NAME = "카카오"
-
-
 def _new_id() -> str:
     """추측 불가 quiz_id(store와 동일 규격). services는 store를 import하지 않으므로 자체 생성."""
     return secrets.token_urlsafe(8)
@@ -155,16 +151,7 @@ class QuizBank:
     def company_quiz(
         self, pool: list[StockSnapshot], sector: Sector | None = None
     ) -> tuple[QuizQuestion, QuizState]:
-        forced = next(
-            (
-                s for s in pool
-                if s.ticker == _FORCED_COMPANY_TICKER or s.name == _FORCED_COMPANY_NAME
-            ),
-            None,
-        )
-        candidates = [forced] if forced is not None else pool
-        if sector is not None and forced is None:
-            candidates = [s for s in pool if s.sector == sector]
+        candidates = pool if sector is None else [s for s in pool if s.sector == sector]
         if not candidates:
             raise ValueError("guess_company 풀이 비어 있음(섹터 필터 결과 0)")
         answer = self._rng.choice(candidates)

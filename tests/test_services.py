@@ -29,6 +29,7 @@ from services import (
     judge_price,
     normalize_name,
     parse_price,
+    pick_hint,
     resolve_alias,
 )
 
@@ -109,16 +110,27 @@ def test_company_quiz_hides_name_shows_hints():
     assert "현재가" in q.question_md
 
 
-def test_company_quiz_forces_kakao_when_available():
+def test_company_quiz_respects_requested_sector_without_forcing_kakao():
+    naver = _snap("NAVER", 178500, sector=Sector.INTERNET_GAME, rank=21)
+    naver.ticker = "035420"
     kakao = _snap("카카오", 58200, sector=Sector.INTERNET_GAME, rank=22)
     kakao.ticker = "035720"
-    pool = [_snap("삼성전자", 78500, sector=Sector.SEMICONDUCTOR, rank=1), kakao]
+    pool = [
+        _snap("삼성전자", 78500, sector=Sector.SEMICONDUCTOR, rank=1),
+        naver,
+        kakao,
+    ]
 
-    for seed in range(10):
-        q, state = QuizBank(rng=random.Random(seed)).company_quiz(pool, Sector.BIO)
-        assert state.answer.name == "카카오"
-        assert state.answer.ticker == "035720"
+    answers = set()
+    for seed in range(300):
+        q, state = QuizBank(rng=random.Random(seed)).company_quiz(
+            pool, Sector.INTERNET_GAME
+        )
+        assert state.answer.sector == Sector.INTERNET_GAME
         assert state.answer.name not in q.question_md
+        answers.add(state.answer.name)
+
+    assert answers == {"NAVER", "카카오"}
 
 
 # ── 초성 변환 ────────────────────────────────────────────────
@@ -172,6 +184,18 @@ def test_kr_price_quiz_uses_ten_thousand_won_bucket():
     assert judge_price(answer, "80000원") is True
     assert judge_price(answer, "7") is False
     assert judge_price(answer, "abc") is None
+
+
+def test_kr_price_quiz_hyundai_bucket_and_updown_hint():
+    answer = _snap("현대차", price=453000.0, market=Market.KR)
+    state = QuizBank(rng=random.Random(0)).price_quiz([answer])[1]
+
+    assert judge_price(answer, "45") is True
+    assert judge_price(answer, "45만원") is True
+    assert judge_price(answer, "450000원") is True
+    for submitted in ("38", "39", "40", "41"):
+        assert judge_price(answer, submitted) is False
+        assert pick_hint(state, submitted, 1).text == "UP"
 
 
 # ── 별칭/정규화 (hypothesis 불변성) ──────────────────────────

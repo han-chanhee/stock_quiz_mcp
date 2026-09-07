@@ -875,12 +875,13 @@ def _authorization_error_redirect(
     )
 
 
-def _consent_page_html(consent_token: str) -> str:
+def _consent_page_html(consent_token: str, message: str | None = None) -> str:
     rows = "".join(
         f"<tr><th scope=\"row\">{escape(key)}</th><td>{escape(value)}</td></tr>"
         for key, value in CONSENT_TEXT.items()
     )
     token = escape(consent_token, quote=True)
+    notice = f"<p class=\"error\">{escape(message)}</p>" if message else ""
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -913,6 +914,9 @@ def _consent_page_html(consent_token: str) -> str:
     th, td {{ border: 1px solid #d9dee7; padding: 11px 12px; vertical-align: top; }}
     th {{ width: 32%; background: #f9fafb; text-align: left; color: #303846; }}
     .notice {{ font-size: 13px; color: #596579; }}
+    .error {{ color: #b42318; font-size: 14px; font-weight: 700; }}
+    .field {{ display: grid; gap: 6px; margin-top: 12px; font-size: 14px; font-weight: 700; }}
+    .field input {{ min-height: 42px; border: 1px solid #cfd6e3; border-radius: 8px; padding: 8px 10px; font: inherit; }}
     .agree {{ display: flex; gap: 8px; align-items: flex-start; margin-top: 14px; font-size: 14px; line-height: 1.45; }}
     .agree input {{ margin-top: 3px; }}
     .actions {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }}
@@ -937,12 +941,22 @@ def _consent_page_html(consent_token: str) -> str:
 <main>
   <h1>주식대결 연동 동의</h1>
   <p>퀴즈 점수와 랭킹을 표시하기 위해 아래 정보 제공에 동의해주세요.</p>
+  {notice}
   <table aria-label="개인정보 제3자 제공 항목">
     {rows}
   </table>
   <p class="notice">동의하지 않으면 연동은 취소됩니다. 연동 해제 화면에서 언제든 동의를 철회할 수 있습니다.</p>
   <form method="post" action="/oauth/consent">
     <input type="hidden" name="token" value="{token}">
+    <label class="field">
+      <span>주식대결 닉네임</span>
+      <input type="text" name="login_id" autocomplete="username" maxlength="48" required>
+    </label>
+    <label class="field">
+      <span>PIN</span>
+      <input type="password" name="pin" autocomplete="current-password" minlength="4" maxlength="32" required>
+    </label>
+    <p class="notice">처음 입력한 닉네임과 PIN으로 가입되며, 이후 같은 정보로 로그인하고 연동을 해제할 수 있습니다.</p>
     <label class="agree">
       <input type="checkbox" name="agree" value="yes" required>
       <span>위 개인정보 제3자 제공 내용에 동의합니다.</span>
@@ -957,16 +971,29 @@ def _consent_page_html(consent_token: str) -> str:
 </html>"""
 
 
-def _disconnect_page_html(message: str | None = None) -> str:
+def _disconnect_page_html(
+    message: str | None = None,
+    *,
+    authenticated: bool = False,
+) -> str:
     notice = f"<p style='color:green'>{escape(message)}</p>" if message else ""
+    fields = "" if authenticated else """
+    <label style="display:block;margin:12px 0 6px;font-weight:700;">주식대결 닉네임</label>
+    <input type="text" name="login_id" autocomplete="username" maxlength="48" required
+      style="width:100%;padding:8px;margin-bottom:8px;">
+    <label style="display:block;margin:12px 0 6px;font-weight:700;">PIN</label>
+    <input type="password" name="pin" autocomplete="current-password" minlength="4" maxlength="32" required
+      style="width:100%;padding:8px;margin-bottom:12px;">
+"""
     return f"""<!doctype html>
 <html lang="ko">
 <head><meta charset="utf-8"><title>주식대결 - Kakao Tools 연동 해제</title></head>
 <body style="font-family:sans-serif;max-width:480px;margin:40px auto;">
   <h2>Kakao Tools 연동 해제</h2>
-  <p>연동을 해제하면 카카오에 전달된 인증 정보가 즉시 파기됩니다.</p>
+  <p>가입/로그인한 주식대결 계정의 Kakao Tools 연동을 해제합니다.</p>
   {notice}
   <form method="post" action="/oauth/disconnect">
+    {fields}
     <button type="submit" style="padding:8px 16px;">연동 해제</button>
   </form>
 </body>

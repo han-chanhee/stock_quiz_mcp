@@ -337,17 +337,14 @@ def verify_remote(base_url: str = DEFAULT_BASE_URL) -> dict:
 
     payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     tools_status, tools, headers = http_json(f"{base}/mcp", method="POST", body=payload)
-    if tools_status not in {200, 401}:
+    if tools_status != 200:
         raise ReleaseError(f"/mcp tools/list returned {tools_status}: {tools}")
-
-    if tools_status == 401 and "www-authenticate" not in {k.lower() for k in headers}:
-        raise ReleaseError("OAuth 401 response is missing WWW-Authenticate")
 
     return {
         "health_status": health_status,
         "health": health,
         "tools_status": tools_status,
-        "oauth_challenge": tools_status == 401,
+        "oauth_challenge": "www-authenticate" in {key.lower() for key in headers},
     }
 
 

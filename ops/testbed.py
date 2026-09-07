@@ -17,10 +17,11 @@ from typing import Any
 
 from batch import DailyBatch, MockReasonProvider
 from clients import MockMarketClient
-from contracts.schemas import LeaderboardSnapshot, Market, Period, ScoreEntry
+from contracts.schemas import LeaderboardSnapshot, Market, Period, ScoreEntry, Sector
 from server import widgets
 from server.cache import QuizCache
 from server.handlers import QuizHandlers, QuizMode
+from services import PRICE_UNIT_KRW, judge_price, pick_hint
 from services.quiz_bank import QuizBank
 from store import QuizStore, ScoreStore
 from store.quiz_store import DEFAULT_MAX_ENTRIES
@@ -159,6 +160,77 @@ async def conflict_report() -> dict[str, Any]:
     }
 
 
+async def qa_report(runs: int = 300) -> dict[str, Any]:
+    """Run repeated local QA over real cached pools and core game flows."""
+    if runs < 300:
+        raise ValueError("QA runs must be at least 300")
+
+    cache = await _load_cache()
+    store = QuizStore()
+    score_store = ScoreStore()
+    bank = QuizBank(rng=random.Random(20260907))
+    handlers = QuizHandlers(
+        cache,
+        store,
+        score_store,
+        bank,
+        rng=random.Random(20260907),
+    )
+    sector_answers: dict[str, int] = {}
+    price_answers: dict[str, int] = {}
+    price_checked = 0
+    sector_checked = 0
+
+    for index in range(runs):
+        price_out = handlers.price_quiz(Market.KR)
+        price_state = store.get(price_out.quiz_id)
+        if price_state is None:
+            raise AssertionError("price quiz was not stored")
+        price_checked += 1
+        answer = price_state.answer
+        price_answers[answer.name] = price_answers.get(answer.name, 0) + 1
+        bucket = int((answer.price + (PRICE_UNIT_KRW / 2)) // PRICE_UNIT_KRW)
+        if not judge_price(answer, str(bucket)):
+            raise AssertionError(f"correct KR bucket rejected: {answer.name} {answer.price}")
+        if bucket > 1 and pick_hint(price_state, str(bucket - 1), 1).text != "UP":
+            raise AssertionError(f"lower KR bucket did not produce UP: {answer.name}")
+        if pick_hint(price_state, str(bucket + 1), 1).text != "DOWN":
+            raise AssertionError(f"higher KR bucket did not produce DOWN: {answer.name}")
+
+        sector = Sector.INTERNET_GAME if index % 2 == 0 else None
+        sector_out = handlers.guess_company(sector, Market.KR)
+        sector_state = store.get(sector_out.quiz_id)
+        if sector_state is None:
+            raise AssertionError("company quiz was not stored")
+        sector_checked += 1
+        if sector is not None and sector_state.answer.sector != sector:
+            raise AssertionError(
+                f"sector quiz ignored filter: expected {sector}, got {sector_state.answer.sector}"
+            )
+        sector_answers[sector_state.answer.name] = (
+            sector_answers.get(sector_state.answer.name, 0) + 1
+        )
+
+    internet_names = {
+        item.name for item in cache.sector_pool(Sector.INTERNET_GAME)
+    }
+    internet_answered = internet_names & set(sector_answers)
+    if len(internet_names) > 1 and len(internet_answered) < 2:
+        raise AssertionError("internet/game sector did not vary across QA runs")
+
+    return {
+        "ok": True,
+        "runs": runs,
+        "price_checked": price_checked,
+        "price_unique_answers": len(price_answers),
+        "sector_checked": sector_checked,
+        "sector_unique_answers": len(sector_answers),
+        "internet_game_pool": sorted(internet_names),
+        "internet_game_answered": sorted(internet_answered),
+        "stored_quizzes": len(store),
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Local Stock Quiz MCP testbed")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -175,6 +247,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     conflicts = sub.add_parser("conflicts", help="check MCP tool-name conflicts")
     conflicts.set_defaults(func=lambda args: asyncio.run(conflict_report()))
+
+    qa = sub.add_parser("qa", help="run repeated local QA over game behavior")
+    qa.add_argument("--runs", type=int, default=300)
+    qa.set_defaults(func=lambda args: asyncio.run(qa_report(args.runs)))
     return parser
 
 
