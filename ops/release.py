@@ -340,11 +340,27 @@ def verify_remote(base_url: str = DEFAULT_BASE_URL) -> dict:
     if tools_status != 200:
         raise ReleaseError(f"/mcp tools/list returned {tools_status}: {tools}")
 
+    call_payload = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": "help", "arguments": {}},
+    }
+    call_status, call_result, call_headers = http_json(
+        f"{base}/mcp", method="POST", body=call_payload
+    )
+    if call_status != 200:
+        raise ReleaseError(f"/mcp tools/call returned {call_status}: {call_result}")
+
     return {
         "health_status": health_status,
         "health": health,
         "tools_status": tools_status,
-        "oauth_challenge": "www-authenticate" in {key.lower() for key in headers},
+        "call_status": call_status,
+        "oauth_challenge": (
+            "www-authenticate" in {key.lower() for key in headers}
+            or "www-authenticate" in {key.lower() for key in call_headers}
+        ),
     }
 
 

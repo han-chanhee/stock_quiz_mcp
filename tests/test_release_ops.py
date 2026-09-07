@@ -108,8 +108,10 @@ def test_verify_remote_requires_public_tools_list(monkeypatch):
     result = release.verify_remote("https://example.test/")
 
     assert result["tools_status"] == 200
+    assert result["call_status"] == 200
     assert result["oauth_challenge"] is False
     assert calls[1][2] == {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+    assert calls[2][2]["method"] == "tools/call"
 
 
 def test_verify_remote_rejects_oauth_challenge(monkeypatch):
@@ -121,6 +123,24 @@ def test_verify_remote_rejects_oauth_challenge(monkeypatch):
     monkeypatch.setattr(release, "http_json", fake_http_json)
 
     with pytest.raises(release.ReleaseError, match="tools/list returned 401"):
+        release.verify_remote("https://example.test/")
+
+
+def test_verify_remote_rejects_protected_tools_call(monkeypatch):
+    calls = 0
+
+    def fake_http_json(url: str, *, method: str = "GET", body: dict | None = None):
+        nonlocal calls
+        calls += 1
+        if url.endswith("/health"):
+            return 200, {"status": "ok"}, {}
+        if calls == 2:
+            return 200, {"result": {"tools": []}}, {}
+        return 401, "unauthorized", {"WWW-Authenticate": "Bearer resource_metadata=x"}
+
+    monkeypatch.setattr(release, "http_json", fake_http_json)
+
+    with pytest.raises(release.ReleaseError, match="tools/call returned 401"):
         release.verify_remote("https://example.test/")
 
 
