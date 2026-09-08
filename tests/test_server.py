@@ -672,6 +672,32 @@ def test_chart_image_route_renders_png(cache):
     assert store.get(outcome.quiz_id).answer.name.encode("utf-8") not in response.content
 
 
+def test_asset_route_renders_banner_png(cache, monkeypatch, tmp_path):
+    from server import main
+    from server.main import _runtime_middleware, build_app
+
+    banner = tmp_path / "logo-banner.png"
+    banner.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    monkeypatch.setitem(main._ASSET_PATHS, "logo-banner.png", banner)
+
+    app = build_app(cache, QuizStore(), ScoreStore()).http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.get("/assets/logo-banner.png")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG")
+
+
 @pytest.mark.asyncio
 async def test_weekly_reset_loop_checks_every_minute(monkeypatch):
     """주간 리셋 루프는 현재 KST 시각을 1분마다 확인한다."""

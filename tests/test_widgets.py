@@ -59,10 +59,20 @@ def _assert_payload(payload: dict, expected_name: str) -> None:
     assert not has_status(payload)
 
 
+def _walk_components(value: object):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_components(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_components(child)
+
+
 def test_price_quiz_widget_payload() -> None:
     payload = price_quiz_widget("QZ-한글", "📈 주가 퀴즈 — 가격 맞히기", "**힌트**: 반도체")
     _assert_payload(payload, "price_quiz")
-    assert payload["widget"]["children"][3]["type"] == "Col"
+    assert any(child.get("type") == "Col" for child in payload["widget"]["children"])
     assert "QZ-한글" in payload["copy_text"]
 
 
@@ -111,6 +121,24 @@ def test_all_quiz_widgets_include_chart_image_hint() -> None:
         assert "차트 힌트:" in payload["copy_text"]
 
 
+def test_all_quiz_widgets_include_banner_image() -> None:
+    for payload in (
+        price_quiz_widget("QZ-P", "📈 주가 퀴즈", "현재가는?"),
+        market_quiz_widget("QZ-M", "📊 시장 퀴즈", "가장 오른 종목은?", 5.2),
+        company_quiz_widget("QZ-C", "🏢 종목 퀴즈", "이 회사는?"),
+        welcome_widget(),
+        mode_selection_widget(),
+        wrong_answer_widget("초성은 ㅅㅅㅈㅈ", 2),
+        correct_answer_widget("삼성전자", "가격", "순위", "재료", None, None, ["종료"]),
+        expired_quiz_widget(),
+        quiz_not_found_widget(),
+        us_blocked_widget(),
+    ):
+        serialized = json.dumps(payload, ensure_ascii=False)
+        assert "![주식대결 로고]" in serialized
+        assert "/assets/logo-banner.png" in serialized
+
+
 def test_welcome_widget_payload() -> None:
     payload = welcome_widget()
     _assert_payload(payload, "welcome")
@@ -145,7 +173,11 @@ def test_sector_empty_widget_payload() -> None:
 def test_wrong_answer_widget_payload() -> None:
     payload = wrong_answer_widget("초성은 ㅅㅅㅈㅈ", 2)
     _assert_payload(payload, "wrong_answer")
-    assert payload["widget"]["children"][1]["color"] == "warning"
+    warning_badge = next(
+        c for c in _walk_components(payload["widget"])
+        if c.get("type") == "Badge" and c.get("label") == "초성은 ㅅㅅㅈㅈ"
+    )
+    assert warning_badge["color"] == "warning"
 
 
 def test_correct_answer_widget_payload_and_top_three() -> None:
@@ -165,7 +197,10 @@ def test_correct_answer_widget_payload_and_top_three() -> None:
     # correct_answer_widget에서 쓰이지 않는다.
     assert all(child["type"] != "Table" for child in payload["widget"]["children"])
     leaderboard_col = next(
-        child for child in payload["widget"]["children"] if child["type"] == "Col"
+        c for c in _walk_components(payload["widget"])
+        if c.get("type") == "Col"
+        and len(c.get("children", [])) == 3
+        and all(child.get("type") == "Row" for child in c["children"])
     )
     assert len(leaderboard_col["children"]) == 3
     assert "주간 TOP3" in payload["copy_text"]
