@@ -329,6 +329,19 @@ def http_text(
         return exc.code, exc.read().decode("utf-8", "replace"), dict(exc.headers)
 
 
+def http_bytes(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, bytes, dict]:
+    req = urllib.request.Request(url, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            return response.status, response.read(), dict(response.headers)
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read(), dict(exc.headers)
+
+
 def verify_remote(base_url: str = DEFAULT_BASE_URL) -> dict:
     base = base_url.rstrip("/")
     health_status, health, _ = http_json(f"{base}/health")
@@ -352,16 +365,80 @@ def verify_remote(base_url: str = DEFAULT_BASE_URL) -> dict:
     if call_status != 200:
         raise ReleaseError(f"/mcp tools/call returned {call_status}: {call_result}")
 
+    quiz_payload = {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+            "name": "quiz",
+            "arguments": {"mode": "주가", "nickname": "원격검증"},
+        },
+    }
+    quiz_status, quiz_result, quiz_headers = http_json(
+        f"{base}/mcp", method="POST", body=quiz_payload
+    )
+    if quiz_status != 200:
+        raise ReleaseError(f"/mcp quiz call returned {quiz_status}: {quiz_result}")
+
+    quiz_text = _mcp_text_content(quiz_result)
+    if "/assets/logo-banner.png" not in quiz_text:
+        raise ReleaseError("quiz response is missing /assets/logo-banner.png")
+    if "/quiz/chart/" not in quiz_text:
+        raise ReleaseError("quiz response is missing /quiz/chart/{quiz_id}.png")
+
+    banner_status, banner_body, banner_headers = http_bytes(
+        f"{base}/assets/logo-banner.png", headers={"Accept": "image/png"}
+    )
+    if banner_status != 200 or not banner_body.startswith(b"\x89PNG"):
+        raise ReleaseError(f"banner image invalid: {banner_status}")
+
+    chart_path = _extract_chart_path(quiz_text)
+    chart_status, chart_body, chart_headers = http_bytes(
+        f"{base}{chart_path}", headers={"Accept": "image/png"}
+    )
+    if chart_status != 200 or not chart_body.startswith(b"\x89PNG"):
+        raise ReleaseError(f"chart image invalid: {chart_status} {chart_path}")
+
     return {
         "health_status": health_status,
         "health": health,
         "tools_status": tools_status,
         "call_status": call_status,
+        "quiz_status": quiz_status,
+        "banner_status": banner_status,
+        "chart_status": chart_status,
+        "chart_path": chart_path,
+        "quiz_has_banner": True,
+        "quiz_has_chart": True,
         "oauth_challenge": (
             "www-authenticate" in {key.lower() for key in headers}
             or "www-authenticate" in {key.lower() for key in call_headers}
+            or "www-authenticate" in {key.lower() for key in quiz_headers}
         ),
     }
+
+
+def _mcp_text_content(result: dict | str) -> str:
+    if not isinstance(result, dict):
+        return str(result)
+    content = result.get("result", {}).get("content", [])
+    texts = [
+        item.get("text", "")
+        for item in content
+        if isinstance(item, dict) and isinstance(item.get("text"), str)
+    ]
+    return "\n".join(texts)
+
+
+def _extract_chart_path(text: str) -> str:
+    marker = "/quiz/chart/"
+    start = text.find(marker)
+    if start < 0:
+        raise ReleaseError("chart path marker not found")
+    end = text.find(".png", start)
+    if end < 0:
+        raise ReleaseError("chart path extension not found")
+    return text[start : end + 4]
 
 
 def _header(headers: dict, name: str) -> str:

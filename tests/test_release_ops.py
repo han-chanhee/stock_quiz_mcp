@@ -96,22 +96,48 @@ def test_commit_and_push_stages_only_requested_paths(tmp_path):
 
 def test_verify_remote_requires_public_tools_list(monkeypatch):
     calls = []
+    image_calls = []
 
     def fake_http_json(url: str, *, method: str = "GET", body: dict | None = None):
         calls.append((url, method, body))
         if url.endswith("/health"):
             return 200, {"status": "ok"}, {}
+        if body and body.get("id") == 3:
+            return 200, {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "/assets/logo-banner.png /quiz/chart/QZ-1.png",
+                        }
+                    ]
+                }
+            }, {}
         return 200, {"result": {"tools": []}}, {}
 
+    def fake_http_bytes(url: str, *, headers: dict[str, str] | None = None):
+        image_calls.append(url)
+        return 200, b"\x89PNG\r\n\x1a\nfake", {"Content-Type": "image/png"}
+
     monkeypatch.setattr(release, "http_json", fake_http_json)
+    monkeypatch.setattr(release, "http_bytes", fake_http_bytes)
 
     result = release.verify_remote("https://example.test/")
 
     assert result["tools_status"] == 200
     assert result["call_status"] == 200
+    assert result["quiz_status"] == 200
+    assert result["banner_status"] == 200
+    assert result["chart_status"] == 200
+    assert result["chart_path"] == "/quiz/chart/QZ-1.png"
     assert result["oauth_challenge"] is False
     assert calls[1][2] == {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     assert calls[2][2]["method"] == "tools/call"
+    assert calls[3][2]["params"]["name"] == "quiz"
+    assert image_calls == [
+        "https://example.test/assets/logo-banner.png",
+        "https://example.test/quiz/chart/QZ-1.png",
+    ]
 
 
 def test_verify_remote_rejects_oauth_challenge(monkeypatch):
@@ -141,6 +167,20 @@ def test_verify_remote_rejects_protected_tools_call(monkeypatch):
     monkeypatch.setattr(release, "http_json", fake_http_json)
 
     with pytest.raises(release.ReleaseError, match="tools/call returned 401"):
+        release.verify_remote("https://example.test/")
+
+
+def test_verify_remote_rejects_missing_quiz_images(monkeypatch):
+    def fake_http_json(url: str, *, method: str = "GET", body: dict | None = None):
+        if url.endswith("/health"):
+            return 200, {"status": "ok"}, {}
+        if body and body.get("id") == 3:
+            return 200, {"result": {"content": [{"type": "text", "text": "no images"}]}}, {}
+        return 200, {"result": {"tools": []}}, {}
+
+    monkeypatch.setattr(release, "http_json", fake_http_json)
+
+    with pytest.raises(release.ReleaseError, match="logo-banner"):
         release.verify_remote("https://example.test/")
 
 
