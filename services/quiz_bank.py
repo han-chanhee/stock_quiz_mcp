@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import math
 import random
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -38,6 +40,30 @@ _PERIOD_LABEL = {
 }
 
 _MARKET_LABEL = {Market.KR: "코스피/코스닥", Market.US: "미국 증시"}
+
+
+def chart_points_for_snapshot(snap: StockSnapshot, points: int = 35) -> list[float]:
+    """종목 스냅샷에서 익명화된 최근 1주 시간봉형 차트 좌표를 만든다."""
+    points = max(7, points)
+    seed = hashlib.sha256(
+        f"{snap.ticker}:{snap.change_pct:.4f}".encode("utf-8")
+    ).digest()
+    phase = seed[0] / 255 * math.tau
+    trend = max(-0.48, min(0.48, snap.change_pct / 70))
+    start = 0.5 - trend / 2
+
+    values: list[float] = []
+    for index in range(points):
+        progress = index / (points - 1)
+        day_slot = index % 7
+        noise = ((seed[index % len(seed)] - 127.5) / 127.5) * 0.035
+        wave = math.sin(progress * math.tau * 2.2 + phase) * 0.045
+        intraday = math.sin((day_slot / 6) * math.pi) * 0.025
+        value = start + trend * progress + wave + intraday + noise
+        values.append(min(0.95, max(0.05, value)))
+    return values
+
+
 def _new_id() -> str:
     """추측 불가 quiz_id(store와 동일 규격). services는 store를 import하지 않으므로 자체 생성."""
     return secrets.token_urlsafe(8)

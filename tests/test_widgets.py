@@ -96,6 +96,21 @@ def test_company_quiz_widget_payload() -> None:
     assert "QZ-4" in payload["copy_text"]
 
 
+def test_all_quiz_widgets_include_chart_image_hint() -> None:
+    cases = [
+        ("QZ-P", price_quiz_widget("QZ-P", "📈 주가 퀴즈", "현재가는?")),
+        ("QZ-M", market_quiz_widget("QZ-M", "📊 시장 퀴즈", "가장 오른 종목은?", 5.2)),
+        ("QZ-C", company_quiz_widget("QZ-C", "🏢 종목 퀴즈", "이 회사는?")),
+    ]
+
+    for quiz_id, payload in cases:
+        serialized = json.dumps(payload, ensure_ascii=False)
+        assert "차트 힌트" in serialized
+        assert f"/quiz/chart/{quiz_id}.png" in serialized
+        assert "![차트 힌트]" in serialized
+        assert "차트 힌트:" in payload["copy_text"]
+
+
 def test_welcome_widget_payload() -> None:
     payload = welcome_widget()
     _assert_payload(payload, "welcome")

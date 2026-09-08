@@ -32,7 +32,7 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from contracts.schemas import Market, Period, Sector
@@ -47,6 +47,7 @@ from .auth import (
     register_auth_routes,
     register_oauth_protocol_routes,
 )
+from .chart_images import chart_png
 from .handlers import QuizHandlers, QuizMode
 from . import widgets
 
@@ -362,6 +363,18 @@ def _build_app(
                     cache.data_as_of.isoformat() if cache.data_as_of else None
                 ),
             }
+        )
+
+    @mcp.custom_route("/quiz/chart/{quiz_id}.png", methods=["GET"])
+    async def chart_image_get(request: Request) -> Response:
+        quiz_id = str(request.path_params.get("quiz_id", ""))
+        state = store.get(quiz_id)
+        if state is None:
+            return PlainTextResponse("chart not found", status_code=404)
+        return Response(
+            chart_png(state.answer),
+            media_type="image/png",
+            headers={"Cache-Control": "no-store"},
         )
 
     @mcp.custom_route("/mcp/", methods=["POST", "DELETE"], include_in_schema=False)

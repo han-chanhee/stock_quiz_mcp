@@ -3,10 +3,23 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from contracts.schemas import LeaderboardSnapshot
+
+_DEFAULT_PUBLIC_BASE_URL = (
+    "https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io"
+)
+
+
+def _public_base_url() -> str:
+    return (
+        os.environ.get("PUBLIC_BASE_URL", "").strip()
+        or os.environ.get("OAUTH_BASE_URL", "").strip()
+        or _DEFAULT_PUBLIC_BASE_URL
+    ).rstrip("/")
 
 
 def _text_lines(value: str, **properties: object) -> dict:
@@ -30,6 +43,13 @@ def _quiz_frame(
 ) -> dict:
     """3개 출제 모드가 공유하는 공통 틀. 바디만 모드별 함수가 채워 넣는다."""
     expires_in_min = expires_in_sec // 60
+    chart_url = f"{_public_base_url()}/quiz/chart/{quiz_id}.png"
+    chart_children = [
+        {"type": "Divider", "spacing": 12},
+        {"type": "Title", "value": "차트 힌트", "size": "md", "weight": "bold"},
+        {"type": "Markdown", "value": f"![차트 힌트]({chart_url})"},
+        {"type": "Caption", "value": "최근 1주 시간봉 형태입니다.", "size": "sm"},
+    ]
     children = [
         {
             "type": "Row",
@@ -61,6 +81,7 @@ def _quiz_frame(
         _text_lines(mode_intro, size="md", maxLines=3),
         {"type": "Divider", "spacing": 12},
         *body_children,
+        *chart_children,
         {"type": "Divider", "spacing": 12},
         {"type": "Markdown", "value": f"정답 제출용 ID: `{quiz_id}`"},
         {
@@ -71,6 +92,7 @@ def _quiz_frame(
     ]
     copy_text = (
         f"**주식대결 퀴즈**\n\n{mode_intro}\n\n{copy_body}\n\n"
+        f"차트 힌트: {chart_url}\n\n"
         f"제출 ID: `{quiz_id}`"
     )
     return {

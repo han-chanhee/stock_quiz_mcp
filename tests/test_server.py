@@ -642,6 +642,36 @@ def test_public_mcp_tools_and_calls_do_not_require_auth(cache, monkeypatch, tmp_
     assert "www-authenticate" not in call_response.headers
 
 
+def test_chart_image_route_renders_png(cache):
+    from server.main import _runtime_middleware, build_app
+
+    store = QuizStore()
+    app = build_app(
+        cache,
+        store,
+        ScoreStore(),
+        QuizBank(rng=random.Random(0)),
+    ).http_app(
+        transport="streamable-http",
+        stateless_http=True,
+        json_response=True,
+        middleware=_runtime_middleware(),
+    )
+    handlers = QuizHandlers(cache, store, ScoreStore(), QuizBank(rng=random.Random(0)))
+    outcome = handlers.price_quiz(Market.KR)
+
+    with TestClient(
+        app,
+        base_url="https://stock-quiz-mcp-kakaotools.playmcp-endpoint.kakaocloud.io",
+    ) as client:
+        response = client.get(f"/quiz/chart/{outcome.quiz_id}.png")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG")
+    assert store.get(outcome.quiz_id).answer.name.encode("utf-8") not in response.content
+
+
 @pytest.mark.asyncio
 async def test_weekly_reset_loop_checks_every_minute(monkeypatch):
     """주간 리셋 루프는 현재 KST 시각을 1분마다 확인한다."""
